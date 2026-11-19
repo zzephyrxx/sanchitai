@@ -61,7 +61,7 @@ const previewTitle = ref('');
       </div>
     </NCard>
 
-    <NModal v-model:show="!!preview" preset="card" :title="previewTitle" class="w-860px">
+    <NModal :show="!!preview" preset="card" :title="previewTitle" class="w-860px" @update:show="v => (preview = v ? preview : null)">
       <img v-if="preview" :src="preview" :alt="previewTitle" class="w-full rounded-8px" />
     </NModal>
   </div>
