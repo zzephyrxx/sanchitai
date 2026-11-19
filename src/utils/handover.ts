@@ -4,35 +4,43 @@
 import dayjs from 'dayjs';
 import type { BackupShape } from '@/db/db';
 
+/** HTML 文本转义（OCR 规则：插值安全） */
+function esc(text: string): string {
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export function buildHandoverHtml(shape: BackupShape, branchName: string): string {
   const doneEvents = shape.cal_events
     .filter(e => e.status === '已完成' || e.status === '进行中')
     .sort((a, b) => a.date.localeCompare(b.date));
   const planEvents = shape.cal_events.filter(e => e.status === '计划' && !e.merged_into).sort((a, b) => a.date.localeCompare(b.date));
   const upcomingDev = shape.dev_stages
-    .filter(d => d.next_due && d.stage !== '正式党员')
+    .filter(d => d.next_due)
     .sort((a, b) => (a.next_due ?? '').localeCompare(b.next_due ?? ''));
   const owed = shape.fee_records.filter(f => f.status === '欠缴');
 
   const evRows = doneEvents
-    .map(e => `<tr><td class="c">${e.date}</td><td>${e.kind ?? ''}</td><td>${e.title}</td><td class="c">${e.location ?? ''}</td></tr>`)
+    .map(e => `<tr><td class="c">${esc(e.date)}</td><td>${esc(e.kind ?? '')}</td><td>${esc(e.title)}</td><td class="c">${esc(e.location ?? '')}</td></tr>`)
     .join('');
 
   const planRows = planEvents
-    .map(e => `<tr><td class="c">${e.date}</td><td>${e.kind ?? ''}</td><td>${e.title}</td></tr>`)
+    .map(e => `<tr><td class="c">${esc(e.date)}</td><td>${esc(e.kind ?? '')}</td><td>${esc(e.title)}</td></tr>`)
     .join('');
 
   const devRows = upcomingDev
     .map(d => {
       const m = shape.members.find(x => x.id === d.member_id);
-      return `<tr><td class="c">${d.next_due ?? ''}</td><td>${m?.name ?? d.member_id}</td><td>${d.stage}</td><td>${d.next_node ?? ''}</td></tr>`;
+      return `<tr><td class="c">${esc(d.next_due ?? '')}</td><td>${esc(m?.name ?? d.member_id)}</td><td>${esc(d.stage)}</td><td>${esc(d.next_node ?? '')}</td></tr>`;
     })
     .join('');
 
   const owedMap = new Map<string, string[]>();
   owed.forEach(f => owedMap.set(f.member_id, [...(owedMap.get(f.member_id) ?? []), f.year_month]));
   const owedRows = [...owedMap.entries()]
-    .map(([id, months]) => `<li>${shape.members.find(m => m.id === id)?.name ?? id}：${months.join('、')}</li>`)
+    .map(([id, months]) => {
+      const name = shape.members.find(m => m.id === id)?.name ?? id;
+      return `<li>${esc(name)}：${esc(months.join('、'))}</li>`;
+    })
     .join('');
 
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>支部工作交接文档</title>
@@ -48,7 +56,7 @@ export function buildHandoverHtml(shape: BackupShape, branchName: string): strin
  .note{background:#f7f4ef;padding:10px 14px;border:1px dashed #bbb;margin-top:24px;font-size:12px}
 </style></head><body>
 <h1>支部工作交接文档</h1>
-<div class="meta">${branchName} · 生成于 ${dayjs().format('YYYY年M月D日')} · 由学工工作平台导出</div>
+<div class="meta">${esc(branchName)} · 生成于 ${dayjs().format('YYYY年M月D日')} · 由学工工作平台导出</div>
 
 <h2>一、任期大事记（已开展 ${doneEvents.length} 项）</h2>
 <table><tr><th class="c" style="width:90px">日期</th><th class="c" style="width:80px">类型</th><th>事项</th><th class="c" style="width:110px">地点</th></tr>${evRows}</table>

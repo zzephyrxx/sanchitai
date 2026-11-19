@@ -15,13 +15,17 @@ const PRINT_STYLE = `
   @media print { body { margin: 0 24px; } }
 `;
 
+export function esc(text: string): string {
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export function printHtml(title: string, bodyHtml: string): void {
   const win = window.open('', '_blank', 'width=900,height=680');
   if (!win) {
     window.$message?.error('浏览器拦截了打印窗口，请允许弹窗后重试');
     return;
   }
-  win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title><style>${PRINT_STYLE}</style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print()},120)}<\/script></body></html>`);
+  win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${PRINT_STYLE}</style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print()},120)}<\/script></body></html>`);
   win.document.close();
 }
 
@@ -34,12 +38,12 @@ export function buildSignInSheet(opts: {
   const rows = opts.rows
     .map(
       (r, i) =>
-        `<tr><td class="c">${i + 1}</td><td>${r.name}</td><td class="c">${r.type}</td><td>${r.group || '—'}</td><td></td><td></td></tr>`
+        `<tr><td class="c">${i + 1}</td><td>${esc(r.name)}</td><td class="c">${esc(r.type)}</td><td>${esc(r.group || '—')}</td><td></td><td></td></tr>`
     )
     .join('');
   return `
-    <h1>${opts.title} 签到表</h1>
-    <div class="meta">${opts.meta}</div>
+    <h1>${esc(opts.title)} 签到表</h1>
+    <div class="meta">${esc(opts.meta)}</div>
     <table>
       <tr><th class="c" style="width:44px">序号</th><th style="width:90px">姓名</th><th class="c" style="width:80px">人员类型</th><th style="width:120px">研究方向组</th><th class="c" style="width:110px">签名</th><th class="c" style="width:110px">到会情况</th></tr>
       ${rows}
@@ -56,13 +60,13 @@ export function buildSeatSheet(opts: { title: string; meta: string; cols: number
     body += '<tr>';
     for (let x = 1; x <= opts.cols; x += 1) {
       const c = cellMap.get(`${x}-${y}`);
-      body += `<td class="c" style="height:52px">${c ? `<b>${c.name}</b><br><span style="font-size:10px;color:#666">${c.sub}</span>` : '<span style="color:#bbb">空位</span>'}</td>`;
+      body += `<td class="c" style="height:52px">${c ? `<b>${esc(c.name)}</b><br><span style="font-size:10px;color:#666">${esc(c.sub)}</span>` : '<span style="color:#bbb">空位</span>'}</td>`;
     }
     body += '</tr>';
   }
   return `
-    <h1>${opts.title}</h1>
-    <div class="meta">${opts.meta}　　讲台／主持位</div>
+    <h1>${esc(opts.title)}</h1>
+    <div class="meta">${esc(opts.meta)}　　讲台／主持位</div>
     <table>${body}</table>
     <div class="foot"><span>打印时间：${new Date().toLocaleString('zh-CN')}</span></div>
   `;
