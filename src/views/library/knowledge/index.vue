@@ -23,6 +23,7 @@ const filtered = computed(() =>
   )
 );
 
+const allTabLabel = computed(() => `全部（${KNOWLEDGE_ITEMS.length}）`);
 const preview = ref<string | null>(null);
 const previewTitle = ref('');
 </script>
@@ -41,7 +42,7 @@ const previewTitle = ref('');
       </template>
 
       <NTabs v-model:value="activeCat" type="segment" size="small" class="mb-16px">
-        <NTab name="全部" :tab="\`全部（${KNOWLEDGE_ITEMS.length}）\`" />
+        <NTab name="全部" :tab="allTabLabel" />
         <NTab v-for="c in KNOWLEDGE_CATEGORIES" :key="c" :name="c" :tab="c" />
       </NTabs>
 
