@@ -15,7 +15,8 @@ const K = {
   pwdHash: 'sct-lock-pwd-hash',
   question: 'sct-lock-question',
   answerHash: 'sct-lock-answer-hash',
-  idleMinutes: 'sct-lock-idle-minutes'
+  idleMinutes: 'sct-lock-idle-minutes',
+  lockedNow: 'sct-lock-locked-now'
 } as const;
 
 /** 预设找回密码问题 */
@@ -28,8 +29,12 @@ export const useAppLockStore = defineStore(SetupStoreId.AppLock, () => {
   const answerHash = ref(localStorage.getItem(K.answerHash) ?? '');
   const idleMinutes = ref(Number(localStorage.getItem(K.idleMinutes) ?? 0));
 
-  /** 启动时若已启用应用锁则立即锁定 */
-  const locked = ref(enabled.value);
+  /**
+   * 锁定状态：镜像 sessionStorage（会话级）。
+   * 语义：启用后每次刷新/重开浏览器都保持锁定，直至解锁——保证门禁在
+   * 长时间 HMR 会话或组件重挂载下也不失效（回归 P1-1）。
+   */
+  const locked = ref(enabled.value); // 启动即锁（门禁语义）
 
   const isSetup = computed(() => Boolean(pwdHash.value) && Boolean(answerHash.value));
 
@@ -98,13 +103,19 @@ export const useAppLockStore = defineStore(SetupStoreId.AppLock, () => {
       return;
     }
     locked.value = true;
+    sessionStorage.setItem(K.lockedNow, '1');
+  }
+
+  function markUnlocked() {
+    locked.value = false;
+    sessionStorage.removeItem(K.lockedNow);
   }
 
   async function unlock(pwd: string): Promise<boolean> {
     if ((await sha256(pwd)) !== pwdHash.value) {
       return false;
     }
-    locked.value = false;
+    markUnlocked();
     return true;
   }
 
@@ -113,7 +124,7 @@ export const useAppLockStore = defineStore(SetupStoreId.AppLock, () => {
     if ((await sha256(answer.trim())) !== answerHash.value) {
       return false;
     }
-    locked.value = false;
+    markUnlocked();
     return true;
   }
 
@@ -121,6 +132,8 @@ export const useAppLockStore = defineStore(SetupStoreId.AppLock, () => {
     idleMinutes.value = min;
     persist();
   }
+
+
 
   // ---------------- 闲置自动锁 ----------------
   // 手动活动追踪（vueuse useIdle 不支持动态 timeout）
@@ -135,6 +148,7 @@ export const useAppLockStore = defineStore(SetupStoreId.AppLock, () => {
     if (!enabled.value || locked.value || idleMinutes.value <= 0) return;
     if (Date.now() - lastActive > idleMinutes.value * 60_000) {
       locked.value = true;
+      sessionStorage.setItem(K.lockedNow, '1');
     }
   }, 15_000);
 

@@ -226,9 +226,9 @@ function removeAcademyNode(id: string) {
           <div class="mb-6px text-12px text-gray-400">学院每年初下发时间节点表，可在此维护本学院口径的流程节点：</div>
           <div v-for="(n, idx) in academyNodes" :key="n.id" class="flex items-center gap-8px rounded-10px p-8px" style="background: var(--sct-soft)">
             <span class="text-12px font-bold text-gray-400">{{ idx + 1 }}</span>
-            <NInput v-model:value="n.name" placeholder="节点名称" size="small" class="flex-1" />
-            <NInput v-model:value="n.window" placeholder="时间窗" size="small" class="w-120px" />
-            <NInput v-model:value="n.owner" placeholder="责任" size="small" class="w-100px" />
+            <NInput v-model:value="n.name" placeholder="节点名称" size="small" class="w-180px flex-none" />
+            <NInput v-model:value="n.window" placeholder="时间窗" size="small" class="w-120px flex-none" />
+            <NInput v-model:value="n.owner" placeholder="责任" size="small" class="w-100px flex-none" />
             <NButton size="tiny" quaternary type="error" @click="removeAcademyNode(n.id)">删除</NButton>
           </div>
           <div class="flex gap-8px">

@@ -24,11 +24,11 @@ const RED = '#A81C24';
 
 // ---------------- count-up 动数 ----------------
 function useCountUp(source: () => number, duration = 800) {
-  const target = ref(0);
+  const target = ref(source());
   const shown = useTransition(target, { duration, transition: [0.22, 1, 0.36, 1] });
   watch(source, v => {
     target.value = v;
-  }, { immediate: true });
+  }, { immediate: false });
   return computed(() => Math.round(shown.value));
 }
 
@@ -125,6 +125,8 @@ function resetWidgets() {
 // ---------------- 待办提醒中心（广度池 A1） ----------------
 const todayStr = dayjs().format('YYYY-MM-DD');
 const weekEndStr = dayjs().add(7, 'day').format('YYYY-MM-DD');
+const weekStartStr = dayjs().subtract((dayjs().day() + 6) % 7, 'day').format('YYYY-MM-DD');
+const weekEndStr2 = dayjs(weekStartStr).add(6, 'day').format('YYYY-MM-DD');
 const yearStr = dayjs().format('YYYY');
 
 const overdueItems = computed(() =>
@@ -165,9 +167,11 @@ const weekItems = computed(() => {
 });
 
 // ---------------- 当月缴纳率：CSS 进度环 ----------------
+const feeMemberIds = computed(() => new Set(workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员').map(m => m.id)));
+
 const monthRate = computed(() => {
   const ym = dayjs().format('YYYY-MM');
-  const rows = workStore.feeRecords.filter(f => f.year_month === ym && f.status !== '未在校');
+  const rows = workStore.feeRecords.filter(f => f.year_month === ym && f.status !== '未在校' && feeMemberIds.value.has(f.member_id));
   if (!rows.length) return { pct: 0, paid: 0, due: 0, hasData: false };
   const paid = rows.filter(r => r.status === '已缴').length;
   return { pct: Math.round((paid / rows.length) * 100), paid, due: rows.length, hasData: true };
@@ -317,7 +321,7 @@ const weekCategoryCount = computed(() => {
               <div>
                 <div class="text-12px text-gray-400">台历事项</div>
                 <div class="mt-6px text-30px font-black leading-none text-[var(--sct-ink)]">{{ eventNum }}</div>
-                <div class="mt-6px text-11px text-gray-400">本周 {{ workStore.eventsInRange(todayStr, weekEndStr).length }} 项</div>
+                <div class="mt-6px text-11px text-gray-400">本周 {{ workStore.eventsInRange(weekStartStr, weekEndStr2).length }} 项</div>
               </div>
               <div class="text-30px opacity-90"><IconFluentEmojiCalendar /></div>
             </div>

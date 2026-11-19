@@ -12,7 +12,22 @@ import { nanoid } from '@sa/utils';
 import { db } from '@/db/db';
 import { useDexieLive } from '@/hooks/common/dexie';
 import { expandRecurrence } from '@/utils/recurrence';
+import { nodesOfStage, type DevNodeDef } from '@/constants/dev-nodes';
 import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
+
+/** 流转到新阶段时，按节点库初始化该阶段材料清单（未开始），保留已有材料状态 */
+function buildStageMaterials(targetStage: string, prevMaterials: Sct.DevMaterial[]): Sct.DevMaterial[] {
+  const result = [...prevMaterials];
+  nodesOfStage(targetStage).forEach((node: DevNodeDef) => {
+    node.materials.forEach(m => {
+      const exists = result.some(r => r.name.includes(m.slice(0, 5)) || m.includes(r.name.slice(0, 5)));
+      if (!exists) {
+        result.push({ no: node.no, name: m, status: '未开始', date: '' });
+      }
+    });
+  });
+  return result;
+}
 
 export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   /**
@@ -222,7 +237,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
             stage_date: todayStr,
             next_node: targetStage === '正式党员' ? '材料归档' : stage?.next_node,
             next_due: stage?.next_due,
-            materials: stage?.materials ?? [],
+            materials: buildStageMaterials(targetStage, stage?.materials ?? []),
             timeline: [...(stage?.timeline ?? []), { node: `确定为${targetStage}`, date: todayStr, note: '阶段流转' }],
             identity: 'secretary'
           })

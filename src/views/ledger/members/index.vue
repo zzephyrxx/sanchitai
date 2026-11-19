@@ -96,7 +96,7 @@ const statsText = computed(() => {
   const unseated = workStore.members.filter(m => !m.seat);
   const typeCount = MEMBER_TYPE_ORDER.map(t => `${t}${workStore.members.filter(m => m.type === t).length}`).join(' · ');
   const capacity = activeMap.value ? activeMap.value.grid.cols * activeMap.value.grid.rows : 0;
-  return `布点 ${inMap.length}/${capacity} · 未布点 ${unseated.length} ｜ ${typeCount}`;
+  return `在座 ${inMap.length}/${capacity} · 未入座 ${unseated.length} ｜ ${typeCount}`;
 });
 
 // ---------------- 人员卡 ----------------

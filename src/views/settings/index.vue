@@ -180,6 +180,7 @@ async function handleReset() {
   resetting.value = true;
   try {
     await resetToSeed();
+    await db.meta.delete('academy-flow'); // 学院版自定义节点一并还原
     window.$message?.success('已重置为演示种子数据');
     listSnapshots();
   } finally {
