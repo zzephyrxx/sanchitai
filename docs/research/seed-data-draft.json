@@ -1,0 +1,286 @@
+{
+  "meta": {
+    "name": "三尺台种子数据草案",
+    "version": "1.0",
+    "generated_at": "2026-11-18",
+    "identity": "党支部书记",
+    "branch_display": "某高校计算机学院·智感硕博党支部（虚构演示）",
+    "semester": { "label": "2026-2027学年 秋季学期", "start": "2026-09-07", "end": "2027-01-24" },
+    "disclaimer": "全部为虚构演示数据；结构依据真实工作模式调研，姓名/编号/日期组合均为化名，不含任何真实个人信息。",
+    "notes": [
+      "真实支部不设党小组，group 字段以『研究方向组』充当分组维度。",
+      "党费标准：学生党员 0.2 元/月；『/』表示未在校月份不计缴。",
+      "calendarEvents 覆盖秋季学期全节奏；转正/接收大会为『固定时间会议』，不受线下会议每月≤3次约束。"
+    ]
+  },
+
+  "members": [
+    { "id": "DY01", "code": "DY01", "name": "陈明远", "type": "正式党员", "role": "书记", "group": "博士组", "grade": "2024级", "level": "博士在读", "major": "计算机科学与技术", "advisor": "顾柏岩", "join_date": "2021-06-05", "full_date": "2022-06-05", "seat": { "map_id": "labA", "x": 1, "y": 1 }, "key_dates": { "next_review": "2027-01-15" }, "note": "" },
+    { "id": "DY02", "code": "DY02", "name": "林嘉树", "type": "正式党员", "role": "组织委员", "group": "视算一组", "grade": "2025级", "level": "博士在读", "major": "计算机科学与技术", "advisor": "顾柏岩", "join_date": "2022-05-20", "full_date": "2023-05-20", "seat": { "map_id": "labA", "x": 2, "y": 1 }, "key_dates": {}, "note": "" },
+    { "id": "DY03", "code": "DY03", "name": "苏婉清", "type": "正式党员", "role": "宣传委员", "group": "博士组", "grade": "2023级", "level": "博士在读", "major": "计算机科学与技术", "advisor": "韩叙", "join_date": "2021-12-15", "full_date": "2022-12-15", "seat": { "map_id": "labA", "x": 3, "y": 1 }, "key_dates": {}, "note": "" },
+    { "id": "DY04", "code": "DY04", "name": "周子航", "type": "正式党员", "role": "副书记", "group": "视算二组", "grade": "2024级", "level": "硕士在读", "major": "计算机技术", "advisor": "韩叙", "join_date": "2022-06-10", "full_date": "2023-06-10", "seat": { "map_id": "labB", "x": 1, "y": 2 }, "key_dates": {}, "note": "" },
+    { "id": "DY05", "code": "DY05", "name": "韩雨桐", "type": "正式党员", "role": "", "group": "视算一组", "grade": "2024级", "level": "硕士在读", "major": "计算机技术", "advisor": "江泊", "join_date": "2023-06-12", "full_date": "2024-06-12", "seat": { "map_id": "labA", "x": 4, "y": 1 }, "key_dates": {}, "note": "" },
+    { "id": "DY06", "code": "DY06", "name": "沈砚秋", "type": "正式党员", "role": "", "group": "软件组", "grade": "2024级", "level": "硕士在读", "major": "软件工程", "advisor": "江泊", "join_date": "2020-06-22", "full_date": "2021-06-22", "seat": { "map_id": "labB", "x": 2, "y": 2 }, "key_dates": {}, "note": "" },
+    { "id": "DY07", "code": "DY07", "name": "顾清源", "type": "正式党员", "role": "", "group": "博士组", "grade": "2022级", "level": "博士在读", "major": "计算机科学与技术", "advisor": "顾柏岩", "join_date": "2019-05-22", "full_date": "2020-06-08", "seat": { "map_id": "labA", "x": 5, "y": 1 }, "key_dates": {}, "note": "党龄最长，常任领誓人" },
+    { "id": "DY08", "code": "DY08", "name": "方语汐", "type": "正式党员", "role": "", "group": "视算一组", "grade": "2025级", "level": "硕士在读", "major": "计算机技术", "advisor": "江泊", "join_date": "2023-06-06", "full_date": "2024-06-06", "seat": { "map_id": "labA", "x": 2, "y": 3 }, "key_dates": {}, "note": "" },
+    { "id": "DY09", "code": "DY09", "name": "郑凯文", "type": "正式党员", "role": "", "group": "视算二组", "grade": "2023级", "level": "硕士在读", "major": "计算机科学与技术", "advisor": "韩叙", "join_date": "2021-12-18", "full_date": "2022-12-18", "seat": { "map_id": "labB", "x": 3, "y": 2 }, "key_dates": {}, "note": "" },
+    { "id": "DY10", "code": "DY10", "name": "楚天阔", "type": "正式党员", "role": "", "group": "软件组", "grade": "2023级", "level": "硕士在读", "major": "软件工程", "advisor": "江泊", "join_date": "2021-12-10", "full_date": "2022-12-10", "seat": { "map_id": "labB", "x": 4, "y": 2 }, "key_dates": {}, "note": "" },
+    { "id": "DY11", "code": "DY11", "name": "柳梦白", "type": "正式党员", "role": "", "group": "视算二组", "grade": "2025级", "level": "硕士在读", "major": "计算机技术", "advisor": "韩叙", "join_date": "2022-11-16", "full_date": "2023-11-16", "seat": { "map_id": "labB", "x": 5, "y": 2 }, "key_dates": {}, "note": "" },
+    { "id": "DY12", "code": "DY12", "name": "白景行", "type": "正式党员", "role": "", "group": "博士组", "grade": "2026级", "level": "博士在读", "major": "计算机科学与技术", "advisor": "顾柏岩", "join_date": "2023-06-25", "full_date": "2024-06-25", "seat": { "map_id": "labA", "x": 6, "y": 1 }, "key_dates": { "enrolled_at": "2026-09-07" }, "note": "2026年9月组织关系由外校转入，6-8月未在校" },
+    { "id": "DY13", "code": "DY13", "name": "贺兰亭", "type": "预备党员", "role": "", "group": "视算一组", "grade": "2025级", "level": "硕士在读", "major": "计算机技术", "advisor": "江泊", "join_date": "2025-12-06", "full_date": "", "seat": { "map_id": "labA", "x": 3, "y": 3 }, "key_dates": { "probation_end": "2026-12-06" }, "note": "12月预备期满，转正大会拟于12月上旬召开" },
+    { "id": "DY14", "code": "DY14", "name": "齐修远", "type": "预备党员", "role": "", "group": "软件组", "grade": "2025级", "level": "硕士在读", "major": "软件工程", "advisor": "江泊", "join_date": "2025-12-18", "full_date": "", "seat": { "map_id": "labB", "x": 6, "y": 2 }, "key_dates": { "probation_end": "2026-12-18" }, "note": "12月预备期满，转正大会拟于12月中下旬召开" },
+    { "id": "DY15", "code": "DY15", "name": "唐可昕", "type": "预备党员", "role": "", "group": "视算二组", "grade": "2024级", "level": "硕士在读", "major": "计算机技术", "advisor": "韩叙", "join_date": "2026-06-18", "full_date": "", "seat": { "map_id": "labB", "x": 7, "y": 2 }, "key_dates": { "probation_end": "2027-06-18" }, "note": "春季链转正，2027年6月期满" },
+    { "id": "FZ01", "code": "FZ01", "name": "江晚晴", "type": "发展对象", "role": "", "group": "视算一组", "grade": "2024级", "level": "硕士在读", "major": "计算机技术", "advisor": "江泊", "join_date": "", "full_date": "", "seat": { "map_id": "labA", "x": 4, "y": 3 }, "key_dates": { "active_since": "2025-11-20" }, "note": "2026年12月拟接收为预备党员" },
+    { "id": "FZ02", "code": "FZ02", "name": "严弘毅", "type": "发展对象", "role": "", "group": "视算二组", "grade": "2024级", "level": "硕士在读", "major": "计算机技术", "advisor": "韩叙", "join_date": "", "full_date": "", "seat": { "map_id": "labB", "x": 8, "y": 2 }, "key_dates": { "active_since": "2025-11-20" }, "note": "2026年12月拟接收为预备党员" },
+    { "id": "JJ01", "code": "JJ01", "name": "楚菱", "type": "积极分子", "role": "", "group": "视算一组", "grade": "2026级", "level": "硕士在读", "major": "计算机技术", "advisor": "江泊", "join_date": "", "full_date": "", "seat": { "map_id": "labA", "x": 7, "y": 4 }, "key_dates": { "active_since": "2026-11-20" }, "note": "2026年11月确定为积极分子，参加第83期校级党课" },
+    { "id": "JJ02", "code": "JJ02", "name": "秦朗", "type": "积极分子", "role": "", "group": "视算二组", "grade": "2026级", "level": "硕士在读", "major": "计算机技术", "advisor": "韩叙", "join_date": "", "full_date": "", "seat": { "map_id": "labB", "x": 2, "y": 4 }, "key_dates": { "active_since": "2026-11-20" }, "note": "参加第83期校级党课" },
+    { "id": "JJ03", "code": "JJ03", "name": "简云舟", "type": "积极分子", "role": "", "group": "软件组", "grade": "2026级", "level": "硕士在读", "major": "软件工程", "advisor": "江泊", "join_date": "", "full_date": "", "seat": { "map_id": "labB", "x": 3, "y": 4 }, "key_dates": { "active_since": "2026-04-20" }, "note": "积极分子满一年，2027年春季链可确定发展对象" },
+    { "id": "JJ04", "code": "JJ04", "name": "温知夏", "type": "积极分子", "role": "", "group": "视算一组", "grade": "2025级", "level": "硕士在读", "major": "计算机技术", "advisor": "江泊", "join_date": "", "full_date": "", "seat": { "map_id": "labA", "x": 5, "y": 3 }, "key_dates": { "active_since": "2026-04-20" }, "note": "培养联系人每季度谈话" },
+    { "id": "SQ01", "code": "SQ01", "name": "孟繁星", "type": "申请人", "role": "", "group": "视算二组", "grade": "2026级", "level": "硕士在读", "major": "计算机技术", "advisor": "韩叙", "join_date": "", "full_date": "", "seat": { "map_id": "labB", "x": 4, "y": 4 }, "key_dates": { "applied_at": "2026-11-10" }, "note": "递交入党申请书一个月内须安排谈话" }
+  ],
+
+  "seat_maps": [
+    { "map_id": "labA", "name": "实验室A区（工位图）", "grid": { "cols": 8, "rows": 5 } },
+    { "map_id": "labB", "name": "实验室B区（工位图）", "grid": { "cols": 9, "rows": 5 } },
+    { "map_id": "room1115", "name": "教六1115会议室（固定座）", "grid": { "cols": 6, "rows": 4 } }
+  ],
+
+  "calendarEvents": [
+    { "id": "ev01", "title": "支部委员会（9月）", "date": "2026-09-14", "start_time": "14:00", "end_time": "16:00", "location": "研究生楼508", "category": "组织生活", "kind": "支委会", "owner": "DY01", "helper": "DY04", "agenda": ["开学工作部署", "新生党员档案核查分工", "党费收缴安排", "九一八主题党日筹备"], "recurrence": null, "status": "已完成" },
+    { "id": "ev02", "title": "学院学生党支部书记例会", "date": "2026-09-16", "start_time": "16:00", "end_time": "17:30", "location": "学院会议室", "category": "工作例会", "kind": "书记例会", "owner": "DY01", "helper": "", "agenda": ["传达学院部署", "党员发展时间安排"], "recurrence": { "freq": "monthly", "by": "second_wednesday", "range": ["2026-09-01", "2027-01-24"], "overrides": [{ "date": "2026-10-14", "start_time": "14:00", "end_time": "15:30" }] }, "status": "已完成" },
+    { "id": "ev03", "title": "主题党日·铭记历史吾辈自强（纪念九一八事变95周年）", "date": "2026-09-18", "start_time": "14:00", "end_time": "15:00", "location": "教六1115", "category": "组织生活", "kind": "主题党日", "owner": "DY03", "helper": "DY02", "agenda": ["默哀", "纪录片观影", "围绕三个引导问题交流", "重温入党誓词（领誓：DY07）", "会后归档照片与新闻稿"], "recurrence": null, "status": "已完成" },
+    { "id": "ev04", "title": "支部委员会（10月）", "date": "2026-10-10", "start_time": "14:00", "end_time": "16:00", "location": "研究生楼508", "category": "组织生活", "kind": "支委会", "owner": "DY01", "helper": "DY04", "agenda": ["审定10月工作安排", "换届筹备", "结对帮扶排期定稿", "发展对象材料审核"], "recurrence": null, "status": "已完成" },
+    { "id": "ev05", "title": "支部党员大会暨党课第一期", "date": "2026-10-15", "start_time": "16:30", "end_time": "18:00", "location": "教六1115", "category": "组织生活", "kind": "党员大会", "owner": "DY01", "helper": "DY02、DY03", "agenda": ["支委换届选举（三上三下）", "党员积分政策宣讲", "专题学习：《支部工作条例》", "党建服务办实事工作安排", "领学一刻钟（轮值：DY05）"], "recurrence": null, "status": "已完成", "merged": ["ev05b"] },
+    { "id": "ev05b", "title": "党课第一期（并入党员大会）", "date": "2026-10-15", "start_time": "17:10", "end_time": "18:00", "location": "教六1115", "category": "组织生活", "kind": "党课", "owner": "DY01", "helper": "DY03", "agenda": ["专题党课：支部工作条例导读"], "recurrence": null, "status": "已完成", "merged_into": "ev05" },
+    { "id": "ev06", "title": "主题党日·红色经典配音『声临其境』", "date": "2026-10-25", "start_time": "14:00", "end_time": "15:30", "location": "教六1115", "category": "品牌活动", "kind": "主题党日", "owner": "DY03", "helper": "DY02", "agenda": ["经典片段配音", "观后交流", "照片与新闻稿归档"], "recurrence": null, "status": "已完成" },
+    { "id": "ev07", "title": "党员基本培训大课（本学期第二次集中）", "date": "2026-11-11", "start_time": "19:00", "end_time": "21:00", "location": "学校报告厅", "category": "理论学习", "kind": "集中培训", "owner": "DY01", "helper": "", "agenda": ["全员参加并签到"], "recurrence": null, "status": "已完成" },
+    { "id": "ev08", "title": "支部委员会（11月）", "date": "2026-11-10", "start_time": "14:00", "end_time": "16:00", "location": "研究生楼508", "category": "组织生活", "kind": "支委会", "owner": "DY01", "helper": "DY04", "agenda": ["发展对象差额确定", "材料『三表一书』规范审核", "12月会议排期", "谈心谈话集中月部署"], "recurrence": null, "status": "已完成" },
+    { "id": "ev09", "title": "三会一课记录本誊写（本周内完成）", "date": "2026-11-05", "start_time": "20:00", "end_time": "21:30", "location": "实验室A区", "category": "党务常规", "kind": "日常事务", "owner": "DY02", "helper": "", "agenda": ["将纸质记录本10-11月记录补录电子档"], "recurrence": null, "status": "已完成", "note": "真实痛点：手写本→电子档二次劳动，v1 由会议记录导出替代" },
+    { "id": "ev10", "title": "发展对象个人风采展示暨谈心谈话", "date": "2026-11-18", "start_time": "19:00", "end_time": "20:30", "location": "教六1115", "category": "发展党员", "kind": "发展节点", "owner": "DY02", "helper": "DY01", "agenda": ["FZ01、FZ02个人风采展示", "培养考察谈话（不计入三会一课）"], "recurrence": null, "status": "计划" },
+    { "id": "ev11", "title": "主题党日（11月）", "date": "2026-11-21", "start_time": "14:00", "end_time": "15:00", "location": "待定", "category": "组织生活", "kind": "主题党日", "owner": "DY03", "helper": "DY02", "agenda": ["主题待学院11月例会后确定"], "recurrence": null, "status": "计划" },
+    { "id": "ev12", "title": "党员大会·预备党员转正（DY13贺兰亭）", "date": "2026-12-09", "start_time": "16:30", "end_time": "18:00", "location": "教六1115", "category": "发展党员", "kind": "党员大会", "owner": "DY01", "helper": "DY02", "agenda": ["宣读转正申请书", "党内外群众意见汇报", "无记名投票表决", "公示安排（5个工作日）"], "recurrence": null, "status": "计划", "note": "固定时间会议：预备期满2026-12-06，期满一年一两天内召开" },
+    { "id": "ev13", "title": "支部委员会（12月，含拟接收预备党员审查）", "date": "2026-12-08", "start_time": "14:00", "end_time": "16:00", "location": "研究生楼508", "category": "发展党员", "kind": "支委会", "owner": "DY01", "helper": "DY02", "agenda": ["拟接收预备党员审查（材料13.1、13.2）", "转正大会会务", "谈心谈话全覆盖进度检查"], "recurrence": null, "status": "计划" },
+    { "id": "ev14", "title": "党员大会·预备党员转正（DY14齐修远）", "date": "2026-12-21", "start_time": "16:30", "end_time": "18:00", "location": "教六1115", "category": "发展党员", "kind": "党员大会", "owner": "DY01", "helper": "DY02", "agenda": ["转正表决", "公示安排"], "recurrence": null, "status": "计划", "note": "固定时间会议：预备期满2026-12-18" },
+    { "id": "ev15", "title": "主题党日·冬至『暖研心』（与共建支部联合）", "date": "2026-12-21", "start_time": "19:00", "end_time": "20:00", "location": "教六1115", "category": "品牌活动", "kind": "主题党日", "owner": "DY03", "helper": "DY04", "agenda": ["包饺子联谊", "冬季科研经验分享"], "recurrence": null, "status": "计划" },
+    { "id": "ev16", "title": "接收预备党员大会（若有，视预审批复）", "date": "2026-12-24", "start_time": "16:30", "end_time": "18:00", "location": "教六1115", "category": "发展党员", "kind": "党员大会", "owner": "DY01", "helper": "DY02", "agenda": ["接收FZ01、FZ02为预备党员的表决", "票决结果说明（材料17.1、17.2）", "审批请示（材料18）"], "recurrence": null, "status": "计划", "note": "固定时间会议，前置：学院党委预审批复" },
+    { "id": "ev17", "title": "书记抓党建述职报告提交", "date": "2026-12-28", "start_time": "09:00", "end_time": "09:00", "location": "线上", "category": "党务常规", "kind": "材料节点", "owner": "DY01", "helper": "DY04", "agenda": ["年度述职报告+支撑材料"], "recurrence": null, "status": "计划" },
+    { "id": "ev18", "title": "支部委员会（1月，期末总结）", "date": "2027-01-06", "start_time": "14:00", "end_time": "16:00", "location": "研究生楼508", "category": "组织生活", "kind": "支委会", "owner": "DY01", "helper": "DY04", "agenda": ["学期任务对照计划销号", "寒假线上学习布置", "组织生活会筹备"], "recurrence": null, "status": "计划" },
+    { "id": "ev19", "title": "组织生活会暨民主评议党员", "date": "2027-01-15", "start_time": "14:00", "end_time": "17:00", "location": "教六1115", "category": "组织生活", "kind": "组织生活会", "owner": "DY01", "helper": "DY04", "agenda": ["批评与自我批评", "民主评议（优秀比例≤1/3）", "查摆问题与整改措施台账"], "recurrence": null, "status": "计划" },
+    { "id": "ev20", "title": "支部党员大会暨党课第二期（学期总结）", "date": "2027-01-20", "start_time": "16:30", "end_time": "18:00", "location": "教六1115", "category": "组织生活", "kind": "党员大会", "owner": "DY01", "helper": "DY03", "agenda": ["学期总结", "积分制第一轮情况通报", "实事领办通报", "寒假学习任务布置"], "recurrence": null, "status": "计划" },
+    { "id": "ev21", "title": "组会前五分钟·科学家精神微讲堂", "date": "2026-09-11", "start_time": "13:50", "end_time": "14:00", "location": "实验室A区/B区（随组会）", "category": "品牌活动", "kind": "微讲堂", "owner": "DY02", "helper": "DY03", "agenda": ["轮值党员5分钟主讲", "拍照留档"], "recurrence": { "freq": "weekly", "by": "friday", "range": ["2026-09-11", "2027-01-22"], "skip": ["2027-01-15"], "overrides": [{ "date": "2026-11-20", "owner": "JJ04" }] }, "status": "进行中" },
+    { "id": "ev22", "title": "党费收缴（当月）", "date": "2026-09-25", "start_time": "20:00", "end_time": "20:30", "location": "线上（支部群核对）", "category": "党务常规", "kind": "党费", "owner": "DY02", "helper": "", "agenda": ["当月党费逐人确认", "月末汇总导出学院报表"], "recurrence": { "freq": "monthly", "by": "day_25", "range": ["2026-09-01", "2027-01-24"] }, "status": "进行中" },
+    { "id": "ev23", "title": "『一页纸·时政速览』第1期发布", "date": "2026-10-20", "start_time": "12:00", "end_time": "12:00", "location": "线上（支部平台专栏）", "category": "品牌活动", "kind": "宣传产出", "owner": "DY03", "helper": "DY02", "agenda": ["编辑→审核→发布", "每月1期"], "recurrence": { "freq": "monthly", "by": "day_20", "range": ["2026-10-01", "2027-01-24"] }, "status": "进行中" },
+    { "id": "ev24", "title": "学期任务完成情况自查（对照计划销号）", "date": "2027-01-22", "start_time": "20:00", "end_time": "21:00", "location": "实验室A区", "category": "党务常规", "kind": "日常事务", "owner": "DY01", "helper": "DY04", "agenda": ["对照整体工作计划逐项销号"], "recurrence": null, "status": "计划" },
+    { "id": "ev25", "title": "学期末书面报告报送上级党组织", "date": "2027-01-12", "start_time": "09:00", "end_time": "09:00", "location": "线上", "category": "党务常规", "kind": "材料节点", "owner": "DY01", "helper": "DY04", "agenda": ["学期工作书面报告"], "recurrence": null, "status": "计划" },
+    { "id": "ev26", "title": "预备党员转正前征求党内外群众意见（DY15）", "date": "2027-06-10", "start_time": "19:00", "end_time": "20:00", "location": "待定", "category": "发展党员", "kind": "发展节点", "owner": "DY02", "helper": "", "agenda": ["征求意见谈话（材料24）", "转正申请书提醒（预备期满前一周递交）"], "recurrence": null, "status": "计划", "note": "春季链示例，用于演示跨学期节点" }
+  ],
+
+  "developmentStages": [
+    { "member_id": "DY01", "stage": "正式党员", "stage_date": "2022-06-05", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY02", "stage": "正式党员", "stage_date": "2023-05-20", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY03", "stage": "正式党员", "stage_date": "2022-12-15", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY04", "stage": "正式党员", "stage_date": "2023-06-10", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY05", "stage": "正式党员", "stage_date": "2024-06-12", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY06", "stage": "正式党员", "stage_date": "2021-06-22", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY07", "stage": "正式党员", "stage_date": "2020-06-08", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY08", "stage": "正式党员", "stage_date": "2024-06-06", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY09", "stage": "正式党员", "stage_date": "2022-12-18", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY10", "stage": "正式党员", "stage_date": "2022-12-10", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY11", "stage": "正式党员", "stage_date": "2023-11-16", "next_node": "民主评议党员（年度）", "next_due": "2027-01-15", "materials": [], "timeline": [] },
+    { "member_id": "DY12", "stage": "正式党员", "stage_date": "2024-06-25", "next_node": "组织关系转入材料核查收尾", "next_due": "2026-10-09", "materials": [{ "no": "0", "name": "转入党员档案核查", "status": "进行中", "date": "" }], "timeline": [{ "node": "组织关系转入", "date": "2026-09-07", "note": "由外校转入" }] },
+    { "member_id": "DY13", "stage": "预备党员", "stage_date": "2025-12-06", "next_node": "转正大会（材料22转正申请书/24征求意见谈话/25.1-25.3大会与公示/26请示/27.1-27.2审批批复）", "next_due": "2026-12-09", "materials": [
+      { "no": "22", "name": "转正申请书（预备期满前一周递交）", "status": "已归档", "date": "2026-11-29" },
+      { "no": "23", "name": "预备期思想汇报（每季度一份）", "status": "进行中", "date": "" },
+      { "no": "24", "name": "转正前征求党内外群众意见谈话记录", "status": "进行中", "date": "" },
+      { "no": "25.1", "name": "转为正式党员的支部大会会议记录", "status": "未开始", "date": "" },
+      { "no": "25.2", "name": "转为正式党员的支部大会票决结果", "status": "未开始", "date": "" },
+      { "no": "25.3", "name": "转为正式党员的支部大会公示情况", "status": "未开始", "date": "" },
+      { "no": "26", "name": "转为中共正式党员审批请示", "status": "未开始", "date": "" }
+    ], "timeline": [{ "node": "确定为预备党员", "date": "2025-12-06", "note": "支部大会接收" }] },
+    { "member_id": "DY14", "stage": "预备党员", "stage_date": "2025-12-18", "next_node": "转正大会", "next_due": "2026-12-21", "materials": [
+      { "no": "22", "name": "转正申请书", "status": "已归档", "date": "2026-12-11" },
+      { "no": "24", "name": "征求意见谈话记录", "status": "未开始", "date": "" }
+    ], "timeline": [{ "node": "确定为预备党员", "date": "2025-12-18", "note": "" }] },
+    { "member_id": "DY15", "stage": "预备党员", "stage_date": "2026-06-18", "next_node": "预备期考察（每季度思想汇报）+2027年6月转正", "next_due": "2027-06-18", "materials": [
+      { "no": "23", "name": "预备期思想汇报", "status": "进行中", "date": "" }
+    ], "timeline": [{ "node": "确定为预备党员", "date": "2026-06-18", "note": "春季链" }] },
+    { "member_id": "FZ01", "stage": "发展对象", "stage_date": "2025-11-20", "next_node": "13.1支委会拟接收预备党员审查→党委预审（14.1/14.2）→支部大会接收（17.1/17.2）", "next_due": "2026-12-10", "materials": [
+      { "no": "8", "name": "确定发展对象前听取意见记录", "status": "已归档", "date": "2025-11-15" },
+      { "no": "9", "name": "确定为发展对象的支委会会议记录", "status": "已归档", "date": "2025-11-20" },
+      { "no": "10.1", "name": "确定为发展对象公示", "status": "已归档", "date": "2025-11-27" },
+      { "no": "10.3", "name": "确定为发展对象批复", "status": "已归档", "date": "2025-12-02" },
+      { "no": "11", "name": "综合性政审报告及相关材料", "status": "已归档", "date": "2025-12-10" },
+      { "no": "12", "name": "短期集中培训结业证书", "status": "已归档", "date": "2026-05-22" },
+      { "no": "13.1", "name": "支委会拟接收预备党员审查会议记录", "status": "未开始", "date": "" }
+    ], "timeline": [{ "node": "确定为积极分子", "date": "2024-11-18", "note": "" }, { "node": "确定为发展对象", "date": "2025-11-20", "note": "" }] },
+    { "member_id": "FZ02", "stage": "发展对象", "stage_date": "2025-11-20", "next_node": "13.1支委会拟接收预备党员审查", "next_due": "2026-12-10", "materials": [
+      { "no": "11", "name": "综合性政审报告", "status": "已归档", "date": "2025-12-08" },
+      { "no": "13.1", "name": "支委会拟接收预备党员审查会议记录", "status": "未开始", "date": "" }
+    ], "timeline": [{ "node": "确定为积极分子", "date": "2024-11-18", "note": "" }, { "node": "确定为发展对象", "date": "2025-11-20", "note": "" }] },
+    { "member_id": "JJ01", "stage": "入党积极分子", "stage_date": "2026-11-20", "next_node": "校级党课结业（第83期）+每季度思想汇报", "next_due": "2027-01-05", "materials": [
+      { "no": "6", "name": "入党积极分子考察登记表", "status": "进行中", "date": "" },
+      { "no": "7", "name": "思想汇报（每季度一篇）", "status": "进行中", "date": "" },
+      { "no": "5.5", "name": "校级党课结业证书", "status": "进行中", "date": "" }
+    ], "timeline": [{ "node": "确定为积极分子", "date": "2026-11-20", "note": "支委会确定，11月批复" }] },
+    { "member_id": "JJ02", "stage": "入党积极分子", "stage_date": "2026-11-20", "next_node": "校级党课结业+季度思想汇报", "next_due": "2027-01-05", "materials": [
+      { "no": "6", "name": "考察登记表", "status": "进行中", "date": "" }
+    ], "timeline": [{ "node": "确定为积极分子", "date": "2026-11-20", "note": "" }] },
+    { "member_id": "JJ03", "stage": "入党积极分子", "stage_date": "2026-04-20", "next_node": "春季链确定发展对象（征求意见→支委会→公示→备案→批复）", "next_due": "2027-04-25", "materials": [
+      { "no": "7", "name": "思想汇报", "status": "进行中", "date": "" },
+      { "no": "5.5", "name": "校级党课结业证书", "status": "已归档", "date": "2026-06-30" }
+    ], "timeline": [{ "node": "确定为积极分子", "date": "2026-04-20", "note": "春季链" }] },
+    { "member_id": "JJ04", "stage": "入党积极分子", "stage_date": "2026-04-20", "next_node": "季度思想汇报+培养联系人谈话", "next_due": "2027-01-05", "materials": [
+      { "no": "7", "name": "思想汇报", "status": "进行中", "date": "" }
+    ], "timeline": [{ "node": "确定为积极分子", "date": "2026-04-20", "note": "" }] },
+    { "member_id": "SQ01", "stage": "申请人", "stage_date": "2026-11-10", "next_node": "党组织派人与入党申请人谈话（申请书递交1个月内）", "next_due": "2026-11-25", "materials": [
+      { "no": "1", "name": "入党申请书", "status": "已归档", "date": "2026-11-10" },
+      { "no": "2.1", "name": "入党申请谈话通知书", "status": "进行中", "date": "" },
+      { "no": "2.2", "name": "入党申请人谈话记录", "status": "未开始", "date": "" }
+    ], "timeline": [{ "node": "递交入党申请书", "date": "2026-11-10", "note": "落款须年满18周岁" }] }
+  ],
+
+  "feeRecords": [
+    { "member_id": "DY01", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY01", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY01", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY01", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY01", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY01", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY02", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY02", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY02", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY02", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY02", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY02", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY03", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY03", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY03", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY03", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY03", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY03", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY04", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY04", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY04", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY04", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY04", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY04", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY05", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY05", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY05", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY05", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY05", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY05", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY06", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY06", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY06", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY06", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY06", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY06", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY07", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY07", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY07", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY07", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY07", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY07", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY08", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY08", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY08", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY08", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY08", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY08", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY09", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY09", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY09", "year_month": "2026-08", "amount": 0.2, "status": "欠缴", "note": "暑期外出，承诺9月补缴" },
+    { "member_id": "DY09", "year_month": "2026-09", "amount": 0.4, "status": "已缴", "paid_date": "2026-09-26", "note": "补缴8月+9月" },
+    { "member_id": "DY09", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY09", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY10", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY10", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY10", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY10", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY10", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY10", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY11", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY11", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY11", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY11", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY11", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY11", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY12", "year_month": "2026-06", "amount": 0.2, "status": "未在校", "note": "/" },
+    { "member_id": "DY12", "year_month": "2026-07", "amount": 0.2, "status": "未在校", "note": "/" },
+    { "member_id": "DY12", "year_month": "2026-08", "amount": 0.2, "status": "未在校", "note": "/" },
+    { "member_id": "DY12", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY12", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY12", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY13", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY13", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY13", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY13", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY13", "year_month": "2026-10", "amount": 0.2, "status": "欠缴", "note": "外派实习未缴" },
+    { "member_id": "DY13", "year_month": "2026-11", "amount": 0.2, "status": "欠缴", "note": "连续第2个月，转正大会前须补缴" },
+    { "member_id": "DY14", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-24" },
+    { "member_id": "DY14", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY14", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY14", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY14", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY14", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" },
+    { "member_id": "DY15", "year_month": "2026-06", "amount": 0.2, "status": "已缴", "paid_date": "2026-06-26", "note": "入党当月起缴" },
+    { "member_id": "DY15", "year_month": "2026-07", "amount": 0.2, "status": "已缴", "paid_date": "2026-07-24" },
+    { "member_id": "DY15", "year_month": "2026-08", "amount": 0.2, "status": "已缴", "paid_date": "2026-08-25" },
+    { "member_id": "DY15", "year_month": "2026-09", "amount": 0.2, "status": "已缴", "paid_date": "2026-09-24" },
+    { "member_id": "DY15", "year_month": "2026-10", "amount": 0.2, "status": "已缴", "paid_date": "2026-10-26" },
+    { "member_id": "DY15", "year_month": "2026-11", "amount": 0.2, "status": "已缴", "paid_date": "2026-11-24" }
+  ],
+
+  "talks": [
+    { "id": "tk01", "date": "2026-09-26", "location": "实验室B区", "type": "日常谈话", "member_ids": ["DY07"], "initiator": "DY04", "recorder": "DY04", "content": "了解科研进展与实验室适应情况；反馈组会汇报压力较大，已协调师兄协助；提醒按期参加党课与主题党日。", "follow_up": "10月主题党日后回访一次", "event_id": "" },
+    { "id": "tk02", "date": "2026-11-18", "location": "教六1115", "type": "发展节点谈话", "member_ids": ["FZ01"], "initiator": "DY02", "recorder": "DY02", "content": "结合个人风采展示了解入党动机、政治素养与群众基础；指出理论学习的薄弱点，建议结合时政速览栏目加强。", "follow_up": "支委会拟接收审查（12.10）前完成思想汇报核查", "event_id": "ev10" },
+    { "id": "tk03", "date": "2026-11-29", "location": "学院会议室", "type": "转正征求意见", "member_ids": ["DY13"], "initiator": "DY02", "recorder": "DY02", "content": "征求党内外群众意见：导师、同门与班级同学共5人；普遍反映其学习认真、乐于助人；提醒预备期最后一个月补缴党费并按期递交转正材料。", "follow_up": "12月9日转正大会；欠缴党费跟踪", "event_id": "ev12" },
+    { "id": "tk04", "date": "2026-11-03", "location": "实验室A区", "type": "积极分子培养谈话", "member_ids": ["JJ04"], "initiator": "DY05", "recorder": "DY05", "content": "季度培养考察谈话：了解近期思想动态与党课学习情况；鼓励其报名组会前五分钟微讲堂主讲。", "follow_up": "下季度谈话安排在2027年1月上旬", "event_id": "" }
+  ],
+
+  "docTemplates": [
+    {
+      "id": "tpl01",
+      "name": "支部委员会会议纪要",
+      "category": "会议",
+      "placeholders": ["支部名称", "会议时间", "会议地点", "主持人", "参会人员", "议题", "决议事项"],
+      "body": "××党支部委员会会议纪要\n\n会议时间：{{会议时间}}\n会议地点：{{会议地点}}\n主持人：{{主持人}}\n参会人员：{{参会人员}}（应到×人，实到×人）\n记录人：＿＿＿\n\n一、会议议题\n{{议题}}\n\n二、讨论情况\n（逐项记录发言要点与意见分歧）\n\n三、决议事项\n1. …\n2. …\n\n四、下一步安排\n1. …（责任人：××；完成时限：××）\n\n\n{{支部名称}}支部委员会\n{{会议时间}}年×月×日"
+    },
+    {
+      "id": "tpl02",
+      "name": "支部党员大会会议议程",
+      "category": "会议",
+      "placeholders": ["支部名称", "会议时间", "会议地点", "参会人员", "议程事项", "主持人"],
+      "body": "{{支部名称}}支部党员大会会议议程\n\n时间：{{会议时间}}\n地点：{{会议地点}}\n参会人员：{{参会人员}}\n主持人：{{主持人}}\n\n会议议程：\n一、全体起立，奏唱《国歌》\n二、{{议程事项一：如传达上级会议精神}}\n三、{{议程事项二：如发展党员表决（无记名投票）}}\n四、{{议程事项三：如专题学习/党课}}\n五、支部书记总结讲话\n\n（如含表决事项：表决票当场发放、当场回收，监票人、计票人由大会推举产生，表决结果形成书面说明。）"
+    },
+    {
+      "id": "tpl03",
+      "name": "主题党日活动方案（策划书）",
+      "category": "活动",
+      "placeholders": ["活动主题", "活动背景", "活动目的", "活动时间", "参加对象", "活动形式", "主持人", "环节安排", "学习材料", "注意事项"],
+      "body": "“{{活动主题}}”主题党日活动方案\n\n一、活动主题\n{{活动主题}}\n\n二、活动背景与目的\n{{活动背景}}\n活动目的：{{活动目的}}\n\n三、活动基本信息\n活动时间：{{活动时间}}\n参加对象：{{参加对象}}\n活动形式：{{活动形式}}（线下）\n主持人：{{主持人}}\n\n四、活动流程（总时长约××分钟）\n{{环节安排：环节/时间/主要内容}}\n\n五、主要学习材料\n{{学习材料}}\n\n六、会后工作\n1. 资料归档：照片、签到记录、发言记录；\n2. 宣传总结：撰写活动新闻稿；\n3. 反馈收集：征求党员对活动组织形式的意见。\n\n七、注意事项\n1. 涉及史实与论述内容以权威材料为准；\n2. 各环节按计划推进，活动期间保持庄重。"
+    },
+    {
+      "id": "tpl04",
+      "name": "党支部学期工作总结",
+      "category": "总结",
+      "placeholders": ["支部名称", "学期区间", "三会一课开展情况", "党员发展情况", "特色活动", "存在问题", "下学期计划"],
+      "body": "{{支部名称}}学期工作总结（{{学期区间}}）\n\n一、总体情况\n本学期支部围绕×项重点任务开展工作，总体完成情况：…\n\n二、三会一课开展情况\n支委会×次、党员大会×次、党课×次、主题党日×次，组织生活会×次；到会率平均××%。{{三会一课开展情况}}\n\n三、党员发展情况\n新确定入党积极分子×人，确定发展对象×人，接收预备党员×人，预备党员转正×人。{{党员发展情况}}\n\n四、特色工作与品牌活动\n{{特色活动}}\n\n五、存在问题\n{{存在问题}}\n\n六、下学期工作计划\n{{下学期计划}}\n\n\n{{支部名称}}\n××××年××月××日"
+    },
+    {
+      "id": "tpl05",
+      "name": "关于××的请示",
+      "category": "发展",
+      "placeholders": ["主送单位", "支部名称", "请示事项", "人员姓名", "依据说明", "落款日期"],
+      "body": "关于{{请示事项}}的请示\n\n{{主送单位}}：\n\n根据《中国共产党章程》《中国共产党发展党员工作细则》有关规定，经{{支部名称}}支部委员会××××年×月×日会议研究：{{依据说明}}。\n\n现请示如下：\n拟{{请示事项}}（涉及人员：{{人员姓名}}）。\n\n妥否，请批复。\n\n\n{{支部名称}}支部委员会\n{{落款日期}}"
+    },
+    {
+      "id": "tpl06",
+      "name": "谈心谈话记录表",
+      "category": "谈心谈话",
+      "placeholders": ["谈话时间", "谈话地点", "谈话人", "谈话对象", "谈话类型", "谈话要点", "后续跟进"],
+      "body": "谈心谈话记录表\n\n谈话时间：{{谈话时间}}\n谈话地点：{{谈话地点}}\n谈话人：{{谈话人}}\n谈话对象：{{谈话对象}}\n谈话类型：{{谈话类型}}（日常/思想动态/发展节点/转正征求意见）\n\n一、谈话要点\n{{谈话要点}}\n\n二、对象反映的主要问题与诉求\n1. …\n2. …\n\n三、后续跟进\n{{后续跟进}}\n\n\n谈话人签字：＿＿＿＿　谈话对象签字：＿＿＿＿\n日期：××××年××月××日"
+    }
+  ]
+}

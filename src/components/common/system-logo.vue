@@ -1,0 +1,27 @@
+<script setup lang="ts">
+defineOptions({
+  name: 'SystemLogo'
+});
+</script>
+
+<template>
+  <div class="app-logo">
+    <!-- 三尺台 · 朱红方印字标（候选A） -->
+    <svg width="100%" height="100%" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect x="16" y="16" width="480" height="480" rx="56" fill="#A81C24" />
+      <rect x="52" y="52" width="408" height="408" rx="36" fill="none" stroke="#FFFFFF" stroke-opacity="0.32" stroke-width="6" />
+      <g fill="#FFFFFF" font-family="'Songti SC','STSong','SimSun',serif" font-weight="900" text-anchor="middle">
+        <text x="256" y="178" font-size="126">三</text>
+        <text x="256" y="312" font-size="126">尺</text>
+        <text x="256" y="446" font-size="126">台</text>
+      </g>
+      <g stroke="#FFFFFF" stroke-opacity="0.5" stroke-width="5" stroke-linecap="round">
+        <line x1="392" y1="86" x2="416" y2="86" />
+        <line x1="392" y1="108" x2="404" y2="108" />
+        <line x1="392" y1="130" x2="416" y2="130" />
+      </g>
+    </svg>
+  </div>
+</template>
+
+<style scoped></style>
