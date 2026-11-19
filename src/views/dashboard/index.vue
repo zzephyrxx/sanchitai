@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { useTransition } from '@vueuse/core';
 import VChart from 'vue-echarts';
 import { useWorkDataStore } from '@/store/modules/work-data';
+import { useThemeStore } from '@/store/modules/theme';
 import { setupEcharts } from '@/plugins/echarts';
 import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
 import { DEV_STAGE_ORDER } from '@/constants/dev-nodes';
@@ -15,7 +16,10 @@ setupEcharts();
 
 const workStore = useWorkDataStore();
 
-const INK = '#2B2926';
+const themeStore = useThemeStore();
+/** 图表墨色随深浅切换（CSS var 无法进 echarts，取实时值） */
+const inkColor = computed(() => (themeStore.darkMode ? '#d9d6d0' : '#2B2926'));
+const heatBase = computed(() => (themeStore.darkMode ? '217, 214, 208' : '43, 41, 38'));
 const RED = '#A81C24';
 
 // ---------------- count-up 动数 ----------------
@@ -111,9 +115,9 @@ const heat = computed(() => {
 
 function heatColor(count: number) {
   if (count < 0) return 'transparent'; // 未来日期
-  if (count === 0) return '#efece7';
-  const alpha = Math.min(0.12 + (count / heat.value.max) * 0.7, 0.85);
-  return `rgba(43, 41, 38, ${alpha})`;
+  if (count === 0) return 'var(--sct-soft)';
+  const alpha = Math.min(0.25 + (count / heat.value.max) * 0.6, 0.88);
+  return `rgba(${heatBase.value}, ${alpha})`;
 }
 
 // ---------------- 发展阶段横条 ----------------
@@ -140,7 +144,7 @@ const feeOption = computed(() => {
     tooltip: { trigger: 'axis' },
     grid: { left: 34, right: 14, top: 18, bottom: 22 },
     textStyle: { color: '#71717a', fontSize: 11 },
-    xAxis: { type: 'category', data: months, axisLine: { lineStyle: { color: '#e7e4de' } }, axisTick: { show: false } },
+    xAxis: { type: 'category', data: months, axisLine: { lineStyle: { color: 'var(--sct-border)' } }, axisTick: { show: false } },
     yAxis: { type: 'value', max: 100, splitLine: { lineStyle: { color: '#f0ede8' } }, axisLabel: { formatter: '{value}%' } },
     series: [
       {
@@ -149,9 +153,9 @@ const feeOption = computed(() => {
         smooth: true,
         symbol: 'circle',
         symbolSize: 7,
-        lineStyle: { color: INK, width: 2.5 },
-        itemStyle: { color: INK, borderColor: '#fff', borderWidth: 2 },
-        areaStyle: { color: 'rgba(43, 41, 38, 0.06)' }
+        lineStyle: { color: inkColor.value, width: 2.5 },
+        itemStyle: { color: inkColor.value, borderColor: '#1f2430', borderWidth: 2 },
+        areaStyle: { color: 'rgba(140, 140, 140, 0.10)' }
       }
     ]
   };
@@ -187,7 +191,7 @@ const weekCategoryCount = computed(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-12px text-gray-400">在册人员</div>
-            <div class="mt-6px text-30px font-black leading-none text-[#2B2926]">{{ memberNum }}</div>
+            <div class="mt-6px text-30px font-black leading-none text-[var(--sct-ink)]">{{ memberNum }}</div>
             <div class="mt-6px text-11px text-gray-400">正式 {{ memberCount && workStore.members.filter(m => m.type === '正式党员').length }} · 预备 {{ workStore.members.filter(m => m.type === '预备党员').length }}</div>
           </div>
           <div class="text-30px opacity-90"><IconFluentEmojiCardIndexDividers /></div>
@@ -197,7 +201,7 @@ const weekCategoryCount = computed(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-12px text-gray-400">台历事项</div>
-            <div class="mt-6px text-30px font-black leading-none text-[#2B2926]">{{ eventNum }}</div>
+            <div class="mt-6px text-30px font-black leading-none text-[var(--sct-ink)]">{{ eventNum }}</div>
             <div class="mt-6px text-11px text-gray-400">本周 {{ workStore.eventsInRange(todayStr, weekEndStr).length }} 项</div>
           </div>
           <div class="text-30px opacity-90"><IconFluentEmojiCalendar /></div>
@@ -207,7 +211,7 @@ const weekCategoryCount = computed(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-12px text-gray-400">谈心谈话</div>
-            <div class="mt-6px text-30px font-black leading-none text-[#2B2926]">{{ talkNum }}</div>
+            <div class="mt-6px text-30px font-black leading-none text-[var(--sct-ink)]">{{ talkNum }}</div>
             <div class="mt-6px text-11px text-gray-400">今年已覆盖 {{ workStore.members.length - uncoveredTalks.count }}/{{ memberCount }}</div>
           </div>
           <div class="text-30px opacity-90"><IconFluentEmojiSpiralNotepad /></div>
@@ -231,19 +235,19 @@ const weekCategoryCount = computed(() => {
         <span class="text-12px text-gray-400">自动汇总自发展台账 / 党费 / 谈话 / 台历</span>
       </template>
       <div class="grid grid-cols-1 gap-12px lg:grid-cols-3">
-        <div class="rounded-12px bg-[#faf8f4] p-12px" style="border-left: 3px solid #d43030">
+        <div class="rounded-12px bg-[var(--sct-soft)] p-12px" style="border-left: 3px solid #d43030">
           <div class="mb-6px text-13px font-bold" style="color: #d43030">逾期（{{ overdueItems.length }}）</div>
           <div v-if="!overdueItems.length" class="text-12px text-gray-400">无逾期节点</div>
           <div v-for="(it, i) in overdueItems" :key="i" class="mb-4px text-12px leading-relaxed text-gray-600">{{ it.text }}</div>
         </div>
-        <div class="rounded-12px bg-[#faf8f4] p-12px" style="border-left: 3px solid #d97706">
+        <div class="rounded-12px bg-[var(--sct-soft)] p-12px" style="border-left: 3px solid #d97706">
           <div class="mb-6px text-13px font-bold" style="color: #d97706">欠缴与未覆盖（{{ owedItems.length + uncoveredTalks.count }}）</div>
           <div v-for="(it, i) in owedItems" :key="'f' + i" class="mb-4px text-12px leading-relaxed text-gray-600">{{ it.text }}</div>
           <div class="text-12px leading-relaxed text-gray-600">
             今年未谈心谈话 {{ uncoveredTalks.count }} 人{{ uncoveredTalks.count ? `：${uncoveredTalks.names.slice(0, 6).join('、')}${uncoveredTalks.count > 6 ? ' 等' : ''}` : '' }}
           </div>
         </div>
-        <div class="rounded-12px bg-[#faf8f4] p-12px" style="border-left: 3px solid #2080f0">
+        <div class="rounded-12px bg-[var(--sct-soft)] p-12px" style="border-left: 3px solid #2080f0">
           <div class="mb-6px text-13px font-bold" style="color: #2080f0">今日与近 7 天（{{ weekItems.length }}）</div>
           <div v-if="!weekItems.length" class="text-12px text-gray-400">未来一周无节点与会议</div>
           <div v-for="(it, i) in weekItems" :key="'w' + i" class="mb-4px text-12px leading-relaxed text-gray-600">
@@ -261,15 +265,15 @@ const weekCategoryCount = computed(() => {
         <div class="flex items-center justify-around py-8px">
           <div
             class="relative size-130px rounded-full"
-            :style="{ background: `conic-gradient(#2B2926 ${monthRate.pct}%, #efece7 0)` }"
+            :style="{ background: `conic-gradient(var(--sct-ink) ${monthRate.pct}%, #efece7 0)` }"
           >
-            <div class="absolute inset-14px flex flex-col items-center justify-center rounded-full bg-white">
-              <div class="text-24px font-black" style="color: #2B2926">{{ monthRate.pct }}<span class="text-13px">%</span></div>
+            <div class="absolute inset-14px flex flex-col items-center justify-center rounded-full" style="background: var(--sct-container)">
+              <div class="text-24px font-black" style="color: var(--sct-ink)">{{ monthRate.pct }}<span class="text-13px">%</span></div>
               <div class="text-11px text-gray-400">缴纳率</div>
             </div>
           </div>
           <div class="text-13px leading-7 text-gray-500">
-            <div>应缴 <b class="text-[#2B2926]">{{ monthRate.due }}</b> 人</div>
+            <div>应缴 <b class="text-[var(--sct-ink)]">{{ monthRate.due }}</b> 人</div>
             <div>已缴 <b class="text-[#3f9d63]">{{ monthRate.paid }}</b> 人</div>
             <div>欠缴 <b style="color: #d43030">{{ monthRate.due - monthRate.paid }}</b> 人</div>
             <div v-if="!monthRate.hasData" class="text-11px text-gray-300">本月名单未生成</div>
@@ -309,8 +313,8 @@ const weekCategoryCount = computed(() => {
         <div class="flex-col gap-12px py-8px">
           <div v-for="row in stageBars" :key="row.stage" class="flex items-center gap-10px">
             <span class="w-70px text-right text-12px text-gray-500">{{ row.stage }}</span>
-            <div class="h-16px flex-1 overflow-hidden rounded-6px bg-[#f2f0ec]">
-              <div class="h-full rounded-6px transition-all-500" :style="{ width: row.width, background: '#2B2926' }" />
+            <div class="h-16px flex-1 overflow-hidden rounded-6px bg-[var(--sct-soft)]">
+              <div class="h-full rounded-6px transition-all-500" :style="{ width: row.width, background: 'var(--sct-ink)' }" />
             </div>
             <span class="w-24px text-13px font-bold" style="color: #2B2926">{{ row.count }}</span>
           </div>
@@ -322,7 +326,7 @@ const weekCategoryCount = computed(() => {
         <div class="flex-col gap-10px py-6px">
           <div v-for="row in categoryBars" :key="row.cat" class="flex items-center gap-10px">
             <span class="w-64px text-right text-12px text-gray-500">{{ row.cat }}</span>
-            <div class="h-14px flex-1 overflow-hidden rounded-6px bg-[#f2f0ec]">
+            <div class="h-14px flex-1 overflow-hidden rounded-6px bg-[var(--sct-soft)]">
               <div class="h-full rounded-6px transition-all-500" :style="{ width: row.width, background: row.color }" />
             </div>
             <span class="w-22px text-13px font-bold text-gray-600">{{ row.count }}</span>

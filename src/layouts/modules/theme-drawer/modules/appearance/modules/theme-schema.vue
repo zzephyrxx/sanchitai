@@ -12,13 +12,23 @@ defineOptions({
 const themeStore = useThemeStore();
 
 const icons: Record<UnionKey.ThemeScheme, string> = {
-  light: 'material-symbols:sunny',
-  dark: 'material-symbols:nightlight-rounded',
-  auto: 'material-symbols:hdr-auto'
+  light: 'lucide:sun',
+  dark: 'lucide:moon',
+  auto: 'lucide:monitor'
 };
 
 function handleSegmentChange(value: string | number) {
   themeStore.setThemeScheme(value as UnionKey.ThemeScheme);
+}
+
+/** 三尺台主题皮肤（默认 / 纸感） */
+const presetOptions = [
+  { label: '默认', value: 'default' },
+  { label: '纸感档案', value: 'paper' }
+];
+
+function handlePresetChange(value: string | number) {
+  themeStore.setThemePreset(value as UnionKey.ThemePreset);
 }
 
 function handleGrayscaleChange(value: boolean) {
@@ -47,6 +57,17 @@ const showSiderInverted = computed(() => !themeStore.darkMode && themeStore.layo
         <NTab v-for="(_, key) in themeSchemaRecord" :key="key" :name="key">
           <SvgIcon :icon="icons[key]" class="h-23px text-icon-small" />
         </NTab>
+      </NTabs>
+    </div>
+    <div class="i-flex-center">
+      <NTabs
+        type="segment"
+        size="small"
+        class="relative w-214px"
+        :value="themeStore.themePreset ?? 'default'"
+        @update:value="handlePresetChange"
+      >
+        <NTab v-for="opt in presetOptions" :key="opt.value" :name="opt.value">{{ opt.label }}</NTab>
       </NTabs>
     </div>
     <Transition name="sider-inverted">

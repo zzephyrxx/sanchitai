@@ -1,0 +1,92 @@
+/* ============================================================
+   三尺台 表面变量层（2 皮肤 × 深/浅 = 4 组合）
+   --sct-page 页面底 | --sct-container 卡片 | --sct-border 边框
+   --sct-soft 软底 | --sct-muted 弱文字 | --sct-ink 墨字
+   ============================================================ */
+
+:root {
+  /* 默认浅色（参考 calendar-schedule：近白底） */
+  --sct-page: #fbfbfc;
+  --sct-container: #ffffff;
+  --sct-border: #ececf0;
+  --sct-soft: #f3f3f5;
+  --sct-muted: #71717a;
+  --sct-ink: #2b2926;
+  --sct-accent: #2b2926;
+  --sct-font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
+}
+
+html.dark {
+  /* 默认深色（参考 dashboard-charts：近黑蓝） */
+  --sct-page: #0b0e14;
+  --sct-container: #12161f;
+  --sct-border: #1f2430;
+  --sct-soft: #171c26;
+  --sct-muted: #8b93a5;
+  --sct-ink: #e8eaf0;
+  --sct-accent: #4f6ef7;
+}
+
+html[data-preset='paper'] {
+  /* 纸感浅色（参考 crm-frosted-glass：暖纸底 + 白卡 + 细边框档案感） */
+  --sct-page: #f5f3ee;
+  --sct-container: #fdfdfb;
+  --sct-border: #e6e3db;
+  --sct-soft: #f0ede6;
+  --sct-muted: #8a8478;
+  --sct-ink: #26241f;
+  --sct-accent: #9a2c25;
+}
+
+html[data-preset='paper'].dark {
+  /* 纸感深色：暖黑纸 */
+  --sct-page: #161513;
+  --sct-container: #201e1b;
+  --sct-border: #33302b;
+  --sct-soft: #262421;
+  --sct-muted: #9a948a;
+  --sct-ink: #ece9e4;
+  --sct-accent: #c96a5e;
+}
+
+/* 纸感：圆角收小 + 卡片磨砂 */
+html[data-preset='paper'] .n-card,
+html[data-preset='paper'].dark .n-card {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* View Transitions 圆形扩散：关闭默认动画 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* 深色下滚动条/阴影微调 */
+html.dark .n-card {
+  box-shadow: none;
+}
+
+/* 语义软底（浅/深两态） */
+:root {
+  --sct-ok-soft: #e3f2e9;
+  --sct-warn-soft: #fcefdc;
+  --sct-err-soft: #f7e3e4;
+  --sct-info-soft: #e3eefb;
+  --sct-purple-soft: #efeaf9;
+  --sct-teal-soft: #e0f0ef;
+  --sct-overlay-bg: rgba(250, 248, 244, 0.62);
+  --sct-overlay-card: rgba(255, 255, 255, 0.92);
+}
+
+html.dark {
+  --sct-ok-soft: #10261b;
+  --sct-warn-soft: #2a2314;
+  --sct-err-soft: #2a1517;
+  --sct-info-soft: #12202e;
+  --sct-purple-soft: #1f1a2e;
+  --sct-teal-soft: #0f2422;
+  --sct-overlay-bg: rgba(11, 14, 20, 0.66);
+  --sct-overlay-card: rgba(18, 22, 31, 0.95);
+}

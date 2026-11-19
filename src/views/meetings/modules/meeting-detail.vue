@@ -124,7 +124,7 @@ function printSignIn() {
     <NDrawerContent v-if="event" :title="event.title" closable>
       <NSpace vertical size="large">
         <div class="flex items-center gap-8px">
-          <NTag size="small" :bordered="false" :color="{ color: '#F7E3E4', textColor: '#A81C24' }">{{ event.kind }}</NTag>
+          <NTag size="small" :bordered="false" :color="{ color: 'var(--sct-err-soft)', textColor: '#A81C24' }">{{ event.kind }}</NTag>
           <span class="text-13px">{{ event.date }} {{ event.start_time && event.start_time !== event.end_time ? `${event.start_time}-${event.end_time}` : '' }}</span>
           <span class="text-13px text-gray-500">{{ event.location }}</span>
           <NTag size="small" type="warning" v-if="event.status === '计划'">计划</NTag>
@@ -138,7 +138,7 @@ function printSignIn() {
           </ol>
         </div>
 
-        <div v-if="event.kind === '党课'" class="rounded-8px bg-[#faf8f4] p-10px">
+        <div v-if="event.kind === '党课'" class="rounded-8px bg-[var(--sct-soft)] p-10px">
           <div class="mb-6px text-13px font-bold">合并设置（并入党员大会）</div>
           <NSelect
             :options="mergeOptions"

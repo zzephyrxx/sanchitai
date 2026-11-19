@@ -226,7 +226,7 @@ const weekCategoryCount = computed(() => {
   @apply h-full text-13px;
   /* 今天列高亮：党建红 5% 淡色（覆盖 FC 默认黄） */
   --fc-today-bg-color: rgba(168, 28, 36, 0.05);
-  --fc-border-color: #eeece7;
+  --fc-border-color: var(--sct-border);
   --fc-page-bg-color: transparent;
 }
 :deep(.fc .fc-toolbar-title) {

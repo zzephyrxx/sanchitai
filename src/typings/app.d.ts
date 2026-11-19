@@ -11,6 +11,8 @@ declare namespace App {
     interface ThemeSetting {
       /** Theme scheme */
       themeScheme: UnionKey.ThemeScheme;
+      /** 三尺台主题皮肤（默认 / 纸感） */
+      themePreset: UnionKey.ThemePreset;
       /** grayscale mode */
       grayscale: boolean;
       /** colour weakness mode */

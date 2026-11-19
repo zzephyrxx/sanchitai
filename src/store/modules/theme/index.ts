@@ -44,13 +44,26 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   /** colourWeakness mode */
   const colourWeaknessMode = computed(() => settings.value.colourWeakness);
 
-  /** Theme colors */
+  /**
+   * Theme colors（三尺台扩展：主色按 皮肤×深浅 覆写）
+   * - 默认浅色：墨 #2B2926；默认深色：靛蓝 #4F6EF7（参考 dashboard-charts）
+   * - 纸感浅色：朱砂 #9A2C25；纸感深色：亮朱砂 #C96A5E
+   */
   const themeColors = computed(() => {
-    const { themeColor, otherColor, isInfoFollowPrimary } = settings.value;
+    const { themeColor, otherColor, isInfoFollowPrimary, themePreset } = settings.value;
+    const preset = themePreset ?? 'default';
+
+    let primary = themeColor;
+    if (darkMode.value) {
+      primary = preset === 'paper' ? '#C96A5E' : '#4F6EF7';
+    } else if (preset === 'paper') {
+      primary = '#9A2C25';
+    }
+
     const colors: App.Theme.ThemeColor = {
-      primary: themeColor,
+      primary,
       ...otherColor,
-      info: isInfoFollowPrimary ? themeColor : otherColor.info
+      info: isInfoFollowPrimary ? primary : otherColor.info
     };
     return colors;
   });
@@ -104,6 +117,21 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   }
 
   /**
+   * Toggle theme scheme（圆形扩散）
+   *
+   * @param [event] 触发事件
+   */
+  function toggleThemeSchemeWithTransition(event?: MouseEvent) {
+    const themeSchemes: UnionKey.ThemeScheme[] = ['light', 'dark'];
+    const currentIndex = themeSchemes.findIndex(item => item === settings.value.themeScheme);
+    const next = themeSchemes[(currentIndex + 1) % themeSchemes.length];
+
+    applyViewTransition(() => {
+      setThemeScheme(next);
+    }, event);
+  }
+
+  /**
    * Set grayscale value
    *
    * @param isGrayscale
@@ -119,6 +147,67 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
    */
   function setColourWeakness(isColourWeakness: boolean) {
     settings.value.colourWeakness = isColourWeakness;
+  }
+
+  /**
+   * 应用主题皮肤标记（驱动 --sct-* 表面变量四态）
+   */
+  function applyPresetAttr() {
+    const preset = settings.value.themePreset ?? 'default';
+    document.documentElement.dataset.preset = preset;
+  }
+
+  /**
+   * 设置主题皮肤（圆形扩散切换）
+   *
+   * @param preset 主题皮肤
+   * @param [event] 触发事件（用于 View Transitions 圆形扩散起点）
+   */
+  function setThemePreset(preset: UnionKey.ThemePreset, event?: MouseEvent) {
+    applyViewTransition(
+      () => {
+        settings.value.themePreset = preset;
+        applyPresetAttr();
+        setupThemeVarsToGlobal();
+        cacheThemeSettings();
+      },
+      event
+    );
+  }
+
+  /**
+   * View Transitions 圆形扩散包装：从点击位置扩散切换；不支持时降级为即时切换
+   */
+  function applyViewTransition(mutate: () => void, event?: MouseEvent) {
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } };
+
+    if (!doc.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      mutate();
+      return;
+    }
+
+    const x = event?.clientX ?? window.innerWidth - 40;
+    const y = event?.clientY ?? 40;
+    const endRadius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+
+    const transition = doc.startViewTransition(() => {
+      mutate();
+    });
+
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`]
+        },
+        {
+          duration: 450,
+          easing: 'ease-in-out',
+          pseudoElement: '::view-transition-new(root)'
+        }
+      );
+    }).catch(() => {
+      /* 过渡被打断时忽略 */
+    });
   }
 
   /** Toggle theme scheme */
@@ -281,6 +370,15 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     scope.stop();
   });
 
+  // 应用皮肤标记
+  watch(
+    () => settings.value.themePreset,
+    () => {
+      applyPresetAttr();
+    },
+    { immediate: true }
+  );
+
   return {
     ...toRefs(settings.value),
     darkMode,
@@ -293,6 +391,8 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     resetStore,
     setThemeScheme,
     toggleThemeScheme,
+    toggleThemeSchemeWithTransition,
+    setThemePreset,
     updateThemeColors,
     setThemeLayout,
     setWatermarkEnableUserName,

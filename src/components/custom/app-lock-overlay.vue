@@ -85,7 +85,7 @@ async function handleRecover() {
           </div>
 
           <div class="mt-16px text-center">
-            <div class="text-40px font-bold tracking-wide text-[#2b2b2b]">{{ now }}</div>
+            <div class="text-40px font-bold tracking-wide text-[var(--sct-ink)]">{{ now }}</div>
             <div class="mt-2px text-12px text-gray-400">{{ dateText }}</div>
           </div>
 
@@ -111,7 +111,7 @@ async function handleRecover() {
 
           <template v-else>
             <div class="mt-18px text-13px leading-relaxed text-gray-600">
-              <div class="mb-4px font-bold text-[#2b2b2b]">找回密码问题</div>
+              <div class="mb-4px font-bold text-[var(--sct-ink)]">找回密码问题</div>
               {{ appLock.question }}
             </div>
             <div class="mt-12px">
@@ -129,7 +129,7 @@ async function handleRecover() {
             </div>
           </template>
 
-          <div class="mt-16px border-t border-[#e7e4de] pt-10px text-center text-11px leading-relaxed text-gray-400">
+          <div class="mt-16px border-t border-[var(--sct-border)] pt-10px text-center text-11px leading-relaxed text-gray-400">
             数据仅存于本机 · 应用锁为隐私遮挡，非加密防护
           </div>
         </div>
@@ -145,15 +145,15 @@ async function handleRecover() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(250, 248, 244, 0.62);
+  background: var(--sct-overlay-bg);
   backdrop-filter: blur(22px) saturate(1.05);
   -webkit-backdrop-filter: blur(22px) saturate(1.05);
 }
 .lock-card {
   width: 340px;
   padding: 30px 28px 20px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #e7e4de;
+  background: var(--sct-overlay-card);
+  border: 1px solid var(--sct-border);
   border-radius: 18px;
   box-shadow: 0 18px 60px rgba(64, 40, 40, 0.14);
 }

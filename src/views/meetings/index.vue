@@ -222,7 +222,7 @@ const listColumns = [
         <div
           v-for="s in freqStats"
           :key="s.label"
-          class="flex items-center gap-8px rounded-8px bg-[#faf8f4] px-12px py-8px"
+          class="flex items-center gap-8px rounded-8px bg-[var(--sct-soft)] px-12px py-8px"
         >
           <span class="inline-block size-10px rounded-full" :style="{ background: s.color }" />
           <span class="text-13px font-bold">{{ s.label }}</span>

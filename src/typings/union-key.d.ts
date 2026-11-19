@@ -14,6 +14,9 @@ declare namespace UnionKey {
   /** Theme scheme */
   type ThemeScheme = 'light' | 'dark' | 'auto';
 
+  /** 三尺台主题皮肤 */
+  type ThemePreset = 'default' | 'paper';
+
   /**
    * The layout mode
    *

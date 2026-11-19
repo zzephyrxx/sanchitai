@@ -112,7 +112,7 @@ async function deleteDoc(id: string) {
         <div v-for="tpl in workStore.docTemplates" :key="tpl.id" class="tpl-card" @click="openCreate(tpl)">
           <div class="flex items-center justify-between">
             <span class="text-14px font-bold">{{ tpl.name }}</span>
-            <NTag size="tiny" :bordered="false" :color="{ color: '#F7E3E4', textColor: CATEGORY_COLORS[tpl.category] ?? '#A81C24' }">
+            <NTag size="tiny" :bordered="false" :color="{ color: 'var(--sct-err-soft)', textColor: CATEGORY_COLORS[tpl.category] ?? '#A81C24' }">
               {{ tpl.category }}
             </NTag>
           </div>
@@ -181,7 +181,7 @@ async function deleteDoc(id: string) {
 .tpl-card {
   padding: 12px 14px;
   background: #fff;
-  border: 1px solid #e7e4de;
+  border: 1px solid var(--sct-border);
   border-radius: 10px;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -196,8 +196,8 @@ async function deleteDoc(id: string) {
   padding: 12px;
   font-size: 13px;
   line-height: 1.9;
-  color: #2b2b2b;
-  background: #faf8f4;
+  color: var(--sct-ink);
+  background: var(--sct-soft);
   border-radius: 8px;
   white-space: pre-wrap;
 }

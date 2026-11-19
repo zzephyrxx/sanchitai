@@ -126,11 +126,11 @@ async function handleAdd() {
           v-for="c in coverage"
           :key="c.member.id"
           class="rounded-8px px-10px py-8px"
-          :style="{ background: c.latest ? '#f0f7f2' : '#faf8f4' }"
+          :style="{ background: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)' }"
         >
           <div class="flex items-center justify-between">
             <span class="text-13px font-bold">{{ c.member.name }}</span>
-            <NTag size="tiny" :bordered="false" :color="{ color: c.latest ? '#E3F2E9' : '#F1F2F4', textColor: c.latest ? '#3f9d63' : '#8a8f99' }">
+            <NTag size="tiny" :bordered="false" :color="{ color: c.latest ? 'var(--sct-ok-soft)' : '#F1F2F4', textColor: c.latest ? '#3f9d63' : '#8a8f99' }">
               {{ c.latest ? '已覆盖' : '未覆盖' }}
             </NTag>
           </div>

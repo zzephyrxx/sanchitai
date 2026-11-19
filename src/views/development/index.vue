@@ -11,8 +11,8 @@ const workStore = useWorkDataStore();
 
 const STAGE_META: Record<string, { color: string; soft: string }> = {
   申请人: { color: '#8a8f99', soft: '#F1F2F4' },
-  入党积极分子: { color: '#2080f0', soft: '#E3EEFB' },
-  发展对象: { color: '#d97706', soft: '#FCEFDC' },
+  入党积极分子: { color: '#2080f0', soft: 'var(--sct-info-soft)' },
+  发展对象: { color: '#d97706', soft: 'var(--sct-warn-soft)' },
   预备党员: { color: '#b98486', soft: '#F7F1F1' },
   正式党员: { color: '#2B2926', soft: '#EFEEEC' }
 };
@@ -170,13 +170,13 @@ async function advance(memberId: string) {
   gap: 8px;
   min-height: 120px;
   padding: 8px;
-  background: #faf8f4;
+  background: var(--sct-soft);
   border-radius: 0 0 8px 8px;
 }
 .dev-lane__body--over {
   outline: 2px dashed #2b2926;
   outline-offset: -4px;
-  background: #f3f1ec;
+  background: var(--sct-soft);
 }
 .dev-card--dragging {
   opacity: 0.45;
@@ -190,7 +190,7 @@ async function advance(memberId: string) {
 .dev-card {
   padding: 8px 10px;
   background: #fff;
-  border: 1px solid #e7e4de;
+  border: 1px solid var(--sct-border);
   border-radius: 8px;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -207,16 +207,16 @@ async function advance(memberId: string) {
 .dev-card__name {
   font-size: 13px;
   font-weight: 700;
-  color: #2b2b2b;
+  color: var(--sct-ink);
 }
 .dev-card__days {
   font-size: 11px;
-  color: #9c9994;
+  color: var(--sct-muted);
 }
 .dev-card__next {
   margin-top: 4px;
   font-size: 12px;
-  color: #52525b;
+  color: var(--sct-muted);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -234,7 +234,7 @@ async function advance(memberId: string) {
 .dev-card__due {
   margin-top: 2px;
   font-size: 11px;
-  color: #9c9994;
+  color: var(--sct-muted);
 }
 .dev-card__due--soon {
   color: #d97706;

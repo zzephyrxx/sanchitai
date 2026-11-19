@@ -20,19 +20,20 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 interface Emits {
-  (e: 'switch'): void;
+  (e: 'switch', event: MouseEvent): void;
 }
 
 const emit = defineEmits<Emits>();
 
-function handleSwitch() {
-  emit('switch');
+function handleSwitch(event: MouseEvent) {
+  emit('switch', event);
 }
 
+/** lucide 现代线条图标（离线注册） */
 const icons: Record<UnionKey.ThemeScheme, string> = {
-  light: 'material-symbols:sunny',
-  dark: 'material-symbols:nightlight-rounded',
-  auto: 'material-symbols:hdr-auto'
+  light: 'lucide:sun',
+  dark: 'lucide:moon',
+  auto: 'lucide:monitor'
 };
 
 const icon = computed(() => icons[props.themeSchema]);

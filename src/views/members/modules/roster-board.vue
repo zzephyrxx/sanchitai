@@ -219,7 +219,7 @@ onBeforeUnmount(() => {
     <!-- 未布点成员 -->
     <div v-if="unseated.length && editable" class="roster-unseated">
       <span class="roster-unseated__label">未布点（{{ unseated.length }}）：</span>
-      <NTag v-for="mem in unseated" :key="mem.id" size="small" :bordered="false" :color="{ color: '#f5f5f4', textColor: '#52525b' }">
+      <NTag v-for="mem in unseated" :key="mem.id" size="small" :bordered="false" :color="{ color: '#f5f5f4', textColor: 'var(--sct-muted)' }">
         {{ mem.name }}
       </NTag>
     </div>
@@ -248,7 +248,7 @@ onBeforeUnmount(() => {
   text-align: center;
   font-size: 12px;
   color: #a1a1aa;
-  background: repeating-linear-gradient(45deg, #faf8f4, #faf8f4 6px, #f3f1ec 6px, #f3f1ec 12px);
+  background: repeating-linear-gradient(45deg, var(--sct-soft), var(--sct-soft) 6px, var(--sct-soft) 6px, var(--sct-soft) 12px);
   border: 1px dashed #d6d3cd;
   border-radius: 6px;
 }
@@ -259,7 +259,7 @@ onBeforeUnmount(() => {
   position: relative;
   padding: 8px 10px;
   background: #fff;
-  border: 1px solid #e7e4de;
+  border: 1px solid var(--sct-border);
   border-radius: 8px;
   cursor: pointer;
   transition: box-shadow 0.15s, border-color 0.15s;
@@ -278,7 +278,7 @@ onBeforeUnmount(() => {
 }
 .roster-cell--over {
   border: 1.5px dashed #a81c24;
-  background: #fdf5f5;
+  background: var(--sct-err-soft);
 }
 .roster-cell--picked {
   border-color: #a81c24;
@@ -299,7 +299,7 @@ onBeforeUnmount(() => {
 .roster-cell__name {
   font-size: 13px;
   font-weight: 700;
-  color: #2b2b2b;
+  color: var(--sct-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -312,7 +312,7 @@ onBeforeUnmount(() => {
 .roster-cell__sub {
   margin-top: 3px;
   font-size: 11px;
-  color: #9c9994;
+  color: var(--sct-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -339,7 +339,7 @@ onBeforeUnmount(() => {
 }
 .roster-unseated__label {
   font-size: 12px;
-  color: #9c9994;
+  color: var(--sct-muted);
 }
 .roster-ghost {
   position: fixed;

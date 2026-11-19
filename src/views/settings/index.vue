@@ -189,7 +189,7 @@ onMounted(listSnapshots);
           <NButton size="small" @click="listSnapshots">刷新</NButton>
         </div>
         <div v-if="!snapshots.length" class="text-12px text-gray-400">暂无快照</div>
-        <div v-for="s in snapshots" :key="s.key" class="flex items-center justify-between rounded-8px bg-[#faf8f4] px-10px py-8px">
+        <div v-for="s in snapshots" :key="s.key" class="flex items-center justify-between rounded-8px bg-[var(--sct-soft)] px-10px py-8px">
           <div>
             <div class="text-13px font-bold">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
             <div class="text-11px text-gray-500">{{ s.counts }}</div>

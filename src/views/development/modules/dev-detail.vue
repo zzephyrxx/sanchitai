@@ -48,12 +48,12 @@ function toggleMaterial(no: string) {
     <NDrawerContent v-if="member && stage" :title="`${member.name} · 发展时间线`" closable>
       <NSpace vertical size="large">
         <div class="flex items-center gap-8px">
-          <NTag :bordered="false" size="small" :color="{ color: '#F7E3E4', textColor: '#A81C24' }">{{ stage.stage }}</NTag>
+          <NTag :bordered="false" size="small" :color="{ color: 'var(--sct-err-soft)', textColor: '#A81C24' }">{{ stage.stage }}</NTag>
           <span class="text-12px text-gray-500">自 {{ stage.stage_date }} 起 · {{ daysInStage }} 天</span>
         </div>
 
         <!-- 下一步卡片 -->
-        <div v-if="stage.next_node" class="rounded-8px border border-[#f0d9d9] bg-[#fdf5f5] p-10px">
+        <div v-if="stage.next_node" class="rounded-8px border border-[#f0d9d9] bg-[var(--sct-err-soft)] p-10px">
           <div class="text-12px font-bold text-[#A81C24]">下一步</div>
           <div class="mt-4px text-13px leading-relaxed">{{ stage.next_node }}</div>
           <div v-if="stage.next_due" class="mt-4px text-12px text-[#d97706]">预计 {{ stage.next_due }}</div>
@@ -63,7 +63,7 @@ function toggleMaterial(no: string) {
         <div>
           <div class="mb-6px text-13px font-bold">本阶段节点与材料（点击材料状态循环切换）</div>
           <div class="flex-col gap-8px">
-            <div v-for="n in stageNodes" :key="n.no" class="rounded-8px bg-[#faf8f4] p-8px">
+            <div v-for="n in stageNodes" :key="n.no" class="rounded-8px bg-[var(--sct-soft)] p-8px">
               <div class="text-12px font-bold">
                 <span class="text-[#A81C24]">{{ n.no }}</span>
                 {{ n.node }}
@@ -77,7 +77,7 @@ function toggleMaterial(no: string) {
                   :bordered="false"
                   class="cursor-pointer"
                   :color="{
-                    color: mat.status === '已归档' ? '#E3F2E9' : mat.status === '进行中' ? '#FCEFDC' : '#EEF1F5',
+                    color: mat.status === '已归档' ? 'var(--sct-ok-soft)' : mat.status === '进行中' ? 'var(--sct-warn-soft)' : '#EEF1F5',
                     textColor: mat.status === '已归档' ? '#3f9d63' : mat.status === '进行中' ? '#d97706' : '#64748b'
                   }"
                   @click="toggleMaterial(mat.no)"

@@ -89,7 +89,7 @@ const feeStatusType = computed(() => {
 
         <div v-if="devStage?.next_node">
           <div class="mb-6px text-13px font-bold">下一步</div>
-          <div class="rounded-8px bg-[#faf8f4] p-10px text-13px leading-relaxed">
+          <div class="rounded-8px bg-[var(--sct-soft)] p-10px text-13px leading-relaxed">
             {{ devStage.next_node }}
             <div v-if="devStage.next_due" class="mt-4px text-12px text-[#d97706]">预计：{{ devStage.next_due }}</div>
           </div>

@@ -53,7 +53,7 @@ const { isFullscreen, toggle } = useFullscreen();
       <ThemeSchemaSwitch
         :theme-schema="themeStore.themeScheme"
         :is-dark="themeStore.darkMode"
-        @switch="themeStore.toggleThemeScheme"
+        @switch="(e: MouseEvent) => themeStore.toggleThemeSchemeWithTransition(e)"
       />
       <ThemeButton />
       <UserAvatar />

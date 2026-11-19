@@ -5,6 +5,8 @@ export const themeSettings: App.Theme.ThemeSetting = {
   colourWeakness: false,
   recommendColor: false,
   // 主色改用墨色（中式简约：红仅作点睛/语义色，不再全局铺开）
+  // 深色模式下 primary 在主题 store 中按 preset 覆写（默认→靛蓝 #4F6EF7；纸感→亮朱砂）
+  themePreset: 'default' as UnionKey.ThemePreset,
   themeColor: '#2B2926',
   themeRadius: 6,
   otherColor: {
@@ -54,7 +56,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
     autoSelectFirstMenu: false
   },
   footer: {
-    visible: false,
+    visible: true,
     fixed: false,
     height: 48,
     right: true
@@ -70,7 +72,8 @@ export const themeSettings: App.Theme.ThemeSetting = {
     light: {
       colors: {
         container: 'rgb(255, 255, 255)',
-        layout: 'rgb(250, 248, 244)',
+        // 默认浅色背景参考 calendar-schedule：几乎纯白（原暖纸底移至纸感主题）
+        layout: 'rgb(251, 251, 252)',
         inverted: 'rgb(26, 26, 28)',
         'base-text': 'rgb(43, 43, 43)'
       },
@@ -82,9 +85,11 @@ export const themeSettings: App.Theme.ThemeSetting = {
     },
     dark: {
       colors: {
-        container: 'rgb(28, 28, 28)',
-        layout: 'rgb(18, 18, 18)',
-        'base-text': 'rgb(224, 224, 224)'
+        // 深色参考 stylekit dashboard-charts：近黑蓝底 + 深灰蓝卡
+        container: 'rgb(18, 22, 31)',
+        layout: 'rgb(11, 14, 20)',
+        inverted: 'rgb(22, 26, 36)',
+        'base-text': 'rgb(232, 234, 240)'
       }
     }
   }

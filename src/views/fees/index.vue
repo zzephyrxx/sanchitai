@@ -127,7 +127,7 @@ function feeColor(status?: Sct.FeeStatus): string {
     case '未在校':
       return '#c4c1ba';
     default:
-      return '#e7e4de';
+      return 'var(--sct-border)';
   }
 }
 
@@ -156,13 +156,13 @@ const owedBadges = computed(() => {
 
       <!-- 本月汇总 -->
       <div class="mb-14px flex flex-wrap gap-10px">
-        <div class="rounded-8px bg-[#faf8f4] px-12px py-8px text-13px">
+        <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
           本月应缴 <b class="text-[#A81C24]">{{ monthSummary.count }}</b> 人 · 合计 <b>{{ monthSummary.due }}</b> 元
         </div>
-        <div class="rounded-8px bg-[#faf8f4] px-12px py-8px text-13px">
+        <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
           已缴 <b style="color: #3f9d63">{{ monthSummary.paidCount }}</b> 人 · {{ monthSummary.paidAmount }} 元
         </div>
-        <div class="rounded-8px bg-[#faf8f4] px-12px py-8px text-13px">
+        <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
           欠缴 <b style="color: #d43030">{{ monthSummary.owed }}</b> 人
           <span v-if="monthSummary.owed" class="text-12px text-gray-500">（座位图已标红角标）</span>
         </div>
@@ -224,9 +224,9 @@ const owedBadges = computed(() => {
   padding: 6px 10px;
   font-size: 12px;
   font-weight: 600;
-  color: #52525b;
-  background: #faf8f4;
-  border: 1px solid #eeece7;
+  color: var(--sct-muted);
+  background: var(--sct-soft);
+  border: 1px solid var(--sct-border);
   text-align: center;
 }
 .fee-th--cur {
@@ -236,12 +236,12 @@ const owedBadges = computed(() => {
 .fee-td {
   padding: 6px 10px;
   font-size: 13px;
-  border: 1px solid #eeece7;
+  border: 1px solid var(--sct-border);
   text-align: center;
 }
 .fee-td--name {
   text-align: left;
-  color: #2b2b2b;
+  color: var(--sct-ink);
   white-space: nowrap;
 }
 .fee-cell {
@@ -250,9 +250,9 @@ const owedBadges = computed(() => {
   min-width: 64px;
 }
 .fee-cell:hover {
-  background: #faf8f4;
+  background: var(--sct-soft);
 }
 .fee-cell--cur {
-  background: #fdf9f9;
+  background: var(--sct-soft);
 }
 </style>
