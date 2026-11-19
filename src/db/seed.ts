@@ -5,7 +5,8 @@
 import seedJson from './seed/seed-data.json';
 import { db, getMeta, setMeta } from './db';
 
-const SEED_FLAG = 'seed_v1';
+const SEED_VERSION = 'v0.2.0';
+const SEED_FLAG = 'seed-flag';
 
 const SEED = seedJson as unknown as {
   members: Sct.Member[];
@@ -22,17 +23,10 @@ function withIdentity<T>(rows: T[]): (T & { identity: string })[] {
   return rows.map(r => ({ ...r, identity: 'secretary' }));
 }
 
-/** 启动时调用：库空则导入种子，并打标记 */
+/** 启动时调用：版本不符则 upsert 重播种（保留用户自增数据），打标记 */
 export async function ensureSeeded(): Promise<void> {
   const flag = await getMeta<string>(SEED_FLAG);
-  if (flag) return;
-
-  const memberCount = await db.members.count();
-  if (memberCount > 0) {
-    // 已有数据但无标记（老库）：跳过导入，避免覆盖
-    await setMeta(SEED_FLAG, 'skipped-existing');
-    return;
-  }
+  if (flag === SEED_VERSION) return;
 
   await db.transaction(
     'rw',
@@ -48,7 +42,7 @@ export async function ensureSeeded(): Promise<void> {
     }
   );
 
-  await setMeta(SEED_FLAG, new Date().toISOString());
+  await setMeta(SEED_FLAG, SEED_VERSION);
 }
 
 /** 重置为种子数据（设置页"重置演示数据"用） */

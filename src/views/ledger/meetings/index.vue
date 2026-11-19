@@ -118,6 +118,7 @@ async function writeDrafts() {
     return ev;
   });
   await Promise.all(rows.map(r => dbPutEvent(r)));
+  genExisting.value = true; // 写入后本学期即刻进入幂等锁定（A10）
   const skipMsg = skipped ? `，跳过 ${skipped} 条与既有排期重复的事项` : '';
   window.$message?.success(`已写入 ${rows.length} 条排期事项，可在台历查看${skipMsg}`);
   genShow.value = false;
@@ -128,12 +129,13 @@ function exportSchedule() {
   const header = ['序号', '日期', '周次', '事项', '类型', '地点', '主责人', '协助人', '备注'];
   const lines: string[] = [header.join(',')];
   meetingEvents.value.forEach((ev, i) => {
-    const weekOfMonth = Math.ceil(dayjs(ev.date).date() / 7);
+    // 学期第 N 周（自学期初起算）
+    const weekOfSemester = Math.floor(dayjs(ev.date).diff(dayjs(semester.value.start), 'day') / 7) + 1;
     lines.push(
       [
         String(i + 1),
         ev.date,
-        `第${weekOfMonth}周`,
+        `第${weekOfSemester}周`,
         ev.title,
         ev.kind ?? '',
         ev.location ?? '',
@@ -188,7 +190,8 @@ const listColumns = [
     title: '到会率',
     key: 'rate',
     width: 100,
-    render: (r: any) => (r.rate ? `${Math.round(r.rate.rate * 100)}%（${r.rate.present}/${r.rate.due}）` : '—')
+    render: (r: any) =>
+      r.status === '计划' || !r.rate ? '—' : `${Math.round(r.rate.rate * 100)}%（${r.rate.present}/${r.rate.due}）`
   },
   {
     title: '',

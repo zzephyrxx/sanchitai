@@ -32,6 +32,21 @@ const daysInStage = computed(() => {
 
 const timeline = computed(() => [...(stage.value?.timeline ?? [])].sort((a, b) => a.date.localeCompare(b.date)));
 
+/** 材料名归一：去掉括号补充说明，便于与节点库双向匹配 */
+function normName(name: string): string {
+  return name.split('（')[0].split('(')[0].trim();
+}
+
+function materialsOfNode(n: { materials: string[] }, stage: Sct.DevStage): Sct.DevMaterial[] {
+  const own = stage.materials ?? [];
+  return n.materials
+    .map(nm => {
+      const key = normName(nm);
+      return own.find(x => normName(x.name).includes(key) || key.includes(normName(x.name)));
+    })
+    .filter(Boolean) as Sct.DevMaterial[];
+}
+
 function toggleMaterial(no: string) {
   if (!stage.value) return;
   const materials = (stage.value.materials ?? []).map(m => {

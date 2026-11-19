@@ -22,11 +22,11 @@ export const MEMBER_TYPE_COLORS: Record<Sct.MemberType, string> = {
   正式党员: '#A81C24',
   预备党员: '#c05d63',
   发展对象: '#d97706',
-  积极分子: '#2080f0',
+  入党积极分子: '#2080f0',
   申请人: '#8a8f99'
 };
 
-export const MEMBER_TYPE_ORDER: Sct.MemberType[] = ['正式党员', '预备党员', '发展对象', '积极分子', '申请人'];
+export const MEMBER_TYPE_ORDER: Sct.MemberType[] = ['正式党员', '预备党员', '发展对象', '入党积极分子', '申请人'];
 
 /** 身份定义：v1 仅党支部书记可用，其余占位（数据互不打通） */
 export const IDENTITIES: Sct.IdentityOption[] = [

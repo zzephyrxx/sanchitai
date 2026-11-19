@@ -23,6 +23,15 @@ const show = computed({
   set: v => emit('update:show', v)
 });
 
+/** 实时事件：状态/字段变更即时反映（P2-3），重复实例展示时用投影日期 */
+const event = computed(() => {
+  if (!props.event) return null;
+  const baseId = props.event.id.includes('-occ-') ? props.event.id.split('-occ-')[0] : props.event.id;
+  const base = workStore.calEvents.find(e => e.id === baseId);
+  if (!base) return props.event;
+  return { ...base, ...(props.event.id !== baseId ? { date: props.event.date } : {}) };
+});
+
 const isRecurringInstance = computed(() => Boolean(props.event?.id.includes('-occ-')));
 const statusType = computed<'success' | 'default' | 'info' | 'warning'>(() => {
   switch (props.event?.status) {
@@ -50,19 +59,20 @@ const helperDisplay = computed(() => {
 });
 
 async function setStatus(status: Sct.EventStatus) {
-  if (!props.event) return;
-  const baseId = props.event.id.includes('-occ-') ? props.event.id.split('-occ-')[0] : props.event.id;
+  const target = props.event;
+  if (!target) return;
+  const baseId = target.id.includes('-occ-') ? target.id.split('-occ-')[0] : target.id;
   await workStore.setEventStatus(baseId, status);
   window.$message?.success(`已标记为「${status}」`);
-  show.value = false;
 }
 
 async function handleDelete() {
-  if (!props.event) return;
-  const baseId = props.event.id.includes('-occ-') ? props.event.id.split('-occ-')[0] : props.event.id;
+  const target = props.event;
+  if (!target) return;
+  const baseId = target.id.includes('-occ-') ? target.id.split('-occ-')[0] : target.id;
+  show.value = false; // 先关抽屉（P2-2：删除后不再显示已删事项）
   await workStore.deleteEvent(baseId);
   window.$message?.success('事项已删除');
-  show.value = false;
 }
 </script>
 
@@ -104,7 +114,7 @@ async function handleDelete() {
           <NButton size="small" type="primary" @click="setStatus('已完成')">标记完成</NButton>
           <NButton v-if="event.status !== '计划'" size="small" @click="setStatus('计划')">恢复计划</NButton>
           <NButton size="small" @click="setStatus('已取消')">取消事项</NButton>
-          <NPopconfirm @positive-click="handleDelete">
+          <NPopconfirm :key="event.id" @positive-click="handleDelete">
             <template #trigger>
               <NButton size="small" type="error" ghost>删除</NButton>
             </template>

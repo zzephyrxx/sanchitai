@@ -123,6 +123,10 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
   // ---------------- 人员 CRUD ----------------
   async function addMember(input: Partial<Sct.Member> & Pick<Sct.Member, 'name' | 'type'>) {
+    if (!input.name?.trim()) {
+      window.$message?.warning('姓名必填');
+      throw new Error('姓名必填');
+    }
     const id = input.id ?? `M${nanoid(6)}`;
     const row: Sct.Member = {
       code: id,

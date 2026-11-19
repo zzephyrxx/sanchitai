@@ -129,7 +129,7 @@ const yearStr = dayjs().format('YYYY');
 
 const overdueItems = computed(() =>
   workStore.devStages
-    .filter(d => d.next_due && d.next_due < todayStr && d.stage !== '正式党员')
+    .filter(d => d.next_due && d.next_due < todayStr)
     .map(d => ({
       text: `${workStore.memberName(d.member_id)}：${d.next_node ?? '下一步节点'}（应办 ${d.next_due}）`
     }))
@@ -363,7 +363,7 @@ const weekCategoryCount = computed(() => {
               </div>
             </div>
             <div class="rounded-12px p-10px" style="background: var(--sct-soft); border-left: 3px solid #2080f0">
-              <div class="mb-6px text-13px font-bold" style="color: #2080f0">今日与近 7 天（{{ weekItems.length }}）</div>
+              <div class="mb-6px text-13px font-bold" style="color: #2080f0">今日与近 7 天（{{ weekItems.length }}，含发展节点）</div>
               <div v-if="!weekItems.length" class="text-12px text-gray-400">未来一周无节点与会议</div>
               <div v-for="(it, i) in weekItems" :key="'w' + i" class="mb-4px text-12px leading-relaxed text-gray-600">
                 <span class="mr-4px inline-block rounded-2px px-3px py-1px text-10px font-bold" :style="{ background: '#2b292614', color: '#2b2926' }">{{ it.tag }}</span>

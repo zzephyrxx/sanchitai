@@ -107,7 +107,8 @@ onMounted(async () => {
 async function saveAcademy() {
   try {
     const { setMeta } = await import('@/db/db');
-    await setMeta('academy-flow', academyNodes.value);
+    // reactive proxy 不能直接进 IndexedDB（DataCloneError），须深拷贝
+    await setMeta('academy-flow', JSON.parse(JSON.stringify(academyNodes.value)));
     window.$message?.success('学院版流程已保存');
   } catch (err) {
     window.$message?.error(`保存失败：${(err as Error).message}`);

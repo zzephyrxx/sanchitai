@@ -207,7 +207,7 @@ const owedBadges = computed(() => {
           </tbody>
         </table>
       </div>
-      <div class="mt-8px text-12px text-gray-400">欠缴人员（{{ Object.keys(owedBadges).length }}）：{{ feeMembers.filter(m => owedBadges[m.id]).map(m => m.name).join('、') || '无' }}</div>
+      <div class="mt-8px text-12px text-gray-400">全期欠缴人员（含历史月份，共 {{ Object.keys(owedBadges).length }} 人）：{{ feeMembers.filter(m => owedBadges[m.id]).map(m => m.name).join('、') || '无' }}</div>
     </NCard>
   </div>
 </template>

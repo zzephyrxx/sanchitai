@@ -4,7 +4,7 @@
  * 字段与 docs/research/seed-data-draft.json 及 docs/design-plan.md §2 保持一致。
  */
 declare namespace Sct {
-  type MemberType = '正式党员' | '预备党员' | '发展对象' | '积极分子' | '申请人';
+  type MemberType = '正式党员' | '预备党员' | '发展对象' | '入党积极分子' | '申请人';
 
   type EventCategory =
     | '组织生活'

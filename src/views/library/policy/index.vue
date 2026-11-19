@@ -32,6 +32,7 @@ const BUILT_IN: PolicyCard[] = [
     id: 'p02',
     title: '党员发展硬时限',
     source: '《中国共产党发展党员工作细则》',
+    url: 'https://news.12371.cn/dydj/krdy/201401/t20140128_3344705.shtml',
     tags: ['发展党员'],
     points: [
       '积极分子培养考察期 ≥1 年（自确定之日起算）',
@@ -56,6 +57,7 @@ const BUILT_IN: PolicyCard[] = [
     id: 'p04',
     title: '组织生活会与民主评议',
     source: '《中国共产党支部工作条例（试行）》第十七、十八条',
+    url: 'https://www.idcpc.org.cn/zgzc/zcwj/201912/t20191216_106820.html',
     tags: ['组织生活'],
     points: [
       '组织生活会：每年至少 1 次，一般安排在第四季度',
@@ -67,6 +69,7 @@ const BUILT_IN: PolicyCard[] = [
     id: 'p05',
     title: '谈心谈话与支部设置',
     source: '《中国共产党支部工作条例（试行）》第十九、二十至二十一条',
+    url: 'https://www.idcpc.org.cn/zgzc/zcwj/201912/t20191216_106820.html',
     tags: ['谈心谈话', '组织建设'],
     points: [
       '支委之间、支委和党员之间、党员之间每年谈心谈话一般不少于 1 次',

@@ -46,8 +46,11 @@ const eventsService = createEventsServicePlugin();
 const dragAndDrop = createDragAndDropPlugin();
 const currentTime = createCurrentTimePlugin();
 
+const SYSTEM_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai';
+
 const calendarApp = createCalendar({
   locale: 'zh-CN',
+  timezone: SYSTEM_TZ,
   views: [createViewWeek(), createViewMonthGrid(), createViewMonthAgenda()],
   calendars: CATEGORY_CALENDARS,
   plugins: [eventsService, dragAndDrop, currentTime],
@@ -81,20 +84,19 @@ function baseIdOf(id: string) {
 }
 
 function displayTitle(ev: Sct.CalEvent): string {
-  const time = ev.start_time && ev.start_time !== ev.end_time ? `${ev.start_time} ` : '';
   const mergedTag = ev.merged_into ? '〔并入〕' : '';
-  return `${time}${mergedTag}${ev.title}`;
+  return `${mergedTag}${ev.title}`;
 }
 
 function toSxEvent(ev: Sct.CalEvent, baseId: string): CalendarEventExternal {
   const allDay = !ev.start_time || ev.start_time === ev.end_time;
   const start = allDay
     ? Temporal.PlainDate.from(ev.date)
-    : Temporal.ZonedDateTime.from(`${ev.date}T${ev.start_time}:00[Asia/Shanghai]`);
+    : Temporal.ZonedDateTime.from(`${ev.date}T${ev.start_time}:00[${SYSTEM_TZ}]`);
   const endTime = ev.end_time || ev.start_time || '01:00';
   const end = allDay
     ? Temporal.PlainDate.from(ev.date)
-    : Temporal.ZonedDateTime.from(`${ev.date}T${endTime}:00[Asia/Shanghai]`);
+    : Temporal.ZonedDateTime.from(`${ev.date}T${endTime}:00[${SYSTEM_TZ}]`);
 
   return {
     id: ev.id,
