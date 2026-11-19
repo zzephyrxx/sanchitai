@@ -1,0 +1,76 @@
+# Files (44 reviewable / 67 total)
+
+- mode: range
+- from: main
+- to: HEAD
+- merge_base: a944052ec52c0b146bf08230cc7b7a631ec6b747
+- total_insertions: 1940
+- total_deletions: 499
+
+  - `build/plugins/router.ts` [modified] +12/-7
+~~- `docs/design-v0.2.md` [added] +88/-0 (excluded: unsupported_ext)~~
+  - `index.html` [modified] +5/-0
+  - `package.json` [modified] +8/-0
+~~- `pnpm-lock.yaml` [modified] +150/-21 (excluded: default_path)~~
+~~- `src/assets/knowledge/k01.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k02.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k03.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k04.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k05.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k06.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k07.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k08.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k09.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k10.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k11.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k12.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k13.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k14.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k15.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k16.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k17.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k18.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k19.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k20.jpg` [binary] +0/-0 (excluded: binary)~~
+~~- `src/assets/knowledge/k21.jpg` [binary] +0/-0 (excluded: binary)~~
+  - `src/components/common/theme-schema-switch.vue` [modified] +7/-6
+  - `src/components/custom/app-lock-overlay.vue` [modified] +6/-6
+  - `src/constants/dev-nodes.ts` [modified] +31/-25
+  - `src/constants/knowledge-data.ts` [added] +36/-0
+  - `src/layouts/modules/global-footer/index.vue` [modified] +1/-3
+  - `src/layouts/modules/global-header/components/theme-button.vue` [modified] +1/-1
+  - `src/layouts/modules/global-header/index.vue` [modified] +1/-1
+  - `src/layouts/modules/theme-drawer/modules/appearance/modules/theme-schema.vue` [modified] +24/-3
+  - `src/locales/langs/en-us.ts` [modified] +12/-7
+  - `src/locales/langs/zh-cn.ts` [modified] +12/-7
+  - `src/plugins/assets.ts` [modified] +1/-0
+  - `src/router/elegant/imports.ts` [modified] +9/-6
+  - `src/router/elegant/routes.ts` [modified] +104/-50
+  - `src/router/elegant/transform.ts` [modified] +11/-6
+  - `src/store/modules/theme/index.ts` [modified] +104/-4
+  - `src/store/modules/work-data/index.ts` [modified] +1/-1
+  - `src/styles/css/sct-theme.css` [added] +92/-0
+  - `src/theme/settings.ts` [modified] +10/-5
+  - `src/typings/app.d.ts` [modified] +2/-0
+  - `src/typings/elegant-router.d.ts` [modified] +23/-18
+  - `src/typings/union-key.d.ts` [modified] +3/-0
+  - `src/utils/handover.ts` [added] +75/-0
+  - `src/utils/recurrence.ts` [modified] +1/-1
+  - `src/views/calendar/index.vue` [modified] +142/-106
+  - `src/views/calendar/modules/event-detail-drawer.vue` [modified] +3/-3
+  - `src/views/calendar/modules/event-edit-modal.vue` [modified] +1/-1
+  - `src/views/dashboard/index.vue` [modified] +275/-163
+  - `src/views/ledger/development/index.vue` [renamed] +9/-9
+  - `src/views/ledger/development/modules/dev-detail.vue` [renamed] +4/-4
+  - `src/views/ledger/fees/index.vue` [renamed] +11/-11
+  - `src/views/ledger/meetings/index.vue` [renamed] +2/-2
+  - `src/views/ledger/meetings/modules/meeting-detail.vue` [renamed] +2/-2
+  - `src/views/ledger/members/index.vue` [renamed] +0/-0
+  - `src/views/ledger/members/modules/member-card.vue` [renamed] +1/-1
+  - `src/views/ledger/members/modules/roster-board.vue` [renamed] +7/-7
+  - `src/views/ledger/talks/index.vue` [renamed] +2/-2
+  - `src/views/library/docs/index.vue` [renamed] +4/-4
+  - `src/views/library/knowledge/index.vue` [added] +90/-0
+  - `src/views/library/policy/index.vue` [added] +186/-0
+  - `src/views/settings/index.vue` [modified] +45/-6
+  - `src/views/structure/index.vue` [added] +326/-0

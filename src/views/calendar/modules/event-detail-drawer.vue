@@ -24,7 +24,7 @@ const show = computed({
 });
 
 const isRecurringInstance = computed(() => Boolean(props.event?.id.includes('-occ-')));
-const statusType = computed(() => {
+const statusType = computed<'success' | 'default' | 'info' | 'warning'>(() => {
   switch (props.event?.status) {
     case '已完成':
       return 'success';
@@ -79,7 +79,7 @@ async function handleDelete() {
             {{ event.category }}
           </NTag>
           <NTag v-if="event.kind" size="small" :bordered="false">{{ event.kind }}</NTag>
-          <NTag :type="statusType as any" size="small">{{ event.status }}</NTag>
+          <NTag :type="statusType" size="small">{{ event.status }}</NTag>
           <NTag v-if="event.merged_into" size="small" type="info" :bordered="false">已并入其他会议</NTag>
         </div>
 

@@ -105,9 +105,13 @@ onMounted(async () => {
 });
 
 async function saveAcademy() {
-  const { setMeta } = await import('@/db/db');
-  await setMeta('academy-flow', academyNodes.value);
-  window.$message?.success('学院版流程已保存');
+  try {
+    const { setMeta } = await import('@/db/db');
+    await setMeta('academy-flow', academyNodes.value);
+    window.$message?.success('学院版流程已保存');
+  } catch (err) {
+    window.$message?.error(`保存失败：${(err as Error).message}`);
+  }
 }
 
 function addAcademyNode() {
@@ -189,7 +193,6 @@ function removeAcademyNode(id: string) {
 
       <!-- ============ 发展流程图 ============ -->
       <div v-if="flowTab === 'flow'">
-        <NTabs v-model:value="flowTab" type="bar" size="small" class="hidden" />
         <div class="mb-12px">
           <NTabs v-model:value="flowMode" type="segment" size="small" class="w-260px">
             <NTab name="standard" tab="标准流程（重绘）" />

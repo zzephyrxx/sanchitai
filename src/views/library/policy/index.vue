@@ -1,11 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { saveAs } from 'file-saver';
-import { useWorkDataStore } from '@/store/modules/work-data';
 
 defineOptions({ name: 'PolicyPage' });
-
-const workStore = useWorkDataStore();
 
 /** 内置政策要点卡（结构化摘要；全文以导入文件为准） */
 interface PolicyCard {
@@ -93,7 +90,6 @@ interface PolicyFile {
 const importedFiles = ref<PolicyFile[]>([]);
 const fileInput = ref<HTMLInputElement>();
 
-const workStoreAny = workStore as unknown as { docTemplates: unknown[] };
 
 async function onPick(e: Event) {
   const input = e.target as HTMLInputElement;
@@ -115,9 +111,13 @@ async function onPick(e: Event) {
 }
 
 async function saveToDb(row: PolicyFile) {
-  const { db } = await import('@/db/db');
-  const buf = await row.blob.arrayBuffer();
-  await db.meta.put({ key: `policy-file-${row.id}`, value: { meta: { ...row, blob: undefined }, data: Array.from(new Uint8Array(buf)) } });
+  try {
+    const { db } = await import('@/db/db');
+    const buf = await row.blob.arrayBuffer();
+    await db.meta.put({ key: `policy-file-${row.id}`, value: { meta: { ...row, blob: undefined }, data: Array.from(new Uint8Array(buf)) } });
+  } catch (err) {
+    window.$message?.error(`文件「${row.name}」存储失败：${(err as Error).message}`);
+  }
 }
 
 async function download(row: PolicyFile) {

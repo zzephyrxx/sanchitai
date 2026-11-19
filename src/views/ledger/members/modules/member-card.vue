@@ -44,7 +44,7 @@ const unpaidMonths = computed(() =>
     : []
 );
 
-const feeStatusType = computed(() => {
+const feeStatusType = computed<'success' | 'error' | 'default' | 'warning'>(() => {
   switch (latestFee.value?.status) {
     case '已缴':
       return 'success';
@@ -76,7 +76,7 @@ const feeStatusType = computed(() => {
             <template v-if="devStage?.stage_date">（{{ devStage.stage_date }} 起）</template>
           </NDescriptionsItem>
           <NDescriptionsItem label="最近缴费状态">
-            <NTag v-if="latestFee" :type="feeStatusType as any" size="small">
+            <NTag v-if="latestFee" :type="feeStatusType" size="small">
               {{ latestFee.year_month }} {{ latestFee.status }}
             </NTag>
             <span v-else class="text-gray-400">无记录</span>
