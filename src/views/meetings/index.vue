@@ -44,7 +44,7 @@ const meetingEvents = computed(() => {
 });
 
 function baseIdOf(id: string) {
-  return id.includes('~occ~') ? id.split('~occ~')[0] : id;
+  return id.includes('-occ-') ? id.split('-occ-')[0] : id;
 }
 
 // ---------------- 频次统计 ----------------

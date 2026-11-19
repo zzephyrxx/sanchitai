@@ -144,7 +144,7 @@ async function handleSave() {
   };
 
   if (isEdit.value && props.event) {
-    const baseId = props.event.id.includes('~occ~') ? props.event.id.split('~occ~')[0] : props.event.id;
+    const baseId = props.event.id.includes('-occ-') ? props.event.id.split('-occ-')[0] : props.event.id;
     await workStore.updateEvent(baseId, payload);
     window.$message?.success('事项已更新');
     emit('saved', baseId);

@@ -23,7 +23,7 @@ const show = computed({
   set: v => emit('update:show', v)
 });
 
-const isRecurringInstance = computed(() => Boolean(props.event?.id.includes('~occ~')));
+const isRecurringInstance = computed(() => Boolean(props.event?.id.includes('-occ-')));
 const statusType = computed(() => {
   switch (props.event?.status) {
     case '已完成':
@@ -51,7 +51,7 @@ const helperDisplay = computed(() => {
 
 async function setStatus(status: Sct.EventStatus) {
   if (!props.event) return;
-  const baseId = props.event.id.includes('~occ~') ? props.event.id.split('~occ~')[0] : props.event.id;
+  const baseId = props.event.id.includes('-occ-') ? props.event.id.split('-occ-')[0] : props.event.id;
   await workStore.setEventStatus(baseId, status);
   window.$message?.success(`已标记为「${status}」`);
   show.value = false;
@@ -59,7 +59,7 @@ async function setStatus(status: Sct.EventStatus) {
 
 async function handleDelete() {
   if (!props.event) return;
-  const baseId = props.event.id.includes('~occ~') ? props.event.id.split('~occ~')[0] : props.event.id;
+  const baseId = props.event.id.includes('-occ-') ? props.event.id.split('-occ-')[0] : props.event.id;
   await workStore.deleteEvent(baseId);
   window.$message?.success('事项已删除');
   show.value = false;

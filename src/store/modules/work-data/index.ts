@@ -78,7 +78,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       borderColor: 'transparent',
       extendedProps: {
         event: ev,
-        recurring: Boolean(calEvents.value.find(base => ev.id.startsWith(`${base.id}~occ~`)))
+        recurring: Boolean(calEvents.value.find(base => ev.id.startsWith(`${base.id}-occ-`)))
       }
     }));
     success(list);

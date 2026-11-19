@@ -113,7 +113,7 @@ export function expandRecurrence(event: Sct.CalEvent, rangeStart: string, rangeE
     const instance: Sct.CalEvent = {
       ...event,
       ...((override ?? {}) as Partial<Sct.CalEvent>),
-      id: `${event.id}~occ~${date}`,
+      id: `${event.id}-occ-${date}`,
       date,
       recurrence: null // 投影实例本身不再带规则
     };
