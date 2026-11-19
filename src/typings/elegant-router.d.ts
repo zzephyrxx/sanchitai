@@ -22,14 +22,19 @@ declare module "@elegant-router/types" {
     "500": "/500";
     "calendar": "/calendar";
     "dashboard": "/dashboard";
-    "development": "/development";
-    "docs": "/docs";
-    "fees": "/fees";
     "iframe-page": "/iframe-page/:url";
-    "meetings": "/meetings";
-    "members": "/members";
+    "ledger": "/ledger";
+    "ledger_development": "/ledger/development";
+    "ledger_fees": "/ledger/fees";
+    "ledger_meetings": "/ledger/meetings";
+    "ledger_members": "/ledger/members";
+    "ledger_talks": "/ledger/talks";
+    "library": "/library";
+    "library_docs": "/library/docs";
+    "library_knowledge": "/library/knowledge";
+    "library_policy": "/library/policy";
     "settings": "/settings";
-    "talks": "/talks";
+    "structure": "/structure";
   };
 
   /**
@@ -66,14 +71,11 @@ declare module "@elegant-router/types" {
     | "500"
     | "calendar"
     | "dashboard"
-    | "development"
-    | "docs"
-    | "fees"
     | "iframe-page"
-    | "meetings"
-    | "members"
+    | "ledger"
+    | "library"
     | "settings"
-    | "talks"
+    | "structure"
   >;
 
   /**
@@ -96,13 +98,16 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "calendar"
     | "dashboard"
-    | "development"
-    | "docs"
-    | "fees"
-    | "meetings"
-    | "members"
+    | "ledger_development"
+    | "ledger_fees"
+    | "ledger_meetings"
+    | "ledger_members"
+    | "ledger_talks"
+    | "library_docs"
+    | "library_knowledge"
+    | "library_policy"
     | "settings"
-    | "talks"
+    | "structure"
   >;
 
   /**

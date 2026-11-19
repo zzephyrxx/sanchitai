@@ -225,14 +225,19 @@ const local: App.I18n.Schema = {
     500: '服务器错误',
     'iframe-page': '外链页面',
     calendar: '台历',
-    members: '人员',
-    meetings: '三会一课',
-    development: '发展台账',
-    fees: '党费台账',
-    talks: '谈心谈话',
-    docs: '材料库',
     dashboard: '统计总览',
-    settings: '设置'
+    settings: '设置',
+    ledger: '党务台账',
+    ledger_members: '人员',
+    ledger_meetings: '三会一课',
+    ledger_development: '发展台账',
+    ledger_fees: '党费台账',
+    ledger_talks: '谈心谈话',
+    library: '党务资源',
+    library_knowledge: '知识库',
+    library_policy: '政策文件',
+    library_docs: '材料库',
+    structure: '组织与流程'
   },
   page: {
     login: {

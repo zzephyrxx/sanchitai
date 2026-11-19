@@ -1,14 +1,42 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import dayjs from 'dayjs';
 import { saveAs } from 'file-saver';
 import { db, exportBackup, importBackup, pushBackupRing, listBackupRing, clearAllData, type BackupShape } from '@/db/db';
 import { resetToSeed } from '@/db/seed';
 import { useAppLockStore, LOCK_QUESTIONS } from '@/store/modules/applock';
+import { buildHandoverHtml } from '@/utils/handover';
 
 defineOptions({ name: 'SettingsPage' });
 
 const appLock = useAppLockStore();
-const APP_VERSION = 'v0.1.0';
+const APP_VERSION = 'v0.2.0';
+
+// ---------------- 一键交接包 ----------------
+const handoverBusy = ref(false);
+
+async function exportHandoverData() {
+  handoverBusy.value = true;
+  try {
+    const shape = await exportBackup();
+    saveAs(new Blob([JSON.stringify(shape, null, 2)], { type: 'application/json;charset=utf-8' }), '交接数据包.json');
+    window.$message?.success('交接数据包已导出（接任人通过「从备份恢复」导入）');
+  } finally {
+    handoverBusy.value = false;
+  }
+}
+
+async function exportHandoverDoc() {
+  handoverBusy.value = true;
+  try {
+    const shape = await exportBackup();
+    const html = buildHandoverHtml(shape, '智感硕博党支部（演示）');
+    saveAs(new Blob([html], { type: 'text/html;charset=utf-8' }), `支部工作交接文档_${dayjs().format('YYYYMMDD')}.html`);
+    window.$message?.success('交接文档已导出（浏览器/Word 打开即可打印）');
+  } finally {
+    handoverBusy.value = false;
+  }
+}
 
 // ---------------- 应用锁 ----------------
 const lockSetupShow = ref(false);
@@ -200,6 +228,19 @@ onMounted(listSnapshots);
     </NCard>
 
     <div class="flex flex-col gap-14px">
+      <!-- 一键交接 -->
+      <NCard :bordered="false" title="一键交接">
+        <NSpace vertical size="large">
+          <div class="text-13px leading-relaxed text-gray-500">
+            离任交接两件套：①「交接数据包」= 全量台账 JSON，接任人导入即接续；②「交接文档」= 自动生成的可打印文档（任期大事记 / 待办 / 发展节点 / 党费欠缴 / 台账摘要 / 交接说明）。
+          </div>
+          <div class="flex gap-8px">
+            <NButton type="primary" size="small" :loading="handoverBusy" @click="exportHandoverData">导出交接数据包</NButton>
+            <NButton size="small" :loading="handoverBusy" @click="exportHandoverDoc">生成交接文档</NButton>
+          </div>
+        </NSpace>
+      </NCard>
+
       <!-- 应用锁 -->
       <NCard :bordered="false" title="应用锁">
         <NSpace vertical size="large">
@@ -241,13 +282,11 @@ onMounted(listSnapshots);
       <NCard :bordered="false" title="关于三尺台">
         <NSpace vertical size="large">
           <div class="text-13px leading-relaxed text-gray-600">
-            「三尺台」——学工个人离线工作台（党支部书记 · v1）。主视图台历，配套三会一课排期、党员发展台账、党费台账、谈心谈话与材料库。数据纯本地，无账号、无网络请求。
+            学工工作平台（v0.2.0）——党支部书记个人离线工作台。主视图台历，配套三会一课排期、党员发展台账、党费台账、谈心谈话、知识库与政策文件库。数据纯本地，无账号、无网络请求。
           </div>
           <NDescriptions :column="1" size="small" label-placement="left" bordered>
             <NDescriptionsItem label="版本">{{ APP_VERSION }}</NDescriptionsItem>
-            <NDescriptionsItem label="技术底座">soybean-admin v2.3.0（Vue3 + Vite + Naive UI + UnoCSS，MIT）</NDescriptionsItem>
-            <NDescriptionsItem label="设计参考">classroom-workbench（座位图交互模式借鉴，代码原创，遵循其非商用许可仅作个人学习使用）</NDescriptionsItem>
-            <NDescriptionsItem label="算法借鉴">super-productivity（重复日程投影/本地备份环形缓冲思路，MIT）</NDescriptionsItem>
+            <NDescriptionsItem label="第三方开源组件">Vue 3 · Naive UI · Schedule-X · ECharts · Dexie · Tauri（MIT / Apache-2.0）</NDescriptionsItem>
             <NDescriptionsItem label="隐私声明">默认不采集身份证号；手机号为选填敏感字段；导出报表不含敏感列</NDescriptionsItem>
           </NDescriptions>
         </NSpace>

@@ -168,14 +168,19 @@ const routeMap: RouteMap = {
   "500": "/500",
   "calendar": "/calendar",
   "dashboard": "/dashboard",
-  "development": "/development",
-  "docs": "/docs",
-  "fees": "/fees",
   "iframe-page": "/iframe-page/:url",
-  "meetings": "/meetings",
-  "members": "/members",
+  "ledger": "/ledger",
+  "ledger_development": "/ledger/development",
+  "ledger_fees": "/ledger/fees",
+  "ledger_meetings": "/ledger/meetings",
+  "ledger_members": "/ledger/members",
+  "ledger_talks": "/ledger/talks",
+  "library": "/library",
+  "library_docs": "/library/docs",
+  "library_knowledge": "/library/knowledge",
+  "library_policy": "/library/policy",
   "settings": "/settings",
-  "talks": "/talks"
+  "structure": "/structure"
 };
 
 /**

@@ -19,14 +19,19 @@ export function setupElegantRouter() {
       /** 三尺台菜单图标（lucide 现代线条集，离线注册于 plugins/iconify.ts） */
       const routeIcons: Partial<Record<RouteKey, string>> = {
         calendar: 'lucide:calendar-days',
-        members: 'lucide:users-round',
-        meetings: 'lucide:presentation',
-        development: 'lucide:route',
-        fees: 'lucide:coins',
-        talks: 'lucide:messages-square',
-        docs: 'lucide:folder-open',
         dashboard: 'lucide:layout-dashboard',
-        settings: 'lucide:settings-2'
+        settings: 'lucide:settings-2',
+        ledger: 'lucide:briefcase-business',
+        ledger_members: 'lucide:users-round',
+        ledger_meetings: 'lucide:presentation',
+        ledger_development: 'lucide:route',
+        ledger_fees: 'lucide:coins',
+        ledger_talks: 'lucide:messages-square',
+        library: 'lucide:library-big',
+        library_knowledge: 'lucide:graduation-cap',
+        library_policy: 'lucide:landmark',
+        library_docs: 'lucide:folder-open',
+        structure: 'lucide:network'
       };
 
       const meta: Partial<RouteMeta> = {

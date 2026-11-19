@@ -60,36 +60,6 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
-    name: 'development',
-    path: '/development',
-    component: 'layout.base$view.development',
-    meta: {
-      title: 'development',
-      i18nKey: 'route.development',
-      icon: 'lucide:route'
-    }
-  },
-  {
-    name: 'docs',
-    path: '/docs',
-    component: 'layout.base$view.docs',
-    meta: {
-      title: 'docs',
-      i18nKey: 'route.docs',
-      icon: 'lucide:folder-open'
-    }
-  },
-  {
-    name: 'fees',
-    path: '/fees',
-    component: 'layout.base$view.fees',
-    meta: {
-      title: 'fees',
-      i18nKey: 'route.fees',
-      icon: 'lucide:coins'
-    }
-  },
-  {
     name: 'iframe-page',
     path: '/iframe-page/:url',
     component: 'layout.base$view.iframe-page',
@@ -103,24 +73,108 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
-    name: 'meetings',
-    path: '/meetings',
-    component: 'layout.base$view.meetings',
+    name: 'ledger',
+    path: '/ledger',
+    component: 'layout.base',
     meta: {
-      title: 'meetings',
-      i18nKey: 'route.meetings',
-      icon: 'lucide:presentation'
-    }
+      title: 'ledger',
+      i18nKey: 'route.ledger',
+      icon: 'lucide:briefcase-business'
+    },
+    children: [
+      {
+        name: 'ledger_development',
+        path: '/ledger/development',
+        component: 'view.ledger_development',
+        meta: {
+          title: 'ledger_development',
+          i18nKey: 'route.ledger_development',
+          icon: 'lucide:route'
+        }
+      },
+      {
+        name: 'ledger_fees',
+        path: '/ledger/fees',
+        component: 'view.ledger_fees',
+        meta: {
+          title: 'ledger_fees',
+          i18nKey: 'route.ledger_fees',
+          icon: 'lucide:coins'
+        }
+      },
+      {
+        name: 'ledger_meetings',
+        path: '/ledger/meetings',
+        component: 'view.ledger_meetings',
+        meta: {
+          title: 'ledger_meetings',
+          i18nKey: 'route.ledger_meetings',
+          icon: 'lucide:presentation'
+        }
+      },
+      {
+        name: 'ledger_members',
+        path: '/ledger/members',
+        component: 'view.ledger_members',
+        meta: {
+          title: 'ledger_members',
+          i18nKey: 'route.ledger_members',
+          icon: 'lucide:users-round'
+        }
+      },
+      {
+        name: 'ledger_talks',
+        path: '/ledger/talks',
+        component: 'view.ledger_talks',
+        meta: {
+          title: 'ledger_talks',
+          i18nKey: 'route.ledger_talks',
+          icon: 'lucide:messages-square'
+        }
+      }
+    ]
   },
   {
-    name: 'members',
-    path: '/members',
-    component: 'layout.base$view.members',
+    name: 'library',
+    path: '/library',
+    component: 'layout.base',
     meta: {
-      title: 'members',
-      i18nKey: 'route.members',
-      icon: 'lucide:users-round'
-    }
+      title: 'library',
+      i18nKey: 'route.library',
+      icon: 'lucide:library-big'
+    },
+    children: [
+      {
+        name: 'library_docs',
+        path: '/library/docs',
+        component: 'view.library_docs',
+        meta: {
+          title: 'library_docs',
+          i18nKey: 'route.library_docs',
+          icon: 'lucide:folder-open'
+        }
+      },
+      {
+        name: 'library_knowledge',
+        path: '/library/knowledge',
+        component: 'view.library_knowledge',
+        meta: {
+          title: 'library_knowledge',
+          i18nKey: 'route.library_knowledge',
+          icon: 'lucide:graduation-cap'
+        }
+      },
+      {
+        name: 'library_policy',
+        path: '/library/policy',
+        component: 'view.library_policy',
+        meta: {
+          title: 'library_policy',
+          i18nKey: 'route.library_policy',
+          icon: 'lucide:landmark'
+        }
+      }
+    ]
   },
   {
     name: 'settings',
@@ -133,13 +187,13 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
-    name: 'talks',
-    path: '/talks',
-    component: 'layout.base$view.talks',
+    name: 'structure',
+    path: '/structure',
+    component: 'layout.base$view.structure',
     meta: {
-      title: 'talks',
-      i18nKey: 'route.talks',
-      icon: 'lucide:messages-square'
+      title: 'structure',
+      i18nKey: 'route.structure',
+      icon: 'lucide:network'
     }
   }
 ];

@@ -229,14 +229,19 @@ const local: App.I18n.Schema = {
     500: 'Server Error',
     'iframe-page': 'Iframe',
     calendar: 'Calendar',
-    members: 'Members',
-    meetings: 'Meetings',
-    development: 'Development',
-    fees: 'Fees',
-    talks: 'Talks',
-    docs: 'Docs',
     dashboard: 'Dashboard',
-    settings: 'Settings'
+    settings: 'Settings',
+    ledger: 'Ledger',
+    ledger_members: 'Members',
+    ledger_meetings: 'Meetings',
+    ledger_development: 'Development',
+    ledger_fees: 'Fees',
+    ledger_talks: 'Talks',
+    library: 'Resources',
+    library_knowledge: 'Knowledge',
+    library_policy: 'Policy',
+    library_docs: 'Docs',
+    structure: 'Org & Flow'
   },
   page: {
     login: {
