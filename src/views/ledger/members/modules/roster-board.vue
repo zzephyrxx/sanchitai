@@ -157,9 +157,21 @@ function cellClass(x: number, y: number) {
   return {
     'roster-cell': true,
     'roster-cell--empty': !member,
+    'roster-cell--empty-editable': !member && props.editable,
     'roster-cell--over': Boolean(isOver),
     'roster-cell--picked': Boolean(isPicked)
   };
+}
+
+function onCellClick(x: number, y: number) {
+  const member = seatedMap.value.get(cellKey(x, y));
+  if (member) {
+    if (!props.editable) {
+      emit('open', member.id);
+    }
+    return;
+  }
+  onEmptyClick(x, y);
 }
 
 onBeforeUnmount(() => {
@@ -170,9 +182,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="roster-wrap">
-    <!-- 讲台 -->
-    <div class="roster-podium">讲台 / 主持位</div>
-
     <div class="roster-grid" :style="gridStyle">
       <template v-for="y in map.grid.rows" :key="`row-${y}`">
         <div
@@ -181,7 +190,7 @@ onBeforeUnmount(() => {
           :data-cell="`${x}-${y}`"
           :class="cellClass(x, y)"
           @pointerdown="onCellPointerDown($event, x, y)"
-          @click.stop="!seatedMap.get(cellKey(x, y)) && onEmptyClick(x, y)"
+          @click.stop="onCellClick(x, y)"
         >
           <template v-if="seatedMap.get(cellKey(x, y))">
             <NPopover trigger="hover" placement="top" :show-arrow="false" style="padding: 10px 12px">
@@ -209,7 +218,7 @@ onBeforeUnmount(() => {
               </div>
             </NPopover>
           </template>
-          <template v-else>
+          <template v-else-if="editable">
             <span class="roster-cell__plus">＋</span>
           </template>
         </div>
@@ -241,24 +250,13 @@ onBeforeUnmount(() => {
 .roster-wrap {
   user-select: none;
 }
-.roster-podium {
-  width: 220px;
-  margin: 0 auto 16px;
-  padding: 6px 0;
-  text-align: center;
-  font-size: 12px;
-  color: #a1a1aa;
-  background: repeating-linear-gradient(45deg, var(--sct-soft), var(--sct-soft) 6px, var(--sct-soft) 6px, var(--sct-soft) 12px);
-  border: 1px dashed #d6d3cd;
-  border-radius: 6px;
-}
 .roster-grid {
   display: grid;
 }
 .roster-cell {
   position: relative;
   padding: 8px 10px;
-  background: #fff;
+  background: var(--sct-container);
   border: 1px solid var(--sct-border);
   border-radius: 8px;
   cursor: pointer;
@@ -271,8 +269,12 @@ onBeforeUnmount(() => {
   background: transparent;
   border-style: dashed;
   color: #c4c1ba;
+  cursor: default;
 }
-.roster-cell--empty:hover {
+.roster-cell--empty-editable {
+  cursor: pointer;
+}
+.roster-cell--empty-editable:hover {
   border-color: #a81c24;
   color: #a81c24;
 }

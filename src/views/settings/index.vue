@@ -1,16 +1,40 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { saveAs } from 'file-saver';
 import { db, exportBackup, importBackup, pushBackupRing, listBackupRing, clearAllData, type BackupShape } from '@/db/db';
 import { resetToSeed } from '@/db/seed';
 import { useAppLockStore, LOCK_QUESTIONS } from '@/store/modules/applock';
+import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 import { buildHandoverHtml } from '@/utils/handover';
 
 defineOptions({ name: 'SettingsPage' });
 
 const appLock = useAppLockStore();
-const APP_VERSION = 'v0.2.0';
+const workStore = useWorkDataStore();
+const { bi } = useSctI18n();
+const APP_VERSION = 'v0.2.3';
+
+// ---------------- 支部名称设置 ----------------
+const branchNameInput = ref('');
+watch(
+  () => workStore.branchName,
+  val => {
+    branchNameInput.value = val;
+  },
+  { immediate: true }
+);
+
+async function saveBranchNameSetting() {
+  const clean = branchNameInput.value.trim();
+  if (!clean) {
+    window.$message?.warning('请输入党支部名称');
+    return;
+  }
+  await workStore.setBranchName(clean);
+  window.$message?.success('党支部名称已保存');
+}
 
 // ---------------- 一键交接包 ----------------
 const handoverBusy = ref(false);
@@ -30,7 +54,7 @@ async function exportHandoverDoc() {
   handoverBusy.value = true;
   try {
     const shape = await exportBackup();
-    const html = buildHandoverHtml(shape, '智感硕博党支部（演示）');
+    const html = buildHandoverHtml(shape, workStore.branchName);
     saveAs(new Blob([html], { type: 'text/html;charset=utf-8' }), `支部工作交接文档_${dayjs().format('YYYYMMDD')}.html`);
     window.$message?.success('交接文档已导出（浏览器/Word 打开即可打印）');
   } finally {
@@ -201,118 +225,249 @@ onMounted(listSnapshots);
 <template>
   <div class="grid grid-cols-1 gap-14px lg:grid-cols-2">
     <!-- 备份与恢复 -->
-    <NCard :bordered="false" title="备份与恢复">
+    <NCard :bordered="false" :title="bi('备份与恢复', 'Backup & Restore')">
       <NSpace vertical size="large">
         <div class="text-13px leading-relaxed text-gray-500">
-          数据 100% 存于本机浏览器（IndexedDB）。换机/重装前请导出备份文件；导入备份会先自动快照当前数据，可随时回退。
+          {{
+            bi(
+              '数据 100% 存于本机浏览器（IndexedDB）。换机/重装前请导出备份文件；导入备份会先自动快照当前数据，可随时回退。',
+              'Data is 100% stored locally in browser IndexedDB. Export a JSON backup before migrating; importing automatically creates a snapshot first.'
+            )
+          }}
         </div>
         <div class="flex gap-8px">
-          <NButton type="primary" @click="handleExport">一键备份（导出 JSON）</NButton>
-          <NButton :loading="restoring" @click="pickFile">从备份恢复…</NButton>
+          <NButton type="primary" @click="handleExport">
+            <template #icon><SvgIcon icon="lucide:download" /></template>
+            {{ bi('一键备份（导出 JSON）', 'One-Click Backup (Export JSON)') }}
+          </NButton>
+          <NButton :loading="restoring" secondary @click="pickFile">
+            <template #icon><SvgIcon icon="lucide:upload" /></template>
+            {{ bi('从备份恢复…', 'Restore from Backup…') }}
+          </NButton>
           <input ref="fileInput" type="file" accept=".json,application/json" class="hidden" @change="handleFileChange" />
         </div>
 
-        <NDivider title-placement="left" style="font-size: 13px">自动快照（环形 5 份）</NDivider>
+        <NDivider title-placement="left" style="font-size: 13px">
+          {{ bi('自动快照（环形 5 份）', 'Auto Snapshots (Ring of 5)') }}
+        </NDivider>
         <div class="flex items-center gap-8px">
-          <NButton size="small" @click="createSnapshot">创建快照</NButton>
-          <NButton size="small" @click="listSnapshots">刷新</NButton>
+          <NButton size="small" secondary @click="createSnapshot">
+            <template #icon><SvgIcon icon="lucide:camera" /></template>
+            {{ bi('创建快照', 'Create Snapshot') }}
+          </NButton>
+          <NButton size="small" secondary @click="listSnapshots">
+            <template #icon><SvgIcon icon="lucide:refresh-cw" /></template>
+            {{ bi('刷新', 'Refresh') }}
+          </NButton>
         </div>
-        <div v-if="!snapshots.length" class="text-12px text-gray-400">暂无快照</div>
+        <div v-if="!snapshots.length" class="text-12px text-gray-400">{{ bi('暂无快照', 'No snapshots yet') }}</div>
         <div v-for="s in snapshots" :key="s.key" class="flex items-center justify-between rounded-8px bg-[var(--sct-soft)] px-10px py-8px">
           <div>
             <div class="text-13px font-bold">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
             <div class="text-11px text-gray-500">{{ s.counts }}</div>
           </div>
-          <NButton size="tiny" @click="restoreSnapshot(s.key)">恢复此快照</NButton>
+          <NButton size="tiny" secondary type="primary" @click="restoreSnapshot(s.key)">
+            <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+            {{ bi('恢复此快照', 'Restore') }}
+          </NButton>
         </div>
       </NSpace>
     </NCard>
 
     <div class="flex flex-col gap-14px">
+      <!-- 支部基本信息 -->
+      <NCard :bordered="false" :title="bi('支部基本信息', 'Party Branch Profile')">
+        <NSpace vertical size="medium">
+          <div class="text-13px leading-relaxed text-gray-500">
+            {{
+              bi(
+                '设置本工作台所属党支部名称。修改后将实时显示在顶栏右上角，并同步应用到交接文档、签到表及政治生日贺卡落款。',
+                'Set the current Party Branch name. Displayed in the top header and synced to handover docs, sign-in sheets, and birthday cards.'
+              )
+            }}
+          </div>
+          <div class="flex items-center gap-8px">
+            <NInput
+              v-model:value="branchNameInput"
+              :placeholder="bi('请输入党支部全称，如：计算机学院第一研究生党支部', 'Enter full Party Branch name…')"
+              maxlength="40"
+              @keyup.enter="saveBranchNameSetting"
+            />
+            <NButton type="primary" @click="saveBranchNameSetting">
+              <template #icon><SvgIcon icon="lucide:check" /></template>
+              {{ bi('保存名称', 'Save Name') }}
+            </NButton>
+          </div>
+        </NSpace>
+      </NCard>
+
       <!-- 一键交接 -->
-      <NCard :bordered="false" title="一键交接">
+      <NCard :bordered="false" :title="bi('一键交接', 'One-Click Handover')">
         <NSpace vertical size="large">
           <div class="text-13px leading-relaxed text-gray-500">
-            离任交接两件套：①「交接数据包」= 全量台账 JSON，接任人导入即接续；②「交接文档」= 自动生成的可打印文档（任期大事记 / 待办 / 发展节点 / 党费欠缴 / 台账摘要 / 交接说明）。
+            {{
+              bi(
+                '离任交接两件套：①「交接数据包」= 全量台账 JSON，接任人导入即接续；②「交接文档」= 自动生成的可打印文档（任期大事记 / 待办 / 发展节点 / 党费欠缴 / 台账摘要 / 交接说明）。',
+                'Term handover kit: 1) Full Ledger JSON Data Package; 2) Printable HTML Handover Document (events, pending milestones, dues summary & notes).'
+              )
+            }}
           </div>
           <div class="flex gap-8px">
-            <NButton type="primary" size="small" :loading="handoverBusy" @click="exportHandoverData">导出交接数据包</NButton>
-            <NButton size="small" :loading="handoverBusy" @click="exportHandoverDoc">生成交接文档</NButton>
+            <NButton type="primary" size="small" :loading="handoverBusy" @click="exportHandoverData">
+              <template #icon><SvgIcon icon="lucide:package" /></template>
+              {{ bi('导出交接数据包', 'Export Handover Data') }}
+            </NButton>
+            <NButton size="small" secondary :loading="handoverBusy" @click="exportHandoverDoc">
+              <template #icon><SvgIcon icon="lucide:printer" /></template>
+              {{ bi('生成交接文档', 'Generate Handover Doc') }}
+            </NButton>
           </div>
         </NSpace>
       </NCard>
 
       <!-- 应用锁 -->
-      <NCard :bordered="false" title="应用锁">
+      <NCard :bordered="false" :title="bi('应用锁', 'App Lock')">
         <NSpace vertical size="large">
           <div class="text-13px leading-relaxed text-gray-500">
-            启用后，启动工作台需输入密码；页眉可随时手动锁定，支持闲置自动锁定与密保答案找回。密码仅在本机存哈希，用于隐私遮挡。
+            {{
+              bi(
+                '启用后，启动工作台需输入密码；页眉可随时手动锁定，支持闲置自动锁定与密保答案找回。密码仅在本机存哈希，用于隐私遮挡。',
+                'When enabled, requires password on startup or manual lock from header, with idle auto-lock and security question recovery.'
+              )
+            }}
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-13px">启用应用锁</span>
+            <span class="text-13px">{{ bi('启用应用锁', 'Enable App Lock') }}</span>
             <NSwitch :value="appLock.enabled" @update:value="toggleLock" />
           </div>
           <template v-if="appLock.enabled">
             <div class="flex items-center justify-between">
-              <span class="text-13px">闲置自动锁定</span>
+              <span class="text-13px">{{ bi('闲置自动锁定', 'Idle Auto-Lock') }}</span>
               <NSelect :value="appLock.idleMinutes" :options="IDLE_OPTIONS" size="small" class="w-220px" @update:value="v => appLock.setIdleMinutes(v)" />
             </div>
             <div class="flex gap-8px">
-              <NButton size="small" @click="lockPwdShow = true">修改密码</NButton>
-              <NButton size="small" type="primary" @click="appLock.lock()">立即锁定</NButton>
+              <NButton size="small" secondary @click="lockPwdShow = true">
+                <template #icon><SvgIcon icon="lucide:key-round" /></template>
+                {{ bi('修改密码', 'Change Password') }}
+              </NButton>
+              <NButton size="small" type="primary" @click="appLock.lock()">
+                <template #icon><SvgIcon icon="lucide:lock" /></template>
+                {{ bi('立即锁定', 'Lock Now') }}
+              </NButton>
             </div>
-            <div class="text-12px text-gray-400">找回问题：{{ appLock.question }}</div>
+            <div class="text-12px text-gray-400">{{ bi('找回问题：', 'Recovery Question: ') }}{{ appLock.question }}</div>
           </template>
         </NSpace>
       </NCard>
 
       <!-- 演示数据 -->
-      <NCard :bordered="false" title="演示数据">
+      <NCard :bordered="false" :title="bi('演示数据', 'Demo Seed Data')">
         <NSpace vertical size="large">
           <div class="text-13px leading-relaxed text-gray-500">
-            内置一套虚构演示数据（22 名成员、一学期台历节奏、党费/谈话/模板样例，全部化名脱敏）。可用于体验与截图演示。
+            {{
+              bi(
+                '内置一套虚构演示数据（22 名成员、一学期台历节奏、党费/谈话/模板样例，全部化名脱敏）。可用于体验与截图演示。',
+                'Built-in desensitized demo dataset (22 members, full semester schedule, dues, talks & templates) for testing and evaluation.'
+              )
+            }}
           </div>
           <div class="flex gap-8px">
-            <NButton size="small" :loading="resetting" @click="handleReset">重置为演示种子</NButton>
-            <NButton size="small" type="error" ghost @click="handleClear">清空业务数据</NButton>
+            <NButton size="small" secondary :loading="resetting" @click="handleReset">
+              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+              {{ bi('重置为演示种子', 'Reset to Demo Seed') }}
+            </NButton>
+            <NButton size="small" type="error" ghost @click="handleClear">
+              <template #icon><SvgIcon icon="lucide:trash-2" /></template>
+              {{ bi('清空业务数据', 'Clear All Data') }}
+            </NButton>
           </div>
         </NSpace>
       </NCard>
 
       <!-- 关于 -->
-      <NCard :bordered="false" title="关于三尺台">
+      <NCard :bordered="false" :title="bi('关于三尺台', 'About 三尺台')">
         <NSpace vertical size="large">
           <div class="text-13px leading-relaxed text-gray-600">
-            学工工作平台（v0.2.0）——党支部书记个人离线工作台。主视图台历，配套三会一课排期、党员发展台账、党费台账、谈心谈话、知识库与政策文件库。数据纯本地，无账号、无网络请求。
+            {{
+              bi(
+                '学工工作平台（v0.2.3）——党支部书记个人离线工作台。主视图台历，配套三会一课排期、党员发展、党费收缴、谈心谈话、知识库与政策文件库。数据纯本地，无账号、无网络请求。',
+                'Student & Party Affairs Workbench (v0.2.3) — Offline-first personal workspace for Party Branch Secretaries. Calendar-driven with full ledger, knowledge base, and policy archives.'
+              )
+            }}
           </div>
           <NDescriptions :column="1" size="small" label-placement="left" bordered>
-            <NDescriptionsItem label="版本">{{ APP_VERSION }}</NDescriptionsItem>
-            <NDescriptionsItem label="第三方开源组件">Vue 3 · Naive UI · Schedule-X · ECharts · Dexie · Tauri（MIT / Apache-2.0）</NDescriptionsItem>
-            <NDescriptionsItem label="隐私声明">默认不采集身份证号；手机号为选填敏感字段；导出报表不含敏感列</NDescriptionsItem>
+            <NDescriptionsItem :label="bi('版本', 'Version')">{{ APP_VERSION }}</NDescriptionsItem>
+            <NDescriptionsItem :label="bi('第三方开源组件', 'Open Source Stack')">
+              Vue 3 · Naive UI · FullCalendar · ECharts · Dexie · Tauri（MIT / Apache-2.0）
+            </NDescriptionsItem>
+            <NDescriptionsItem :label="bi('隐私声明', 'Privacy Notice')">
+              {{
+                bi(
+                  '默认不采集身份证号；手机号为选填敏感字段；导出报表不含敏感列',
+                  'No ID numbers collected; all data stored locally in IndexedDB; exports exclude sensitive columns'
+                )
+              }}
+            </NDescriptionsItem>
           </NDescriptions>
         </NSpace>
       </NCard>
     </div>
 
     <!-- 应用锁：启用设置 -->
-    <NModal v-model:show="lockSetupShow" preset="card" title="启用应用锁" class="w-440px" :mask-closable="false">
-      <NForm label-placement="left" label-width="96" size="small">
-        <NFormItem label="锁屏密码" required>
+    <NModal v-model:show="lockSetupShow" preset="card" title="启用应用锁" class="w-480px" :mask-closable="false">
+      <NForm label-placement="left" label-width="116" size="small">
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:lock" class="sct-field-icon" />
+              <span>锁屏密码</span>
+            </span>
+          </template>
           <NInput v-model:value="lockForm.pwd" type="password" show-password-on="mousedown" placeholder="至少 4 位" :maxlength="32" />
         </NFormItem>
-        <NFormItem label="确认密码" required>
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:shield-check" class="sct-field-icon" />
+              <span>确认密码</span>
+            </span>
+          </template>
           <NInput v-model:value="lockForm.confirm" type="password" show-password-on="mousedown" :maxlength="32" />
         </NFormItem>
-        <NFormItem label="找回问题" required>
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:help-circle" class="sct-field-icon" />
+              <span>找回问题</span>
+            </span>
+          </template>
           <NSelect v-model:value="lockForm.question" :options="questionOptions" />
         </NFormItem>
-        <NFormItem v-if="lockForm.question === '__custom__'" label="自定义问题" required>
+        <NFormItem v-if="lockForm.question === '__custom__'" required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:edit-3" class="sct-field-icon" />
+              <span>自定义问题</span>
+            </span>
+          </template>
           <NInput v-model:value="lockForm.customQuestion" placeholder="输入自定义问题" />
         </NFormItem>
-        <NFormItem label="答案" required>
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:key" class="sct-field-icon" />
+              <span>答案</span>
+            </span>
+          </template>
           <NInput v-model:value="lockForm.answer" placeholder="答案（不区分首尾空格）" />
         </NFormItem>
-        <NFormItem label="闲置锁定">
+        <NFormItem>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:timer" class="sct-field-icon" />
+              <span>闲置锁定</span>
+            </span>
+          </template>
           <NSelect v-model:value="lockForm.idle" :options="IDLE_OPTIONS" size="small" class="w-full" />
         </NFormItem>
       </NForm>
@@ -326,9 +481,15 @@ onMounted(listSnapshots);
     </NModal>
 
     <!-- 应用锁：关闭确认 -->
-    <NModal v-model:show="lockDisableShow" preset="card" title="关闭应用锁" class="w-380px" :mask-closable="false">
-      <NForm label-placement="left" label-width="80" size="small">
-        <NFormItem label="密码" required>
+    <NModal v-model:show="lockDisableShow" preset="card" title="关闭应用锁" class="w-440px" :mask-closable="false">
+      <NForm label-placement="left" label-width="116" size="small">
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:lock" class="sct-field-icon" />
+              <span>密码</span>
+            </span>
+          </template>
           <NInput v-model:value="disablePwd" type="password" show-password-on="mousedown" @keyup.enter="handleLockDisable" />
         </NFormItem>
       </NForm>
@@ -341,15 +502,33 @@ onMounted(listSnapshots);
     </NModal>
 
     <!-- 应用锁：修改密码 -->
-    <NModal v-model:show="lockPwdShow" preset="card" title="修改锁屏密码" class="w-400px" :mask-closable="false">
-      <NForm label-placement="left" label-width="80" size="small">
-        <NFormItem label="原密码" required>
+    <NModal v-model:show="lockPwdShow" preset="card" title="修改锁屏密码" class="w-460px" :mask-closable="false">
+      <NForm label-placement="left" label-width="116" size="small">
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:key-round" class="sct-field-icon" />
+              <span>原密码</span>
+            </span>
+          </template>
           <NInput v-model:value="pwdForm.old" type="password" show-password-on="mousedown" />
         </NFormItem>
-        <NFormItem label="新密码" required>
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:lock" class="sct-field-icon" />
+              <span>新密码</span>
+            </span>
+          </template>
           <NInput v-model:value="pwdForm.new" type="password" show-password-on="mousedown" placeholder="至少 4 位" :maxlength="32" />
         </NFormItem>
-        <NFormItem label="确认新密码" required>
+        <NFormItem required>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:shield-check" class="sct-field-icon" />
+              <span>确认新密码</span>
+            </span>
+          </template>
           <NInput v-model:value="pwdForm.confirm" type="password" show-password-on="mousedown" :maxlength="32" />
         </NFormItem>
       </NForm>

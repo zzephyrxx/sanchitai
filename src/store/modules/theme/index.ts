@@ -45,27 +45,59 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   const colourWeaknessMode = computed(() => settings.value.colourWeakness);
 
   /**
-   * Theme colors（三尺台扩展：主色按 皮肤×深浅 覆写）
-   * - 默认浅色：墨 #2B2926；默认深色：靛蓝 #4F6EF7（参考 dashboard-charts）
-   * - 纸感浅色：朱砂 #9A2C25；纸感深色：亮朱砂 #C96A5E
+   * Theme colors（三尺台扩展：主色按 2 皮肤 × 深浅 覆写）
+   * - 默认浅色：墨 #2B2926；默认深色：靛蓝 #4F6EF7
+   * - 电子纸 KONTUR（crm-frosted-glass）：浅色瑞士森林绿 #1E5C42；深色松石绿 #2D8660（100% 还原 KONTUR Ledger CRM 源码）
    */
   const themeColors = computed(() => {
     const { themeColor, otherColor, isInfoFollowPrimary, themePreset } = settings.value;
-    const preset = themePreset ?? 'default';
+    const preset: UnionKey.ThemePreset = themePreset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
 
     let primary = themeColor;
-    if (darkMode.value) {
-      primary = preset === 'paper' ? '#C96A5E' : '#4F6EF7';
-    } else if (preset === 'paper') {
-      primary = '#9A2C25';
+    if (preset === 'crm-frosted-glass') {
+      primary = darkMode.value ? '#2D8660' : '#1E5C42';
+    } else if (darkMode.value) {
+      primary = '#4F6EF7';
     }
 
     const colors: App.Theme.ThemeColor = {
       primary,
       ...otherColor,
+      warning: preset === 'crm-frosted-glass' ? '#B7791F' : otherColor.warning,
+      success: preset === 'crm-frosted-glass' ? '#1E5C42' : otherColor.success,
       info: isInfoFollowPrimary ? primary : otherColor.info
     };
     return colors;
+  });
+
+  /** 按当前 preset 动态覆盖 layout/container/base-text 表面 token */
+  const effectiveTokens = computed<App.Theme.ThemeSetting['tokens']>(() => {
+    const preset: UnionKey.ThemePreset =
+      settings.value.themePreset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+    const base = settings.value.tokens;
+    if (preset === 'crm-frosted-glass') {
+      return {
+        light: {
+          ...base.light,
+          colors: {
+            container: 'rgb(251, 250, 246)',
+            layout: 'rgb(244, 242, 236)',
+            inverted: 'rgb(22, 21, 15)',
+            'base-text': 'rgb(22, 21, 15)'
+          }
+        },
+        dark: {
+          ...base.dark,
+          colors: {
+            container: 'rgb(28, 27, 22)',
+            layout: 'rgb(20, 19, 15)',
+            inverted: 'rgb(38, 36, 29)',
+            'base-text': 'rgb(244, 242, 236)'
+          }
+        }
+      };
+    }
+    return base;
   });
 
   /** Naive theme */
@@ -149,11 +181,82 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     settings.value.colourWeakness = isColourWeakness;
   }
 
+  const SANS_FONT_STACKS: Record<UnionKey.ThemeFontSans, string> = {
+    system:
+      "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif",
+    pingfang: "'PingFang SC', 'Hiragino Sans GB', -apple-system, BlinkMacSystemFont, sans-serif",
+    yahei: "'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', sans-serif",
+    harmony: "'HarmonyOS Sans SC', 'MiSans', 'Alibaba PuHuiTi 3.0', 'PingFang SC', sans-serif",
+    'noto-sans': "'Noto Sans SC', 'Source Han Sans SC', 'Source Han Sans CN', 'PingFang SC', sans-serif",
+    inter: "'Inter', 'SF Pro Text', 'Segoe UI', 'Roboto', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    georgia: "'Georgia', 'Times New Roman', 'Noto Serif SC', 'Songti SC', serif",
+    songti: "'Songti SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif",
+    kaiti: "'Kaiti SC', 'STKaiti', 'KaiTi', 'AR PL UKai CN', serif",
+    fangsong: "'FangSong_GB2312', 'STFangsong', 'FangSong', 'Songti SC', serif"
+  };
+
+  const HEADING_FONT_STACKS: Record<UnionKey.ThemeFontHeading, string> = {
+    'follow-sans': 'var(--sct-font-sans)',
+    songti: "'Songti SC', 'STSong', 'Noto Serif SC', 'SimSun', serif",
+    kaiti: "'Kaiti SC', 'STKaiti', 'KaiTi', serif",
+    fangsong: "'FangSong_GB2312', 'STFangsong', 'FangSong', serif",
+    heiti: "'PingFang SC', 'Heiti SC', 'STHeiti', 'Microsoft YaHei', sans-serif",
+    georgia: "'Georgia', 'Instrument Serif', 'Times New Roman', 'Songti SC', serif",
+    inter: "'Inter', 'SF Pro Display', 'Helvetica Neue', 'PingFang SC', sans-serif"
+  };
+
+  const MONO_FONT_STACKS: Record<UnionKey.ThemeFontMono, string> = {
+    'ibm-plex': "'IBM Plex Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace",
+    jetbrains: "'JetBrains Mono', 'Fira Code', 'SF Mono', ui-monospace, Menlo, monospace",
+    'fira-code': "'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace",
+    'sf-mono': "'SF Mono', 'Menlo', 'Monaco', ui-monospace, monospace",
+    consolas: "'Consolas', 'Cascadia Mono', 'Courier New', ui-monospace, monospace",
+    'source-code': "'Source Code Pro', 'Ubuntu Mono', 'DejaVu Sans Mono', ui-monospace, monospace"
+  };
+
   /**
-   * 应用主题皮肤标记（驱动 --sct-* 表面变量四态）
+   * 将三类全局字体（正文 / 标题 / 等宽数字）及全局缩放比例同步到 html/body
+   * 注意：严禁在 html/body 上使用 CSS `zoom`（会导致 Vueuc VFollower / Floating Popover 坐标计算与实际渲染脱节而错位），
+   * 改为同步 `--sct-font-scale` 并在 `getNaiveTheme` + `sct-theme.css` 中按比例缩放全部字号。
+   */
+  function applyFontVars() {
+    if (!settings.value.fontConfig) {
+      settings.value.fontConfig = {
+        sans: 'system',
+        heading: 'follow-sans',
+        mono: 'ibm-plex',
+        scale: 100
+      };
+    }
+    if (typeof settings.value.fontConfig.scale !== 'number' || Number.isNaN(settings.value.fontConfig.scale)) {
+      settings.value.fontConfig.scale = 100;
+    }
+    const { sans, heading, mono, scale } = settings.value.fontConfig;
+    const sansStack = SANS_FONT_STACKS[sans] ?? SANS_FONT_STACKS.system;
+    const headingStack =
+      heading === 'follow-sans' ? sansStack : (HEADING_FONT_STACKS[heading] ?? sansStack);
+    const monoStack = MONO_FONT_STACKS[mono] ?? MONO_FONT_STACKS['ibm-plex'];
+    const clampedScale = Math.min(125, Math.max(85, scale));
+    const ratio = clampedScale / 100;
+
+    const rootStyle = document.documentElement.style;
+    rootStyle.removeProperty('zoom');
+    rootStyle.setProperty('--sct-font-sans', sansStack);
+    rootStyle.setProperty('--sct-font-heading', headingStack);
+    rootStyle.setProperty('--sct-font-mono', monoStack);
+    rootStyle.setProperty('--sct-font-scale', String(ratio));
+    rootStyle.setProperty('font-size', `${Math.round(16 * ratio * 100) / 100}px`);
+  }
+
+  /**
+   * 应用主题皮肤标记（驱动 --sct-* 表面变量）
    */
   function applyPresetAttr() {
-    const preset = settings.value.themePreset ?? 'default';
+    const raw = settings.value.themePreset;
+    const preset: UnionKey.ThemePreset = raw === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+    if (raw !== preset) {
+      settings.value.themePreset = preset;
+    }
     document.documentElement.dataset.preset = preset;
   }
 
@@ -166,7 +269,9 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   function setThemePreset(preset: UnionKey.ThemePreset, event?: MouseEvent) {
     applyViewTransition(
       () => {
-        settings.value.themePreset = preset;
+        const normalized: UnionKey.ThemePreset = preset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+        settings.value.themePreset = normalized;
+        settings.value.themeRadius = normalized === 'crm-frosted-glass' ? 0 : 6;
         applyPresetAttr();
         setupThemeVarsToGlobal();
         cacheThemeSettings();
@@ -258,7 +363,7 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   function setupThemeVarsToGlobal() {
     const { themeTokens, darkThemeTokens } = createThemeToken(
       themeColors.value,
-      settings.value.tokens,
+      effectiveTokens.value,
       settings.value.recommendColor
     );
     addThemeVarsToGlobal(themeTokens, darkThemeTokens);
@@ -311,12 +416,8 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     }
   }
 
-  /** Cache theme settings */
+  /** Cache theme settings（始终持久化到 localStorage，防止刷新页面丢失主题/字体/圆角等用户配置） */
   function cacheThemeSettings() {
-    const isProd = import.meta.env.PROD;
-
-    if (!isProd) return;
-
     localStg.set('themeSettings', settings.value);
   }
 
@@ -324,6 +425,15 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   useEventListener(window, 'beforeunload', () => {
     cacheThemeSettings();
   });
+
+  // 深度监听 settings 任意改动并即时持久化到 localStorage
+  watch(
+    settings,
+    () => {
+      cacheThemeSettings();
+    },
+    { deep: true }
+  );
 
   // watch store
   scope.run(() => {
@@ -377,6 +487,16 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
       applyPresetAttr();
     },
     { immediate: true }
+  );
+
+  // 应用全局字体配置（正文 / 标题 / 等宽数字）
+  watch(
+    () => settings.value.fontConfig,
+    () => {
+      applyFontVars();
+      cacheThemeSettings();
+    },
+    { deep: true, immediate: true }
   );
 
   return {

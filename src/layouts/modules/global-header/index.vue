@@ -7,9 +7,9 @@ import GlobalBreadcrumb from '../global-breadcrumb/index.vue';
 import GlobalLogo from '../global-logo/index.vue';
 import GlobalSearch from '../global-search/index.vue';
 import ThemeButton from './components/theme-button.vue';
-import UserAvatar from './components/user-avatar.vue';
 import IdentityBadge from './components/identity-badge.vue';
 import LockButton from './components/lock-button.vue';
+import BranchBadge from './components/branch-badge.vue';
 
 defineOptions({
   name: 'GlobalHeader'
@@ -39,9 +39,9 @@ const { isFullscreen, toggle } = useFullscreen();
     <div v-else class="h-full flex-y-center flex-1-hidden">
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
     </div>
-    <div class="h-full flex-y-center justify-end">
+    <div class="h-full flex-y-center flex-shrink-0 justify-end gap-6px">
+      <BranchBadge />
       <IdentityBadge />
-      <LockButton />
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />
       <FullScreen v-if="!appStore.isMobile" :full="isFullscreen" @click="toggle" />
       <LangSwitch
@@ -56,7 +56,7 @@ const { isFullscreen, toggle } = useFullscreen();
         @switch="(e: MouseEvent) => themeStore.toggleThemeSchemeWithTransition(e)"
       />
       <ThemeButton />
-      <UserAvatar />
+      <LockButton />
     </div>
   </DarkModeContainer>
 </template>

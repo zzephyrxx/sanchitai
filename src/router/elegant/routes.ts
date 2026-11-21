@@ -46,7 +46,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'calendar',
       i18nKey: 'route.calendar',
-      icon: 'lucide:calendar-days'
+      icon: 'lucide:calendar-days',
+      order: 1
     }
   },
   {
@@ -56,7 +57,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'dashboard',
       i18nKey: 'route.dashboard',
-      icon: 'lucide:layout-dashboard'
+      icon: 'lucide:layout-dashboard',
+      order: 2
     }
   },
   {
@@ -79,7 +81,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'ledger',
       i18nKey: 'route.ledger',
-      icon: 'lucide:briefcase-business'
+      icon: 'lucide:briefcase-business',
+      order: 3
     },
     children: [
       {
@@ -89,7 +92,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'ledger_development',
           i18nKey: 'route.ledger_development',
-          icon: 'lucide:route'
+          icon: 'lucide:route',
+          order: 3
         }
       },
       {
@@ -99,7 +103,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'ledger_fees',
           i18nKey: 'route.ledger_fees',
-          icon: 'lucide:coins'
+          icon: 'lucide:coins',
+          order: 4
         }
       },
       {
@@ -109,7 +114,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'ledger_meetings',
           i18nKey: 'route.ledger_meetings',
-          icon: 'lucide:presentation'
+          icon: 'lucide:presentation',
+          order: 2
         }
       },
       {
@@ -119,7 +125,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'ledger_members',
           i18nKey: 'route.ledger_members',
-          icon: 'lucide:users-round'
+          icon: 'lucide:users-round',
+          order: 1
         }
       },
       {
@@ -129,7 +136,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'ledger_talks',
           i18nKey: 'route.ledger_talks',
-          icon: 'lucide:messages-square'
+          icon: 'lucide:messages-square',
+          order: 5
         }
       }
     ]
@@ -141,9 +149,21 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'library',
       i18nKey: 'route.library',
-      icon: 'lucide:library-big'
+      icon: 'lucide:library-big',
+      order: 4
     },
     children: [
+      {
+        name: 'library_birthday',
+        path: '/library/birthday',
+        component: 'view.library_birthday',
+        meta: {
+          title: 'library_birthday',
+          i18nKey: 'route.library_birthday',
+          icon: 'lucide:gift',
+          order: 4
+        }
+      },
       {
         name: 'library_docs',
         path: '/library/docs',
@@ -151,7 +171,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'library_docs',
           i18nKey: 'route.library_docs',
-          icon: 'lucide:folder-open'
+          icon: 'lucide:folder-open',
+          order: 3
         }
       },
       {
@@ -161,7 +182,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'library_knowledge',
           i18nKey: 'route.library_knowledge',
-          icon: 'lucide:graduation-cap'
+          icon: 'lucide:graduation-cap',
+          order: 1
         }
       },
       {
@@ -171,7 +193,8 @@ export const generatedRoutes: GeneratedRoute[] = [
         meta: {
           title: 'library_policy',
           i18nKey: 'route.library_policy',
-          icon: 'lucide:landmark'
+          icon: 'lucide:landmark',
+          order: 2
         }
       }
     ]
@@ -183,7 +206,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'settings',
       i18nKey: 'route.settings',
-      icon: 'lucide:settings-2'
+      icon: 'lucide:settings-2',
+      order: 99
     }
   },
   {
@@ -193,7 +217,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'structure',
       i18nKey: 'route.structure',
-      icon: 'lucide:network'
+      icon: 'lucide:network',
+      order: 5
     }
   }
 ];

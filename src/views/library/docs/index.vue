@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, h, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
+import { NButton, NPopconfirm } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
 import { saveAs } from 'file-saver';
 import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSvgIcon } from '@/hooks/common/icon';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 
 defineOptions({ name: 'DocsPage' });
 
 const workStore = useWorkDataStore();
+const { SvgIconVNode } = useSvgIcon();
+const { bi } = useSctI18n();
 
 const BRANCH_NAME = '智感硕博党支部（虚构演示）';
 
@@ -80,15 +86,37 @@ function exportMarkdown() {
 function exportWord() {
   const tpl = editingTemplate.value;
   if (!tpl) return;
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${tpl.name}</title>
+  const safeTitle = tpl.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeBody = previewBody.value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title>
 <style>body{font-family:SimSun,serif;font-size:14pt;line-height:1.8;margin:40px;}h2{text-align:center;}</style>
-</head><body><pre style="font-family:SimSun,serif;font-size:14pt;white-space:pre-wrap;">${previewBody.value.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre></body></html>`;
+</head><body><pre style="font-family:SimSun,serif;font-size:14pt;white-space:pre-wrap;">${safeBody}</pre></body></html>`;
   saveAs(new Blob([html], { type: 'application/msword;charset=utf-8' }), `${tpl.name}.doc`);
   window.$message?.success('已导出 .doc（Word 可直接打开）');
 }
 
-// ---------------- 归档区 ----------------
-const docsList = computed(() => [...workStore.docsList].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+// ---------------- 归档区（支持搜索、分页与图标表头） ----------------
+const searchKeyword = ref('');
+const pagination = reactive({
+  page: 1,
+  pageSize: 10,
+  showSizePicker: true,
+  pageSizes: [10, 15, 25, 50],
+  onChange: (page: number) => {
+    pagination.page = page;
+  },
+  onUpdatePageSize: (pageSize: number) => {
+    pagination.pageSize = pageSize;
+    pagination.page = 1;
+  }
+});
+
+const docsList = computed<Sct.Doc[]>(() => {
+  const kw = searchKeyword.value.trim().toLowerCase();
+  return [...workStore.docsList]
+    .filter(d => !kw || d.title.toLowerCase().includes(kw) || d.body.toLowerCase().includes(kw))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+});
 const viewShow = ref(false);
 const viewingDoc = ref<Sct.Doc | null>(null);
 
@@ -102,55 +130,151 @@ async function deleteDoc(id: string) {
   viewShow.value = false;
   window.$message?.success('已删除');
 }
+
+function placeholderIcon(p: string): string {
+  if (p.includes('日期') || p.includes('时间') || p.includes('年月')) return 'lucide:calendar';
+  if (p.includes('地点')) return 'lucide:map-pin';
+  if (p.includes('人数') || p.includes('应到') || p.includes('实到')) return 'lucide:users';
+  if (p.includes('人') || p.includes('姓名') || p.includes('书记') || p.includes('对象')) return 'lucide:user';
+  return 'lucide:file-text';
+}
+
+function colHeader(icon: string, text: string) {
+  return h('span', { class: 'inline-flex items-center gap-4px whitespace-nowrap' }, [
+    SvgIconVNode({ icon, fontSize: 13 })?.(),
+    h('span', text)
+  ]);
+}
+
+const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
+  {
+    title: () => colHeader('lucide:file-text', bi('标题', 'Title')),
+    key: 'title',
+    resizable: true,
+    sorter: (a, b) => a.title.localeCompare(b.title)
+  },
+  {
+    title: () => colHeader('lucide:clock', bi('创建时间', 'Created At')),
+    key: 'created_at',
+    width: 180,
+    resizable: true,
+    sorter: (a, b) => a.created_at.localeCompare(b.created_at),
+    render: r => dayjs(r.created_at).format('YYYY-MM-DD HH:mm')
+  },
+  {
+    title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
+    key: 'op',
+    width: 160,
+    render: r =>
+      h('div', { class: 'flex items-center gap-6px' }, [
+        h(
+          NButton,
+          {
+            size: 'tiny',
+            secondary: true,
+            type: 'primary',
+            onClick: () => openDoc(r)
+          },
+          {
+            icon: SvgIconVNode({ icon: 'lucide:eye', fontSize: 13 }),
+            default: () => bi('查看', 'View')
+          }
+        ),
+        h(
+          NPopconfirm,
+          { onPositiveClick: () => deleteDoc(r.id) },
+          {
+            trigger: () =>
+              h(
+                NButton,
+                {
+                  size: 'tiny',
+                  secondary: true,
+                  type: 'error'
+                },
+                {
+                  icon: SvgIconVNode({ icon: 'lucide:trash-2', fontSize: 13 }),
+                  default: () => bi('删除', 'Delete')
+                }
+              ),
+            default: () => bi(`确认删除归档材料「${r.title}」？`, `Delete archived document "${r.title}"?`)
+          }
+        )
+      ])
+  }
+]);
 </script>
 
 <template>
   <div class="min-h-500px">
     <!-- 模板区 -->
-    <NCard :bordered="false" title="模板库" class="mb-16px">
+    <NCard :bordered="false" :title="bi('模板库', 'Document Templates')" class="mb-16px">
       <div class="grid grid-cols-1 gap-10px md:grid-cols-2 lg:grid-cols-3">
         <div v-for="tpl in workStore.docTemplates" :key="tpl.id" class="tpl-card" @click="openCreate(tpl)">
           <div class="flex items-center justify-between">
             <span class="text-14px font-bold">{{ tpl.name }}</span>
-            <NTag size="tiny" :bordered="false" :color="{ color: 'var(--sct-err-soft)', textColor: CATEGORY_COLORS[tpl.category] ?? '#A81C24' }">
+            <NTag
+              size="tiny"
+              :bordered="false"
+              :color="{ color: 'var(--sct-err-soft)', textColor: CATEGORY_COLORS[tpl.category] ?? '#A81C24' }"
+            >
               {{ tpl.category }}
             </NTag>
           </div>
-          <div class="mt-6px text-12px text-gray-400">{{ tpl.placeholders.length }} 个占位符 · 从模板新建后可导出 Word / Markdown</div>
+          <div class="mt-6px text-12px text-gray-400">
+            {{
+              bi(
+                `${tpl.placeholders.length} 个占位符 · 从模板新建后可导出 Word / Markdown`,
+                `${tpl.placeholders.length} placeholders · Create & export Word / Markdown`
+              )
+            }}
+          </div>
         </div>
       </div>
     </NCard>
 
     <!-- 归档区 -->
-    <NCard :bordered="false" title="归档区">
-      <EmptyFancy v-if="!docsList.length" emoji="folder" text="暂无归档文档" sub="从上方模板新建一份吧" />
+    <NCard :bordered="false" :title="bi('归档区', 'Archived Documents')">
+      <template #header-extra>
+        <NInput
+          v-if="workStore.docsList.length"
+          v-model:value="searchKeyword"
+          size="small"
+          clearable
+          class="w-240px"
+          :placeholder="bi('搜索归档材料标题或正文…', 'Search archived title or content…')"
+          @update:value="pagination.page = 1"
+        >
+          <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+        </NInput>
+      </template>
+      <EmptyFancy
+        v-if="!docsList.length"
+        emoji="folder"
+        :text="bi('暂无归档文档', 'No archived documents yet')"
+        :sub="bi('从上方模板新建一份吧', 'Create one from the templates above')"
+      />
       <NDataTable
         v-else
         :data="docsList"
+        :pagination="pagination"
         :bordered="false"
         size="small"
-        :row-key="(r: any) => r.id"
-        :columns="[
-          { title: '标题', key: 'title' },
-          { title: '创建时间', key: 'created_at', width: 170, render: (r: any) => dayjs(r.created_at).format('YYYY-MM-DD HH:mm') },
-          {
-            title: '',
-            key: 'op',
-            width: 130,
-            render: (r: any) =>
-              h('div', { class: 'flex gap-10px' }, [
-                h('a', { style: { color: '#A81C24', cursor: 'pointer' }, onClick: () => openDoc(r) }, '查看'),
-                h('a', { style: { color: '#d43030', cursor: 'pointer' }, onClick: () => deleteDoc(r.id) }, '删除')
-              ])
-          }
-        ]"
+        :row-key="(r: Sct.Doc) => r.id"
+        :columns="docsColumns"
       />
     </NCard>
 
-    <!-- 从模板新建 -->
-    <NModal v-model:show="editShow" preset="card" :title="`从模板新建：${editingTemplate?.name ?? ''}`" class="w-720px">
-      <NForm label-placement="left" label-width="96" size="small">
-        <NFormItem v-for="p in editingTemplate?.placeholders ?? []" :key="p" :label="p">
+    <!-- 从模板新建（label-width="132" 带匹配图标防止较长占位符换行） -->
+    <NModal v-model:show="editShow" preset="card" :title="`从模板新建：${editingTemplate?.name ?? ''}`" class="w-740px">
+      <NForm label-placement="left" label-width="132" size="small">
+        <NFormItem v-for="p in editingTemplate?.placeholders ?? []" :key="p">
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon :icon="placeholderIcon(p)" class="sct-field-icon" />
+              <span>{{ p }}</span>
+            </span>
+          </template>
           <NInput v-model:value="fills[p]" @update:value="renderPreview" />
         </NFormItem>
       </NForm>
@@ -160,9 +284,18 @@ async function deleteDoc(id: string) {
         <div class="flex justify-between">
           <NButton size="small" @click="editShow = false">取消</NButton>
           <div class="flex gap-8px">
-            <NButton size="small" @click="exportMarkdown">导出 Markdown</NButton>
-            <NButton size="small" @click="exportWord">导出 Word(.doc)</NButton>
-            <NButton type="primary" @click="saveDoc">存入归档</NButton>
+            <NButton size="small" secondary @click="exportMarkdown">
+              <template #icon><SvgIcon icon="lucide:file-code" /></template>
+              导出 Markdown
+            </NButton>
+            <NButton size="small" secondary @click="exportWord">
+              <template #icon><SvgIcon icon="lucide:file-text" /></template>
+              导出 Word(.doc)
+            </NButton>
+            <NButton type="primary" size="small" @click="saveDoc">
+              <template #icon><SvgIcon icon="lucide:archive" /></template>
+              存入归档
+            </NButton>
           </div>
         </div>
       </template>
@@ -180,7 +313,7 @@ async function deleteDoc(id: string) {
 <style scoped>
 .tpl-card {
   padding: 12px 14px;
-  background: #fff;
+  background: var(--sct-container);
   border: 1px solid var(--sct-border);
   border-radius: 10px;
   cursor: pointer;

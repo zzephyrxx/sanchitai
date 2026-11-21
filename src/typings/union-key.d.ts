@@ -15,7 +15,26 @@ declare namespace UnionKey {
   type ThemeScheme = 'light' | 'dark' | 'auto';
 
   /** 三尺台主题皮肤 */
-  type ThemePreset = 'default' | 'paper';
+  type ThemePreset = 'default' | 'crm-frosted-glass';
+
+  /** 全局界面主字体（正文 / UI，含常用中英文字体） */
+  type ThemeFontSans =
+    | 'system'
+    | 'pingfang'
+    | 'yahei'
+    | 'harmony'
+    | 'noto-sans'
+    | 'inter'
+    | 'georgia'
+    | 'songti'
+    | 'kaiti'
+    | 'fangsong';
+
+  /** 标题 / 卡片头字体 */
+  type ThemeFontHeading = 'follow-sans' | 'songti' | 'kaiti' | 'fangsong' | 'heiti' | 'georgia' | 'inter';
+
+  /** 数字 / 等宽台账字体 */
+  type ThemeFontMono = 'ibm-plex' | 'jetbrains' | 'fira-code' | 'sf-mono' | 'consolas' | 'source-code';
 
   /**
    * The layout mode

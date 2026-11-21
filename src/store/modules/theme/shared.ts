@@ -7,19 +7,17 @@ import { localStg } from '@/utils/storage';
 import { overrideThemeSettings, themeSettings } from '@/theme/settings';
 import { themeVars } from '@/theme/vars';
 
-/** Init theme settings */
+/** Init theme settings（开发与生产环境均持久化用户主题与字体设置，刷新页面不丢失） */
 export function initThemeSettings() {
-  const isProd = import.meta.env.PROD;
-
-  // if it is development mode, the theme settings will not be cached, by update `themeSettings` in `src/theme/settings.ts` to update theme settings
-  if (!isProd) return themeSettings;
-
-  // if it is production mode, the theme settings will be cached in localStorage
-  // if want to update theme settings when publish new version, please update `overrideThemeSettings` in `src/theme/settings.ts`
-
   const localSettings = localStg.get('themeSettings');
 
   let settings = defu(localSettings, themeSettings);
+
+  // 确保旧缓存下也默认开启顶栏多语言切换与全局搜索入口
+  if (settings.header) {
+    settings.header.multilingual = { visible: true };
+    settings.header.globalSearch = { visible: true };
+  }
 
   const isOverride = localStg.get('overrideThemeFlag') === BUILD_TIME;
 
@@ -190,9 +188,14 @@ export function toggleCssDarkMode(darkMode = false) {
  */
 export function toggleAuxiliaryColorModes(grayscaleMode = false, colourWeakness = false) {
   const htmlElement = document.documentElement;
-  htmlElement.style.filter = [grayscaleMode ? 'grayscale(100%)' : '', colourWeakness ? 'invert(80%)' : '']
+  const filterValue = [grayscaleMode ? 'grayscale(100%)' : '', colourWeakness ? 'invert(80%)' : '']
     .filter(Boolean)
     .join(' ');
+  if (filterValue) {
+    htmlElement.style.filter = filterValue;
+  } else {
+    htmlElement.style.removeProperty('filter');
+  }
 }
 
 type NaiveColorScene = '' | 'Suppl' | 'Hover' | 'Pressed' | 'Active';
@@ -246,11 +249,58 @@ export function getNaiveTheme(
   overrides?: GlobalThemeOverrides
 ) {
   const { primary: colorLoading } = colors;
+  const rawScale = settings.fontConfig?.scale;
+  const scaleRatio =
+    typeof rawScale === 'number' && !Number.isNaN(rawScale)
+      ? Math.min(125, Math.max(85, rawScale)) / 100
+      : 1;
+  const px = (base: number) => `${Math.round(base * scaleRatio * 10) / 10}px`;
+  const isEPaper = settings.themePreset === 'crm-frosted-glass';
 
   const theme: GlobalThemeOverrides = {
     common: {
       ...getNaiveThemeColors(colors, settings.recommendColor),
-      borderRadius: `${settings.themeRadius}px`
+      borderRadius: `${settings.themeRadius}px`,
+      fontSize: px(14),
+      fontSizeMini: px(12),
+      fontSizeTiny: px(12),
+      fontSizeSmall: px(13),
+      fontSizeMedium: px(14),
+      fontSizeLarge: px(15),
+      fontSizeHuge: px(16)
+    },
+    Card: {
+      paddingSmall: isEPaper ? '16px 16px 14px 16px' : '12px 16px 12px 16px',
+      paddingMedium: isEPaper ? '18px 20px 18px 20px' : '16px 20px 18px 20px',
+      paddingLarge: isEPaper ? '20px 24px 20px 24px' : '18px 24px 20px 24px',
+      paddingHuge: isEPaper ? '24px 28px 24px 28px' : '20px 28px 24px 28px'
+    },
+    Button: {
+      textColorPrimary: '#ffffff',
+      textColorHoverPrimary: '#ffffff',
+      textColorPressedPrimary: '#ffffff',
+      textColorFocusPrimary: '#ffffff',
+      textColorDisabledPrimary: '#ffffff',
+      textColorInfo: '#ffffff',
+      textColorHoverInfo: '#ffffff',
+      textColorPressedInfo: '#ffffff',
+      textColorFocusInfo: '#ffffff',
+      textColorDisabledInfo: '#ffffff',
+      textColorSuccess: '#ffffff',
+      textColorHoverSuccess: '#ffffff',
+      textColorPressedSuccess: '#ffffff',
+      textColorFocusSuccess: '#ffffff',
+      textColorDisabledSuccess: '#ffffff',
+      textColorWarning: '#ffffff',
+      textColorHoverWarning: '#ffffff',
+      textColorPressedWarning: '#ffffff',
+      textColorFocusWarning: '#ffffff',
+      textColorDisabledWarning: '#ffffff',
+      textColorError: '#ffffff',
+      textColorHoverError: '#ffffff',
+      textColorPressedError: '#ffffff',
+      textColorFocusError: '#ffffff',
+      textColorDisabledError: '#ffffff'
     },
     LoadingBar: {
       colorLoading

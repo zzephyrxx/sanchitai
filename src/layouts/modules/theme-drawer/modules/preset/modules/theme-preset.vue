@@ -12,6 +12,7 @@ defineOptions({
 type ThemePreset = Pick<
   App.Theme.ThemeSetting,
   | 'themeScheme'
+  | 'themePreset'
   | 'grayscale'
   | 'colourWeakness'
   | 'recommendColor'
@@ -82,8 +83,9 @@ const getPresetDesc = (preset: ThemePreset): string => {
 
 const applyPreset = (preset: ThemePreset): void => {
   const mergedPreset = defu(preset, themeSettings);
-  const { themeScheme, grayscale, colourWeakness, layout, watermark, naiveui, ...rest } = mergedPreset;
+  const { themeScheme, themePreset, grayscale, colourWeakness, layout, watermark, naiveui, ...rest } = mergedPreset;
   themeStore.setThemeScheme(themeScheme);
+  themeStore.setThemePreset(themePreset ?? 'default');
   themeStore.setGrayscale(grayscale);
   themeStore.setColourWeakness(colourWeakness);
   themeStore.setThemeLayout(layout.mode);

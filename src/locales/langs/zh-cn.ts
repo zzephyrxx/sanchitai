@@ -1,6 +1,6 @@
 const local: App.I18n.Schema = {
   system: {
-    title: '三尺台 · 学工工作台',
+    title: '三尺台',
     updateTitle: '系统版本更新通知',
     updateContent: '检测到系统有新版本发布，是否立即刷新页面？',
     updateConfirm: '立即刷新',
@@ -87,6 +87,44 @@ const local: App.I18n.Schema = {
       themeRadius: {
         title: '主题圆角'
       },
+      themeFont: {
+        title: '全局字体与字号缩放',
+        scale: '全局字号缩放',
+        sans: '界面与正文',
+        heading: '标题与卡片头',
+        mono: '数字与台账',
+        options: {
+          sans: {
+            system: '系统默认无衬线',
+            pingfang: '苹方 PingFang SC',
+            yahei: '微软雅黑 YaHei UI',
+            harmony: '鸿蒙 HarmonyOS / MiSans',
+            'noto-sans': '思源黑体 Noto Sans SC',
+            inter: 'Inter / SF Pro (现代西文)',
+            georgia: 'Georgia / Times (经典西文)',
+            songti: '雅宋 / 思源宋体',
+            kaiti: '楷体 / 书卷风',
+            fangsong: '仿宋 / 公文标准'
+          },
+          heading: {
+            'follow-sans': '跟随正文字体',
+            songti: '宋刻衬线（雅致）',
+            kaiti: '楷书标题（温润）',
+            fangsong: '仿宋标题（公文）',
+            heiti: '黑体加粗（醒目）',
+            georgia: 'Georgia 经典衬线',
+            inter: 'Inter 几何无衬线'
+          },
+          mono: {
+            'ibm-plex': 'IBM Plex Mono',
+            jetbrains: 'JetBrains Mono',
+            'fira-code': 'Fira Code',
+            'sf-mono': 'SF Mono / Menlo',
+            consolas: 'Consolas / Cascadia',
+            'source-code': 'Source Code Pro'
+          }
+        }
+      },
       recommendColor: '应用推荐算法的颜色',
       recommendColorDesc: '推荐颜色的算法参照',
       preset: {
@@ -108,6 +146,10 @@ const local: App.I18n.Schema = {
         azir: {
           name: 'Azir的预设',
           desc: '是 Azir 比较喜欢的莫兰迪色系冷淡风'
+        },
+        'crm-frosted-glass': {
+          name: '电子纸 (KONTUR 台账)',
+          desc: '100% 复刻 StyleKit KONTUR Ledger CRM：暖纸底幕 (#F4F2EC)、象牙白卡 (#FBFAF6)、0px 棱角分明与 #1E5C42 松林绿点睛'
         }
       }
     },
@@ -230,13 +272,14 @@ const local: App.I18n.Schema = {
     ledger: '党务台账',
     ledger_members: '人员',
     ledger_meetings: '三会一课',
-    ledger_development: '发展台账',
-    ledger_fees: '党费台账',
+    ledger_development: '党员发展',
+    ledger_fees: '党费收缴',
     ledger_talks: '谈心谈话',
     library: '党务资源',
     library_knowledge: '知识库',
     library_policy: '政策文件',
     library_docs: '材料库',
+    library_birthday: '政治生日贺卡',
     structure: '组织与流程'
   },
   page: {
@@ -370,6 +413,54 @@ const local: App.I18n.Schema = {
       left: '左固定',
       right: '右固定',
       unFixed: '取消固定'
+    }
+  },
+  sct: {
+    common: {
+      save: '保存',
+      detail: '详情',
+      done: '完成',
+      items: '项',
+      totalItems: '共 {count} 项',
+      allDay: '全天/节点',
+      owner: '负责人'
+    },
+    header: {
+      branchLabel: '支部',
+      branchEditTip: '点击修改当前党支部名称',
+      branchModalTitle: '设置当前党支部名称',
+      branchPlaceholder: '如：计算机学院第一研究生党支部',
+      branchHint: '同步应用于交接文档与贺卡落款',
+      branchEmptyWarn: '请输入党支部名称',
+      branchUpdateSuccess: '支部名称已更新',
+      identityLabel: '身份',
+      planningSuffix: '（规划中）',
+      lockTooltip: '锁定工作台',
+      lockConfirm: '确认锁定',
+      lockGoSettings: '前往设置',
+      lockConfirmQuestion: '确认立即锁定工作台吗？',
+      lockUnsetQuestion: '尚未设置锁屏密码，是否前往「设置」开启应用锁？',
+      footerPlatform: '学工工作平台'
+    },
+    calendar: {
+      today: '今日',
+      thisWeek: '本周',
+      viewDay: '日',
+      viewWeek: '周',
+      viewMonth: '月',
+      prevPeriod: '上一周期',
+      nextPeriod: '下一周期',
+      newEvent: '新建事项',
+      scheduleType: '日程类型',
+      showAll: '显示全部',
+      filterTip: '悬浮事项可预览详情卡片 · 点击空白格新建 · 拖拽边线或位置即时改期',
+      todaySchedule: '今日日程',
+      todayEmpty: '今天没有安排',
+      todayEmptySub: '点击左侧日历网格即可新建',
+      weekOverview: '本周概览',
+      weekEmpty: '本周暂无排期事项',
+      categoryLegend: '类别图例',
+      markDone: '标记完成'
     }
   }
 };

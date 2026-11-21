@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
 import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 import { DEV_STAGE_ORDER, nextStage } from '@/constants/dev-nodes';
 import DevDetail from './modules/dev-detail.vue';
 
 defineOptions({ name: 'DevelopmentPage' });
 
 const workStore = useWorkDataStore();
+const { bi, tMemberType } = useSctI18n();
 
 const STAGE_META: Record<string, { color: string; soft: string }> = {
   申请人: { color: '#8a8f99', soft: '#F1F2F4' },
@@ -33,7 +35,7 @@ const lanes = computed(() =>
 function stageDays(stageDate?: string) {
   if (!stageDate) return null;
   const days = dayjs().diff(dayjs(stageDate), 'day');
-  return days >= 0 ? `${days} 天` : null;
+  return days >= 0 ? `${days} ${bi('天', 'd')}` : null;
 }
 
 /** 时间窗临近（±7 天）高亮 */
@@ -48,7 +50,44 @@ function overdue(due?: string) {
   return dayjs(due).isBefore(dayjs(), 'day');
 }
 
-// ---------------- 拖拽流转（HTML5 原生 DnD） ----------------
+// ---------------- 阶段流转二次确认（防拖拽/点击误操作） ----------------
+const confirmModalShow = ref(false);
+const pendingMove = reactive<{
+  memberId: string;
+  memberName: string;
+  fromStage: string;
+  toStage: string;
+  source: 'drag' | 'button';
+}>({
+  memberId: '',
+  memberName: '',
+  fromStage: '',
+  toStage: '',
+  source: 'button'
+});
+
+function requestStageTransition(memberId: string, targetStage: string, source: 'drag' | 'button') {
+  const member = workStore.memberOf(memberId);
+  if (!member) return;
+  const st = workStore.devStages.find(d => d.member_id === memberId);
+  const currentStage = st?.stage ?? member.type;
+  if (currentStage === targetStage) return;
+
+  pendingMove.memberId = memberId;
+  pendingMove.memberName = member.name;
+  pendingMove.fromStage = currentStage;
+  pendingMove.toStage = targetStage;
+  pendingMove.source = source;
+  confirmModalShow.value = true;
+}
+
+async function confirmStageTransition() {
+  if (!pendingMove.memberId || !pendingMove.toStage) return;
+  await workStore.moveStageTo(pendingMove.memberId, pendingMove.toStage);
+  confirmModalShow.value = false;
+}
+
+// ---------------- 拖拽流转（HTML5 原生 DnD + 弹窗确认） ----------------
 const dragOverStage = ref<string | null>(null);
 const draggingId = ref<string | null>(null);
 
@@ -62,7 +101,9 @@ function onDrop(stage: string, e: DragEvent) {
   dragOverStage.value = null;
   const memberId = e.dataTransfer?.getData('text/plain') || draggingId.value;
   draggingId.value = null;
-  if (memberId) void workStore.moveStageTo(memberId, stage);
+  if (memberId) {
+    requestStageTransition(memberId, stage, 'drag');
+  }
 }
 
 // ---------------- 详情 ----------------
@@ -73,9 +114,11 @@ function openDetail(memberId: string) {
   detailShow.value = true;
 }
 
-// ---------------- 流转 ----------------
-async function advance(memberId: string) {
-  await workStore.advanceStage(memberId);
+// ---------------- 按钮触发流转（同样走确认弹窗） ----------------
+function requestAdvance(member: Sct.Member) {
+  const target = nextStage(member.type);
+  if (!target) return;
+  requestStageTransition(member.id, target, 'button');
 }
 </script>
 
@@ -84,15 +127,22 @@ async function advance(memberId: string) {
     <NCard :bordered="false">
       <template #header>
         <div class="flex items-center gap-12px">
-          <span class="text-16px font-bold">党员发展台账</span>
-          <span class="text-12px text-gray-400">五阶段泳道 · 点击人员看节点时间线 · 可流转阶段</span>
+          <span class="text-16px font-bold">{{ bi('党员发展', 'Member Development') }}</span>
+          <span class="text-12px text-gray-400">
+            {{
+              bi(
+                '五阶段泳道 · 点击人员查看节点时间线与材料状态 · 拖拽或点击流转均受二次确认保护',
+                '5-stage kanban · Click member to inspect timeline & materials · Drag or click transitions require confirmation'
+              )
+            }}
+          </span>
         </div>
       </template>
 
       <div class="dev-lanes">
         <div v-for="lane in lanes" :key="lane.stage" class="dev-lane">
           <div class="dev-lane__head" :style="{ background: lane.meta.soft, color: lane.meta.color }">
-            {{ lane.stage }}
+            {{ tMemberType(lane.stage) }}
             <span class="dev-lane__count">{{ lane.members.length }}</span>
           </div>
           <div
@@ -109,36 +159,90 @@ async function advance(memberId: string) {
               :class="{ 'dev-card--dragging': draggingId === m!.id }"
               draggable="true"
               @dragstart="onDragStart(m!.id, $event)"
-              @dragend="dragOverStage = null; draggingId = null"
+              @dragend="
+                dragOverStage = null;
+                draggingId = null;
+              "
               @click="openDetail(m!.id)"
             >
               <div class="dev-card__head">
                 <span class="dev-card__name">{{ m!.name }}</span>
                 <span class="dev-card__days">{{ stageDays(st.stage_date) ?? '—' }}</span>
               </div>
-              <div class="dev-card__next" :class="{ 'dev-card__next--soon': dueSoon(st.next_due), 'dev-card__next--over': overdue(st.next_due) }">
-                {{ st.next_node || '无待办节点' }}
+              <div
+                class="dev-card__next"
+                :class="{ 'dev-card__next--soon': dueSoon(st.next_due), 'dev-card__next--over': overdue(st.next_due) }"
+              >
+                {{ st.next_node || bi('无待办节点', 'No pending milestone') }}
               </div>
-              <div class="dev-card__due" :class="{ 'dev-card__due--soon': dueSoon(st.next_due), 'dev-card__due--over': overdue(st.next_due) }">
-                {{ st.next_due ? `预计 ${st.next_due}` : '' }}
+              <div
+                class="dev-card__due"
+                :class="{ 'dev-card__due--soon': dueSoon(st.next_due), 'dev-card__due--over': overdue(st.next_due) }"
+              >
+                {{ st.next_due ? `${bi('预计', 'Due')} ${st.next_due}` : '' }}
               </div>
               <div class="dev-card__ops" @click.stop>
                 <NButton
                   v-if="nextStage(m!.type)"
                   size="tiny"
-                  quaternary
+                  secondary
                   type="primary"
-                  @click="advance(m!.id)"
+                  @click="requestAdvance(m!)"
                 >
-                  流转到{{ nextStage(m!.type) }}
+                  <template #icon><SvgIcon icon="lucide:arrow-right-circle" /></template>
+                  {{ bi(`流转到${nextStage(m!.type)}`, `Advance to ${tMemberType(nextStage(m!.type)!)}`) }}
                 </NButton>
               </div>
             </div>
-            <div v-if="!lane.members.length" class="dev-lane__empty">暂无人员</div>
+            <div v-if="!lane.members.length" class="dev-lane__empty">{{ bi('暂无人员', 'No members') }}</div>
           </div>
         </div>
       </div>
     </NCard>
+
+    <!-- 阶段流转二次确认弹窗 -->
+    <NModal
+      v-model:show="confirmModalShow"
+      preset="card"
+      :title="bi('确认发展阶段流转', 'Confirm Stage Transition')"
+      class="w-460px"
+      :mask-closable="false"
+    >
+      <div class="flex flex-col gap-12px">
+        <div class="text-13px leading-relaxed text-[var(--sct-ink)]">
+          {{
+            bi(
+              `您正在通过${pendingMove.source === 'drag' ? '拖拽泳道' : '阶段推进按钮'}将成员 `,
+              'You are advancing member '
+            )
+          }}
+          <b class="text-[#A81C24]">{{ pendingMove.memberName }}</b>
+          {{ bi(' 的发展阶段进行变更：', ' to a new development stage:') }}
+        </div>
+        <div class="flex items-center justify-center gap-12px rounded-10px bg-[var(--sct-soft)] px-14px py-12px">
+          <NTag size="medium" :bordered="false">{{ tMemberType(pendingMove.fromStage) }}</NTag>
+          <SvgIcon icon="lucide:arrow-right" class="text-16px text-[#A81C24]" />
+          <NTag size="medium" type="error" :bordered="false">{{ tMemberType(pendingMove.toStage) }}</NTag>
+        </div>
+        <div class="text-12px leading-relaxed text-gray-500">
+          {{
+            bi(
+              `确认流转后，系统将同步更新该同志在人员台账中的政治面貌/类型、写入发展时间线，并自动初始化「${pendingMove.toStage}」阶段的培养考察材料清单。`,
+              `Confirming will update this member's type in the roster, append a timeline record, and initialize the material checklist for "${tMemberType(pendingMove.toStage)}".`
+            )
+          }}
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="confirmModalShow = false">{{ bi('取消', 'Cancel') }}</NButton>
+          <NButton size="small" type="primary" @click="confirmStageTransition">
+            <template #icon><SvgIcon icon="lucide:check" /></template>
+            {{ bi('确认流转', 'Confirm') }}
+          </NButton>
+        </div>
+      </template>
+    </NModal>
 
     <DevDetail v-model:show="detailShow" :member-id="detailMemberId" />
   </div>
@@ -189,7 +293,7 @@ async function advance(memberId: string) {
 }
 .dev-card {
   padding: 8px 10px;
-  background: #fff;
+  background: var(--sct-container);
   border: 1px solid var(--sct-border);
   border-radius: 8px;
   cursor: pointer;

@@ -20,13 +20,15 @@ export function esc(text: string): string {
 }
 
 export function printHtml(title: string, bodyHtml: string): void {
-  const win = window.open('', '_blank', 'width=900,height=680');
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${PRINT_STYLE}</style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print()},120)}<\/script></body></html>`;
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+  const win = window.open(url, '_blank', 'width=900,height=680');
   if (!win) {
+    URL.revokeObjectURL(url);
     window.$message?.error('浏览器拦截了打印窗口，请允许弹窗后重试');
     return;
   }
-  win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${PRINT_STYLE}</style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print()},120)}<\/script></body></html>`);
-  win.document.close();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** 会议签到表 */
@@ -66,7 +68,7 @@ export function buildSeatSheet(opts: { title: string; meta: string; cols: number
   }
   return `
     <h1>${esc(opts.title)}</h1>
-    <div class="meta">${esc(opts.meta)}　　讲台／主持位</div>
+    <div class="meta">${esc(opts.meta)}</div>
     <table>${body}</table>
     <div class="foot"><span>打印时间：${new Date().toLocaleString('zh-CN')}</span></div>
   `;

@@ -19,6 +19,8 @@ declare namespace Sct {
 
   type FeeStatus = '已缴' | '欠缴' | '减免' | '未在校';
 
+  type FeeCategory = '学生党员' | '在职党员';
+
   interface RecurrenceRule {
     freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
     /** weekly: 'friday'；monthly: 'day_25' | 'second_wednesday' 等编码 */
@@ -47,6 +49,10 @@ declare namespace Sct {
     advisor: string;
     join_date: string;
     full_date: string;
+    /** 党费类别：学生党员（默认 0.2 元/月）或 在职党员（自定义月标准） */
+    fee_category?: FeeCategory;
+    /** 每月应缴党费标准（元），学生默认 0.2，在职可自定义 */
+    fee_monthly?: number;
     seat?: SeatPos | null;
     key_dates?: Record<string, string>;
     note?: string;

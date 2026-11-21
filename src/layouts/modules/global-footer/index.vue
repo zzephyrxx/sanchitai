@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { $t } from '@/locales';
+
 defineOptions({
   name: 'GlobalFooter'
 });
@@ -6,7 +8,7 @@ defineOptions({
 
 <template>
   <DarkModeContainer class="h-full flex-center">
-    <span class="text-12px text-gray-400">学工工作平台</span>
+    <span class="text-12px text-gray-400">{{ $t('sct.header.footerPlatform') }}</span>
   </DarkModeContainer>
 </template>
 

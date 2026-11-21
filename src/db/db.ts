@@ -83,6 +83,7 @@ export async function setMeta(key: string, value: unknown): Promise<void> {
 export interface BackupShape {
   schemaVersion: number;
   exported_at: string;
+  branch_name?: string;
   members: Sct.Member[];
   seat_maps: Sct.SeatMap[];
   cal_events: Sct.CalEvent[];
@@ -97,19 +98,22 @@ const BACKUP_RING_SIZE = 5;
 
 /** 全库导出为统一备份格式 */
 export async function exportBackup(): Promise<BackupShape> {
-  const [members, seat_maps, cal_events, dev_stages, fee_records, talks, doc_templates, docs] = await Promise.all([
-    db.members.toArray(),
-    db.seatMaps.toArray(),
-    db.calEvents.toArray(),
-    db.devStages.toArray(),
-    db.feeRecords.toArray(),
-    db.talks.toArray(),
-    db.docTemplates.toArray(),
-    db.docs.toArray()
-  ]);
+  const [members, seat_maps, cal_events, dev_stages, fee_records, talks, doc_templates, docs, branchName] =
+    await Promise.all([
+      db.members.toArray(),
+      db.seatMaps.toArray(),
+      db.calEvents.toArray(),
+      db.devStages.toArray(),
+      db.feeRecords.toArray(),
+      db.talks.toArray(),
+      db.docTemplates.toArray(),
+      db.docs.toArray(),
+      getMeta<string>('branch-name')
+    ]);
   return {
     schemaVersion: 1,
     exported_at: new Date().toISOString(),
+    branch_name: branchName || '智感硕博党支部',
     members,
     seat_maps,
     cal_events,
@@ -170,6 +174,9 @@ export async function importBackup(shape: BackupShape): Promise<void> {
       ]);
     }
   );
+  if (shape.branch_name && typeof shape.branch_name === 'string') {
+    await setMeta('branch-name', shape.branch_name.trim());
+  }
 }
 
 /** 清空全部业务数据（保留 meta 备份） */

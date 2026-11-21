@@ -1,11 +1,23 @@
 /* ============================================================
    三尺台 表面变量层（2 皮肤 × 深/浅 = 4 组合）
-   --sct-page 页面底 | --sct-container 卡片 | --sct-border 边框
-   --sct-soft 软底 | --sct-muted 弱文字 | --sct-ink 墨字
+   1. 默认（中式简约墨韵）
+   2. 电子纸（KONTUR Ledger CRM · 100% 复刻 crm-frosted-glass-template/page.tsx）
    ============================================================ */
 
+/* 仅对非 Naive UI 的裸 button 提供零权重透明底兜底，绝不干扰 .n-button */
+:where(button):not(.n-button) {
+  background-color: transparent;
+}
+
+/* 显式巩固 Naive UI .n-button 常态背景与文字变量（(0,1,1) 高于 [type='button']，同时低于 :hover/:active/:focus (0,3,0)） */
+button.n-button,
+a.n-button {
+  background-color: var(--n-color);
+  color: var(--n-text-color);
+}
+
 :root {
-  /* 默认浅色（参考 calendar-schedule：近白底） */
+  /* 1. 默认浅色（中式简约墨韵） */
   --sct-page: #fbfbfc;
   --sct-container: #ffffff;
   --sct-border: #ececf0;
@@ -13,11 +25,67 @@
   --sct-muted: #71717a;
   --sct-ink: #2b2926;
   --sct-accent: #2b2926;
-  --sct-font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --sct-radius: 10px;
+  --sct-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --sct-font-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans SC', sans-serif;
+  --sct-font-heading: var(--sct-font-sans);
+  --sct-font-mono: 'IBM Plex Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --sct-font-serif: 'Instrument Serif', 'Georgia', 'Songti SC', 'STSong', serif;
+  --sct-font-scale: 1;
+}
+
+/* 全局三类字体绑定（正文 / 标题 / 等宽数字） */
+html,
+body {
+  font-family: var(--sct-font-sans);
+}
+
+/* 全局字号缩放：同步缩放 UnoCSS 固定 px 字号类，且不使用 CSS zoom 以免干扰 Popover/Tooltip/Dropdown 坐标计算 */
+.text-10px {
+  font-size: calc(10px * var(--sct-font-scale, 1)) !important;
+}
+.text-11px {
+  font-size: calc(11px * var(--sct-font-scale, 1)) !important;
+}
+.text-12px {
+  font-size: calc(12px * var(--sct-font-scale, 1)) !important;
+}
+.text-13px {
+  font-size: calc(13px * var(--sct-font-scale, 1)) !important;
+}
+.text-14px {
+  font-size: calc(14px * var(--sct-font-scale, 1)) !important;
+}
+.text-15px {
+  font-size: calc(15px * var(--sct-font-scale, 1)) !important;
+}
+.text-16px {
+  font-size: calc(16px * var(--sct-font-scale, 1)) !important;
+}
+.text-18px {
+  font-size: calc(18px * var(--sct-font-scale, 1)) !important;
+}
+
+h1:not(.sct-brand-title),
+h2:not(.sct-brand-title),
+h3:not(.sct-brand-title),
+.n-card-header__main,
+.n-drawer-header__main {
+  font-family: var(--sct-font-heading);
+}
+
+code,
+kbd,
+samp,
+pre,
+.font-mono {
+  font-family: var(--sct-font-mono) !important;
 }
 
 html.dark {
-  /* 默认深色（参考 dashboard-charts：近黑蓝） */
+  /* 1. 默认深色 */
   --sct-page: #0b0e14;
   --sct-container: #12161f;
   --sct-border: #1f2430;
@@ -25,35 +93,281 @@ html.dark {
   --sct-muted: #8b93a5;
   --sct-ink: #e8eaf0;
   --sct-accent: #4f6ef7;
+  --sct-shadow: none;
 }
 
-html[data-preset='paper'] {
-  /* 纸感浅色（参考 crm-frosted-glass：暖纸底 + 白卡 + 细边框档案感） */
-  --sct-page: #f5f3ee;
-  --sct-container: #fdfdfb;
-  --sct-border: #e6e3db;
-  --sct-soft: #f0ede6;
-  --sct-muted: #8a8478;
-  --sct-ink: #26241f;
-  --sct-accent: #9a2c25;
+/* ============================================================
+   2. 电子纸（KONTUR Ledger CRM · 100% 还原源码 page.tsx）
+   源码精确色值：
+   INK   = "#16150F"
+   PAPER = "#F4F2EC"
+   CARD  = "#FBFAF6"
+   LINE  = "#DAD5C8" (内部分割线 "#EAE6DB" / 芯片软底 "#E9E5D9")
+   GREEN = "#1E5C42" (Proposal 软底 "#DFE8E3")
+   AMBER = "#B7791F" (Negotiation 软底 "#F0E6D2")
+   ============================================================ */
+html[data-preset='crm-frosted-glass'] {
+  --sct-page: #f4f2ec;
+  --sct-container: #fbfaf6;
+  --sct-border: #dad5c8;
+  --sct-soft: #e9e5d9;
+  --sct-muted: #6e6a5e;
+  --sct-ink: #16150f;
+  --sct-accent: #1e5c42;
+  --sct-radius: 0px;
+  --sct-shadow: none;
+  --sct-ok-soft: #dfe8e3;
+  --sct-warn-soft: #f0e6d2;
+  --sct-err-soft: #efe0dc;
+  --sct-info-soft: #e3e8e6;
+  --sct-purple-soft: #e9e5eb;
+  --sct-teal-soft: #dfe8e3;
+  font-variant-numeric: tabular-nums;
 }
 
-html[data-preset='paper'].dark {
-  /* 纸感深色：暖黑纸 */
-  --sct-page: #161513;
-  --sct-container: #201e1b;
-  --sct-border: #33302b;
-  --sct-soft: #262421;
-  --sct-muted: #9a948a;
-  --sct-ink: #ece9e4;
-  --sct-accent: #c96a5e;
+html[data-preset='crm-frosted-glass'].dark {
+  --sct-page: #14130f;
+  --sct-container: #1c1b16;
+  --sct-border: #333028;
+  --sct-soft: #26241d;
+  --sct-muted: #9e998b;
+  --sct-ink: #f4f2ec;
+  --sct-accent: #2d8660;
+  --sct-radius: 0px;
+  --sct-shadow: none;
+  --sct-ok-soft: #172b22;
+  --sct-warn-soft: #2c2313;
+  --sct-err-soft: #2d1919;
+  --sct-info-soft: #1a2426;
+  --sct-purple-soft: #231e29;
+  --sct-teal-soft: #172b22;
+  font-variant-numeric: tabular-nums;
 }
 
-/* 纸感：圆角收小 + 卡片磨砂 */
-html[data-preset='paper'] .n-card,
-html[data-preset='paper'].dark .n-card {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+/* 电子纸基底：纯正暖纸底色 #F4F2EC 与深墨字 #16150F */
+html[data-preset='crm-frosted-glass'] body,
+html[data-preset='crm-frosted-glass'] .bg-layout {
+  background-color: var(--sct-page) !important;
+  color: var(--sct-ink) !important;
+}
+
+/* 棱角分明：全局 0px 直角几何（还原 KONTUR 源码零圆角瑞士台账网格） */
+html[data-preset='crm-frosted-glass'] .n-card,
+html[data-preset='crm-frosted-glass'] .n-modal,
+html[data-preset='crm-frosted-glass'] .n-drawer,
+html[data-preset='crm-frosted-glass'] .n-drawer-content,
+html[data-preset='crm-frosted-glass'] .n-button,
+html[data-preset='crm-frosted-glass'] .n-button__border,
+html[data-preset='crm-frosted-glass'] .n-button__state-border,
+html[data-preset='crm-frosted-glass'] .n-tag,
+html[data-preset='crm-frosted-glass'] .n-tag__border,
+html[data-preset='crm-frosted-glass'] .n-input,
+html[data-preset='crm-frosted-glass'] .n-input__border,
+html[data-preset='crm-frosted-glass'] .n-input__state-border,
+html[data-preset='crm-frosted-glass'] .n-base-selection,
+html[data-preset='crm-frosted-glass'] .n-base-selection-label,
+html[data-preset='crm-frosted-glass'] .n-base-selection__border,
+html[data-preset='crm-frosted-glass'] .n-base-selection__state-border,
+html[data-preset='crm-frosted-glass'] .n-tabs-rail,
+html[data-preset='crm-frosted-glass'] .n-tabs-tab,
+html[data-preset='crm-frosted-glass'] .n-tabs-capsule,
+html[data-preset='crm-frosted-glass'] .n-data-table,
+html[data-preset='crm-frosted-glass'] .n-data-table-wrapper,
+html[data-preset='crm-frosted-glass'] .n-alert,
+html[data-preset='crm-frosted-glass'] .n-popover,
+html[data-preset='crm-frosted-glass'] .n-dropdown-menu,
+html[data-preset='crm-frosted-glass'] .n-menu-item-content,
+html[data-preset='crm-frosted-glass'] .n-menu-item-content::before,
+html[data-preset='crm-frosted-glass'] [class*='rounded-']:not(.rounded-full) {
+  border-radius: 0px !important;
+}
+
+/* 电子纸弹窗与普通气泡：#FBFAF6 象牙白纸底 + 1px #DAD5C8 台账框线（注意排除 .n-tooltip 深色提示气泡，防止白字在浅底上看不清） */
+html[data-preset='crm-frosted-glass'] .n-card,
+html[data-preset='crm-frosted-glass'] .n-modal,
+html[data-preset='crm-frosted-glass'] .n-popover:not(.n-tooltip) {
+  background-color: var(--sct-container) !important;
+  border: 1px solid var(--sct-border) !important;
+  box-shadow: none !important;
+  color: var(--sct-ink);
+}
+
+/* 电子纸下的 Tooltip 悬浮提示气泡：采用 KONTUR 墨黑底 (#16150F) + 暖纸白字 (#F4F2EC) + 1px 台账边框，清晰醒目 */
+html[data-preset='crm-frosted-glass'] .n-popover.n-tooltip {
+  background-color: #16150f !important;
+  color: #f4f2ec !important;
+  border: 1px solid #333028 !important;
+  box-shadow: 2px 2px 0 var(--sct-accent) !important;
+}
+
+html[data-preset='crm-frosted-glass'] .n-popover.n-tooltip .n-popover-arrow {
+  background-color: #16150f !important;
+  border-color: #333028 !important;
+}
+
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-header {
+  border-bottom: 1px solid var(--sct-border);
+  padding: 12px 18px !important;
+}
+
+/* 电子纸卡片标题栏带有 1px 下边框，Naive UI 默认 .n-card__content padding-top: 0 会导致正文紧贴分割线。
+   同时覆盖 .n-card__content 与 .n-card-content，并为内部首个直接子元素补充 margin-top，确保全站所有卡片、弹窗、抽屉标题栏下都有充足的顶部间距 */
+html[data-preset='crm-frosted-glass'] .n-card > .n-card__content,
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-content,
+html[data-preset='crm-frosted-glass'] .n-card.n-card--bordered > .n-card__content,
+html[data-preset='crm-frosted-glass'] .n-card.n-card--bordered > .n-card-content,
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-header + .n-card__content,
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-header + .n-card-content,
+html[data-preset='crm-frosted-glass'] .n-card.n-card--small-size > .n-card__content,
+html[data-preset='crm-frosted-glass'] .n-card.n-card--small-size > .n-card-content,
+html[data-preset='crm-frosted-glass'] .n-card.n-card--small-size > .n-card-header + .n-card__content,
+html[data-preset='crm-frosted-glass'] .n-card.n-card--small-size > .n-card-header + .n-card-content,
+html[data-preset='crm-frosted-glass'] .n-modal.n-card > .n-card__content,
+html[data-preset='crm-frosted-glass'] .n-modal.n-card > .n-card-content {
+  padding-top: 18px !important;
+}
+
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-header + .n-card__content > :first-child,
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-header + .n-card-content > :first-child {
+  margin-top: 4px !important;
+}
+
+/* 默认主题下带标题栏的卡片也保持至少 12px 的正文顶部呼吸感 */
+.n-card > .n-card-header + .n-card__content,
+.n-card > .n-card-header + .n-card-content {
+  padding-top: 12px !important;
+}
+
+/* 电子纸抽屉标题栏与正文之间同样保持充足间距 */
+html[data-preset='crm-frosted-glass'] .n-drawer .n-drawer-body-content-wrapper {
+  padding-top: 20px !important;
+}
+
+html[data-preset='crm-frosted-glass'] .n-card > .n-card-header .n-card-header__main {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sct-ink);
+}
+
+/* 侧栏与顶栏：与源码一致采用 PAPER 底 + 1px LINE 框线分割（无弥散阴影） */
+html[data-preset='crm-frosted-glass'] .shadow-sider {
+  background-color: var(--sct-page) !important;
+  border-right: 1px solid var(--sct-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-preset='crm-frosted-glass'] .shadow-header {
+  background-color: var(--sct-page) !important;
+  border-bottom: 1px solid var(--sct-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-preset='crm-frosted-glass'] .shadow-tab {
+  background-color: var(--sct-page) !important;
+  border-bottom: 1px solid var(--sct-border) !important;
+  box-shadow: none !important;
+}
+
+/* 侧边栏菜单选中项：100% 复刻源码 line 194 `{ backgroundColor: CARD, boxShadow: 'inset 2px 0 0 #1E5C42' }` */
+html[data-preset='crm-frosted-glass'] .n-menu .n-menu-item-content--selected::before,
+html[data-preset='crm-frosted-glass'] .n-menu .n-menu-item-content--child-active::before {
+  background-color: var(--sct-container) !important;
+  box-shadow: inset 3px 0 0 var(--sct-accent) !important;
+  border: 1px solid var(--sct-border);
+  border-left: none;
+}
+
+html[data-preset='crm-frosted-glass'] .n-menu .n-menu-item-content--selected .n-menu-item-content-header,
+html[data-preset='crm-frosted-glass'] .n-menu .n-menu-item-content--selected .n-menu-item-content__icon {
+  color: var(--sct-ink) !important;
+  font-weight: 700;
+}
+
+/* 子卡片 / 看板卡片：100% 复刻源码 line 331 `{ borderColor: LINE, backgroundColor: PAPER, boxShadow: '2px 2px 0 #1E5C42' }` */
+html[data-preset='crm-frosted-glass'] .dev-card,
+html[data-preset='crm-frosted-glass'] .step-node-card,
+html[data-preset='crm-frosted-glass'] .academy-node-card,
+html[data-preset='crm-frosted-glass'] .cal-side-card,
+html[data-preset='crm-frosted-glass'] .knowledge-card,
+html[data-preset='crm-frosted-glass'] .policy-card,
+html[data-preset='crm-frosted-glass'] .tpl-card,
+html[data-preset='crm-frosted-glass'] .mm-node,
+html[data-preset='crm-frosted-glass'] .mm-group-card,
+html[data-preset='crm-frosted-glass'] .roster-cell:not(.roster-cell--empty) {
+  background-color: var(--sct-page) !important;
+  border: 1px solid var(--sct-border) !important;
+  box-shadow: none !important;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+
+html[data-preset='crm-frosted-glass'] .dev-card:hover,
+html[data-preset='crm-frosted-glass'] .step-node-card:hover,
+html[data-preset='crm-frosted-glass'] .academy-node-card:hover,
+html[data-preset='crm-frosted-glass'] .cal-side-card:hover,
+html[data-preset='crm-frosted-glass'] .knowledge-card:hover,
+html[data-preset='crm-frosted-glass'] .policy-card:hover,
+html[data-preset='crm-frosted-glass'] .tpl-card:hover,
+html[data-preset='crm-frosted-glass'] .mm-node:hover,
+html[data-preset='crm-frosted-glass'] .roster-cell:not(.roster-cell--empty):hover {
+  transform: translate(-1px, -1px);
+  border-color: var(--sct-ink) !important;
+  box-shadow: 2px 2px 0 var(--sct-accent) !important;
+}
+
+/* 表格：100% 复刻源码 Contacts Table 等宽字体表头 + 1px 台账横线 + hover:bg-[#F4F2EC] */
+html[data-preset='crm-frosted-glass'] .n-data-table .n-data-table-th {
+  font-family: var(--sct-font-mono);
+  font-size: 11px !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sct-muted) !important;
+  background-color: var(--sct-container) !important;
+  border-bottom: 1px solid var(--sct-border) !important;
+}
+
+html[data-preset='crm-frosted-glass'] .n-data-table .n-data-table-td {
+  background-color: var(--sct-container) !important;
+  border-bottom: 1px solid var(--sct-border) !important;
+}
+
+html[data-preset='crm-frosted-glass'] .n-data-table .n-data-table-tr:hover .n-data-table-td {
+  background-color: var(--sct-page) !important;
+}
+
+/* 标签芯片 StageChip：等宽字体 + 紧凑字距（源码 line 140） */
+html[data-preset='crm-frosted-glass'] .n-tag {
+  font-family: var(--sct-font-mono);
+  letter-spacing: 0.05em;
+}
+
+/* 默认主题下卡片也具备干净的 1px 细边框与柔和圆角 */
+.n-card {
+  border: 1px solid var(--sct-border);
+  border-radius: var(--sct-radius, 12px);
+}
+
+/* 全局弹窗字段图标 + 文本标签对齐样式 */
+.sct-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.sct-field-icon {
+  font-size: 13px;
+  color: var(--sct-accent, #a81c24);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+/* 全局保障：所有弹窗与抽屉中的表单项 Label 严禁因宽度窄换行 */
+.n-modal .n-form-item .n-form-item-label,
+.n-drawer .n-form-item .n-form-item-label,
+.n-modal .n-form-item-label__text,
+.n-drawer .n-form-item-label__text {
+  white-space: nowrap !important;
+  flex-shrink: 0;
 }
 
 /* View Transitions 圆形扩散：关闭默认动画 */
@@ -68,7 +382,7 @@ html.dark .n-card {
   box-shadow: none;
 }
 
-/* 语义软底（浅/深两态） */
+/* 语义软底（默认浅/深两态） */
 :root {
   --sct-ok-soft: #e3f2e9;
   --sct-warn-soft: #fcefdc;

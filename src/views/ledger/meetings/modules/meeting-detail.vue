@@ -5,6 +5,7 @@
 import { computed, h, ref, watch } from 'vue';
 import { NSelect } from 'naive-ui';
 import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSvgIcon } from '@/hooks/common/icon';
 import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 import { buildSignInSheet, printHtml } from '@/utils/print';
 
@@ -14,6 +15,14 @@ const props = defineProps<{ show: boolean; eventId: string | null }>();
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>();
 
 const workStore = useWorkDataStore();
+const { SvgIconVNode } = useSvgIcon();
+
+function colHeader(icon: string, text: string) {
+  return h('span', { class: 'inline-flex items-center gap-4px whitespace-nowrap' }, [
+    SvgIconVNode({ icon, fontSize: 13 })?.(),
+    h('span', text)
+  ]);
+}
 
 const show = computed({
   get: () => props.show,
@@ -65,20 +74,23 @@ const rate = computed(() => {
 
 const attColumns = [
   {
-    title: '姓名',
+    title: () => colHeader('lucide:user', '姓名'),
     key: 'name',
-    width: 100,
+    width: 110,
     render: (r: (typeof localRows.value)[number]) =>
-      h('span', { class: 'inline-flex items-center gap-4px' }, [
-        h('span', { class: 'inline-block size-8px rounded-full', style: { background: MEMBER_TYPE_COLORS[r.type as Sct.MemberType] } }),
+      h('span', { class: 'inline-flex items-center gap-5px font-medium' }, [
+        h('span', {
+          class: 'inline-block size-8px rounded-full',
+          style: { background: MEMBER_TYPE_COLORS[r.type as Sct.MemberType] }
+        }),
         r.name
       ])
   },
-  { title: '类型', key: 'type', width: 90 },
+  { title: () => colHeader('lucide:award', '类型'), key: 'type', width: 100 },
   {
-    title: '状态',
+    title: () => colHeader('lucide:check-circle-2', '状态'),
     key: 'status',
-    width: 130,
+    width: 140,
     render: (r: (typeof localRows.value)[number]) =>
       h(NSelect, {
         value: r.status,
@@ -110,70 +122,106 @@ async function setStatus(status: Sct.EventStatus) {
 
 function printSignIn() {
   if (!event.value) return;
-  const rows = localRows.value.map(r => ({ name: r.name, type: r.type, group: workStore.memberOf(r.memberId)?.group ?? '' }));
-  printHtml(event.value.title, buildSignInSheet({
-    title: event.value.title,
-    meta: `${event.value.date} ${event.value.start_time || ''} · ${event.value.location || ''}`,
-    rows
+  const rows = localRows.value.map(r => ({
+    name: r.name,
+    type: r.type,
+    group: workStore.memberOf(r.memberId)?.group ?? ''
   }));
+  printHtml(
+    event.value.title,
+    buildSignInSheet({
+      title: event.value.title,
+      meta: `${event.value.date} ${event.value.start_time || ''} · ${event.value.location || ''}`,
+      rows
+    })
+  );
 }
 </script>
 
 <template>
-  <NDrawer v-model:show="show" :width="560">
-    <NDrawerContent v-if="event" :title="event.title" closable>
-      <NSpace vertical size="large">
-        <div class="flex items-center gap-8px">
-          <NTag size="small" :bordered="false" :color="{ color: 'var(--sct-err-soft)', textColor: '#A81C24' }">{{ event.kind }}</NTag>
-          <span class="text-13px">{{ event.date }} {{ event.start_time && event.start_time !== event.end_time ? `${event.start_time}-${event.end_time}` : '' }}</span>
-          <span class="text-13px text-gray-500">{{ event.location }}</span>
-          <NTag size="small" type="warning" v-if="event.status === '计划'">计划</NTag>
-          <NTag size="small" type="success" v-else-if="event.status === '已完成'">已完成</NTag>
-        </div>
+  <NDrawer v-model:show="show" :width="580">
+    <NDrawerContent
+      v-if="event"
+      :title="event.title"
+      closable
+      :body-content-style="{ height: '100%', display: 'flex', flexDirection: 'column', gap: '14px' }"
+    >
+      <div class="flex flex-wrap items-center gap-8px">
+        <NTag size="small" :bordered="false" :color="{ color: 'var(--sct-err-soft)', textColor: '#A81C24' }">
+          {{ event.kind }}
+        </NTag>
+        <span class="text-13px">
+          {{ event.date }}
+          {{ event.start_time && event.start_time !== event.end_time ? `${event.start_time}-${event.end_time}` : '' }}
+        </span>
+        <span class="text-13px text-gray-500">{{ event.location }}</span>
+        <NTag v-if="event.status === '计划'" size="small" type="warning">计划</NTag>
+        <NTag v-else-if="event.status === '已完成'" size="small" type="success">已完成</NTag>
+      </div>
 
-        <div v-if="event.agenda?.length">
-          <div class="mb-6px text-13px font-bold">议程</div>
-          <ol class="ma-0 pl-20px text-13px leading-relaxed">
-            <li v-for="(item, i) in event.agenda" :key="i">{{ item }}</li>
-          </ol>
-        </div>
+      <div v-if="event.agenda?.length" class="rounded-10px bg-[var(--sct-soft)] px-12px py-10px">
+        <div class="mb-4px text-12px font-bold text-gray-500">会议议程</div>
+        <ol class="ma-0 pl-18px text-13px leading-relaxed">
+          <li v-for="(item, i) in event.agenda" :key="i">{{ item }}</li>
+        </ol>
+      </div>
 
-        <div v-if="event.kind === '党课'" class="rounded-8px bg-[var(--sct-soft)] p-10px">
-          <div class="mb-6px text-13px font-bold">合并设置（并入党员大会）</div>
-          <NSelect
-            :options="mergeOptions"
-            placeholder="选择要并入的党员大会"
-            size="small"
-            clearable
-            :value="event.merged_into ?? null"
-            @update:value="v => mergeInto(v)"
-          />
-          <div class="mt-4px text-12px text-gray-400">并入后：本会议不计入"每月线下会议 ≤3 次"统计</div>
-        </div>
+      <div v-if="event.kind === '党课'" class="rounded-10px bg-[var(--sct-soft)] p-10px">
+        <div class="mb-6px text-13px font-bold">合并设置（并入党员大会）</div>
+        <NSelect
+          :options="mergeOptions"
+          placeholder="选择要并入的党员大会"
+          size="small"
+          clearable
+          :value="event.merged_into ?? null"
+          @update:value="v => mergeInto(v)"
+        />
+        <div class="mt-4px text-12px text-gray-400">并入后：本会议不计入“每月线下会议 ≤3 次”统计</div>
+      </div>
 
-        <div>
-          <div class="mb-6px flex items-center justify-between">
-            <span class="text-13px font-bold">参会考勤</span>
-            <span v-if="rate" class="text-13px font-bold" :style="{ color: rate.pct >= 80 ? '#3f9d63' : '#d97706' }">
-              到会率 {{ rate.pct }}%（{{ rate.present }}/{{ rate.due }}）
-            </span>
-          </div>
+      <!-- 参会考勤列表：自适应撑满剩余全部高度 -->
+      <div class="min-h-0 flex flex-1 flex-col">
+        <div class="mb-8px flex items-center justify-between">
+          <span class="text-13px font-bold">参会考勤（共 {{ localRows.length }} 人）</span>
+          <span v-if="rate" class="text-13px font-bold" :style="{ color: rate.pct >= 80 ? '#3f9d63' : '#d97706' }">
+            到会率 {{ rate.pct }}%（{{ rate.present }}/{{ rate.due }}）
+          </span>
+        </div>
+        <div class="min-h-0 flex-1">
           <NDataTable
             :columns="attColumns"
             :data="localRows"
             size="small"
             :bordered="false"
-            max-height="320px"
-            :row-key="(r: any) => r.memberId"
+            flex-height
+            class="h-full min-h-420px"
+            :row-key="(r: { memberId: string }) => r.memberId"
           />
         </div>
+      </div>
 
-        <div class="flex gap-8px">
-          <NButton size="small" type="primary" @click="setStatus('已完成')">标记完成</NButton>
-          <NButton size="small" @click="setStatus('已取消')">取消会议</NButton>
-          <NButton size="small" @click="printSignIn">打印签到表</NButton>
+      <template #footer>
+        <div class="w-full flex items-center justify-between gap-8px">
+          <NButton size="small" secondary @click="printSignIn">
+            <template #icon><SvgIcon icon="lucide:printer" /></template>
+            打印签到表
+          </NButton>
+          <div class="flex gap-8px">
+            <NButton v-if="event.status !== '计划'" size="small" secondary @click="setStatus('计划')">
+              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+              恢复计划
+            </NButton>
+            <NButton v-if="event.status !== '已取消'" size="small" secondary @click="setStatus('已取消')">
+              <template #icon><SvgIcon icon="lucide:ban" /></template>
+              取消会议
+            </NButton>
+            <NButton v-if="event.status !== '已完成'" size="small" type="primary" @click="setStatus('已完成')">
+              <template #icon><SvgIcon icon="lucide:check-circle-2" /></template>
+              标记完成
+            </NButton>
+          </div>
         </div>
-      </NSpace>
+      </template>
     </NDrawerContent>
   </NDrawer>
 </template>

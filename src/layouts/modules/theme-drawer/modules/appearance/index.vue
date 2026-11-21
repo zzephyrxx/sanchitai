@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ThemeColor from './modules/theme-color.vue';
+import ThemeFont from './modules/theme-font.vue';
 import ThemeRadius from './modules/theme-radius.vue';
 import ThemeSchema from './modules/theme-schema.vue';
 
@@ -13,6 +14,7 @@ defineOptions({
     <ThemeSchema />
     <ThemeColor />
     <ThemeRadius />
+    <ThemeFont />
   </div>
 </template>
 

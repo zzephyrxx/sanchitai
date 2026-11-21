@@ -4,7 +4,7 @@
  * 种子编码约定：
  * - weekly  + by: 'friday' | 'monday' ...
  * - monthly + by: 'day_25' | 'second_wednesday' | 'third_tuesday' | 'last_friday'
- * - range: ['YYYY-MM-DD', 'YYYY-MM-DD']；skip: 例外日期；overrides: 按日期覆写字段
+ * - range: ['YYYY-MM-DD', 'YYYY-MM-DD']；skip: 例外日期；overrides: 按日期覆写字段（含拖拽改期 new_date / start_time / end_time）
  */
 import dayjs from 'dayjs';
 
@@ -14,7 +14,6 @@ const ORDINALS: Record<string, number> = { first: 1, second: 2, third: 3, fourth
 /** 求某月"第 n 个星期x"（n=-1 表示最后一个），返回 ISO 日期或 null */
 function nthWeekdayOfMonth(year: number, month: number, weekday: number, nth: number): string | null {
   if (nth === -1) {
-    // 月末向前找
     let d = dayjs(new Date(year, month + 1, 0));
     while (d.day() !== weekday) {
       d = d.subtract(1, 'day');
@@ -52,20 +51,22 @@ function monthlyCandidate(year: number, month: number, by: string): string | nul
 
 /**
  * 展开一条重复事件在 [rangeStart, rangeEnd] 的发生实例
- * 返回带实例 id 的 CalEvent 副本（含 overrides 覆写）
+ * 返回带实例 id 的 CalEvent 副本（含 overrides 覆写，支持拖拽跨天 new_date 与改时长 start_time/end_time）
  */
 export function expandRecurrence(event: Sct.CalEvent, rangeStart: string, rangeEnd: string): Sct.CalEvent[] {
   const rule = event.recurrence;
   if (!rule) return [];
 
-  // 有效窗口 = 查询范围 ∩ 规则范围（dayjs 不可变，取交集后重赋值）
-  let start = dayjs(rangeStart).startOf('day');
-  const ruleStart = dayjs(rule.range[0]);
-  if (ruleStart.isValid() && ruleStart.isAfter(start)) start = ruleStart;
+  // 扫描整个规则周期（或前后扩 1 个月以捕获跨周拖拽后的 new_date），最后再按 effectiveDate 过滤到 [rangeStart, rangeEnd]
+  const scanStartStr = rule.range[0] || rangeStart;
+  const scanEndStr = rule.range[1] || rangeEnd;
+  let start = dayjs(scanStartStr).startOf('day');
+  let end = dayjs(scanEndStr).endOf('day');
 
-  let end = dayjs(rangeEnd);
-  const ruleEnd = dayjs(rule.range[1] ?? rangeEnd);
-  if (ruleEnd.isValid() && ruleEnd.isBefore(end)) end = ruleEnd;
+  const qStart = dayjs(rangeStart).subtract(1, 'month').startOf('day');
+  const qEnd = dayjs(rangeEnd).add(1, 'month').endOf('day');
+  if (qStart.isAfter(start)) start = qStart;
+  if (qEnd.isBefore(end)) end = qEnd;
 
   if (!start.isValid() || !end.isValid() || start.isAfter(end)) return [];
 
@@ -96,7 +97,6 @@ export function expandRecurrence(event: Sct.CalEvent, rangeStart: string, rangeE
         }
       }
     } else {
-      // daily/yearly 暂不使用，防御性跳出
       break;
     }
 
@@ -109,12 +109,15 @@ export function expandRecurrence(event: Sct.CalEvent, rangeStart: string, rangeE
   const occurrences: Sct.CalEvent[] = [];
   for (const date of dates) {
     if (skipSet.has(date)) continue;
-    const override = overrideMap.get(date);
+    const override = overrideMap.get(date) as (Partial<Sct.CalEvent> & { date: string; new_date?: string }) | undefined;
+    const effectiveDate = typeof override?.new_date === 'string' && override.new_date ? override.new_date : date;
+    if (effectiveDate < rangeStart || effectiveDate > rangeEnd) continue;
+
     const instance: Sct.CalEvent = {
       ...event,
       ...((override ?? {}) as Partial<Sct.CalEvent>),
       id: `${event.id}-occ-${date}`,
-      date,
+      date: effectiveDate,
       recurrence: null // 投影实例本身不再带规则
     };
     occurrences.push(instance);

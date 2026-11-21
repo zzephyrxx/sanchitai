@@ -176,6 +176,7 @@ const routeMap: RouteMap = {
   "ledger_members": "/ledger/members",
   "ledger_talks": "/ledger/talks",
   "library": "/library",
+  "library_birthday": "/library/birthday",
   "library_docs": "/library/docs",
   "library_knowledge": "/library/knowledge",
   "library_policy": "/library/policy",

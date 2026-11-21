@@ -1,6 +1,6 @@
 const local: App.I18n.Schema = {
   system: {
-    title: 'SanChiTai Workbench',
+    title: '三尺台',
     updateTitle: 'System Version Update Notification',
     updateContent: 'A new version of the system has been detected. Do you want to refresh the page immediately?',
     updateConfirm: 'Refresh immediately',
@@ -87,6 +87,44 @@ const local: App.I18n.Schema = {
       themeRadius: {
         title: 'Theme Radius'
       },
+      themeFont: {
+        title: 'Global Fonts & Scale',
+        scale: 'Global Font Scale',
+        sans: 'UI & Body',
+        heading: 'Headings & Cards',
+        mono: 'Numbers & Ledger',
+        options: {
+          sans: {
+            system: 'System Sans-Serif',
+            pingfang: 'PingFang SC',
+            yahei: 'Microsoft YaHei UI',
+            harmony: 'HarmonyOS Sans / MiSans',
+            'noto-sans': 'Noto Sans SC',
+            inter: 'Inter / SF Pro Sans',
+            georgia: 'Georgia / Times Serif',
+            songti: 'Songti / Noto Serif SC',
+            kaiti: 'Kaiti / Calligraphic',
+            fangsong: 'FangSong / Official Doc'
+          },
+          heading: {
+            'follow-sans': 'Follow Body Font',
+            songti: 'Songti Serif (Classic)',
+            kaiti: 'Kaiti Script (Warm)',
+            fangsong: 'FangSong (Official)',
+            heiti: 'Bold Sans (Crisp)',
+            georgia: 'Georgia Editorial Serif',
+            inter: 'Inter Display Sans'
+          },
+          mono: {
+            'ibm-plex': 'IBM Plex Mono',
+            jetbrains: 'JetBrains Mono',
+            'fira-code': 'Fira Code',
+            'sf-mono': 'SF Mono / Menlo',
+            consolas: 'Consolas / Cascadia',
+            'source-code': 'Source Code Pro'
+          }
+        }
+      },
       recommendColor: 'Apply Recommended Color Algorithm',
       recommendColorDesc: 'The recommended color algorithm refers to',
       preset: {
@@ -108,6 +146,10 @@ const local: App.I18n.Schema = {
         azir: {
           name: "Azir's Preset",
           desc: 'It is a cold and elegant preset that Azir likes'
+        },
+        'crm-frosted-glass': {
+          name: 'E-Paper (KONTUR Ledger)',
+          desc: 'Swiss-ledger CRM workspace on warm paper (#F4F2EC), crisp 0px square cards (#FBFAF6), 1px rules (#DAD5C8) and forest green (#1E5C42)'
         }
       }
     },
@@ -231,16 +273,17 @@ const local: App.I18n.Schema = {
     calendar: 'Calendar',
     dashboard: 'Dashboard',
     settings: 'Settings',
-    ledger: 'Ledger',
+    ledger: 'Party Ledger',
     ledger_members: 'Members',
     ledger_meetings: 'Meetings',
-    ledger_development: 'Development',
-    ledger_fees: 'Fees',
-    ledger_talks: 'Talks',
+    ledger_development: 'Member Development',
+    ledger_fees: 'Dues Collection',
+    ledger_talks: 'Heart-to-Heart Talks',
     library: 'Resources',
     library_knowledge: 'Knowledge',
     library_policy: 'Policy',
     library_docs: 'Docs',
+    library_birthday: 'Political Birthday Card',
     structure: 'Org & Flow'
   },
   page: {
@@ -374,6 +417,54 @@ const local: App.I18n.Schema = {
       left: 'Left Fixed',
       right: 'Right Fixed',
       unFixed: 'Unfixed'
+    }
+  },
+  sct: {
+    common: {
+      save: 'Save',
+      detail: 'Details',
+      done: 'Done',
+      items: 'items',
+      totalItems: 'Total {count}',
+      allDay: 'All-day / Milestone',
+      owner: 'Owner'
+    },
+    header: {
+      branchLabel: 'Branch',
+      branchEditTip: 'Click to edit current Party Branch name',
+      branchModalTitle: 'Set Party Branch Name',
+      branchPlaceholder: 'e.g. First Graduate Party Branch',
+      branchHint: 'Synced to handover docs and birthday cards',
+      branchEmptyWarn: 'Please enter a Party Branch name',
+      branchUpdateSuccess: 'Party Branch name updated',
+      identityLabel: 'Role',
+      planningSuffix: ' (Planned)',
+      lockTooltip: 'Lock Workbench',
+      lockConfirm: 'Lock Now',
+      lockGoSettings: 'Go to Settings',
+      lockConfirmQuestion: 'Lock the workbench immediately?',
+      lockUnsetQuestion: 'App lock password not set yet. Go to Settings to enable it?',
+      footerPlatform: 'Student & Party Affairs Workbench'
+    },
+    calendar: {
+      today: 'Today',
+      thisWeek: 'This Week',
+      viewDay: 'Day',
+      viewWeek: 'Week',
+      viewMonth: 'Month',
+      prevPeriod: 'Previous Period',
+      nextPeriod: 'Next Period',
+      newEvent: 'New Event',
+      scheduleType: 'Schedule Type',
+      showAll: 'Show All',
+      filterTip: 'Hover to preview card · Click empty slot to create · Drag edge or card to reschedule',
+      todaySchedule: "Today's Schedule",
+      todayEmpty: 'No events scheduled today',
+      todayEmptySub: 'Click any slot on the calendar grid to create one',
+      weekOverview: 'Weekly Overview',
+      weekEmpty: 'No events scheduled this week',
+      categoryLegend: 'Category Legend',
+      markDone: 'Mark Completed'
     }
   }
 };

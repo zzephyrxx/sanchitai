@@ -1,28 +1,35 @@
 <script setup lang="ts">
 import { computed, h, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
-import { NDatePicker, NTag } from 'naive-ui';
+import { NButton, NDatePicker, NTag } from 'naive-ui';
+import type { DataTableColumns } from 'naive-ui';
 import { saveAs } from 'file-saver';
 import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSvgIcon } from '@/hooks/common/icon';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 import { generateSemesterDrafts, draftToEvent, type GenDraftEvent, type GenParams } from '@/utils/schedule-gen';
 import MeetingDetail from './modules/meeting-detail.vue';
 
 defineOptions({ name: 'MeetingsPage' });
 
 const workStore = useWorkDataStore();
+const { SvgIconVNode } = useSvgIcon();
+const { bi, tMeetingKind, tEventStatus } = useSctI18n();
 
 const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const WEEKDAY_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekdayOptions = WEEKDAY_CN.map((v, i) => ({ label: v, value: i }));
 
 const MEETING_KINDS = ['支委会', '党员大会', '党小组会', '党课', '主题党日', '组织生活会', '民主评议'];
-const MEETING_KIND_COLORS: Record<string, string> = {
-  支委会: '#2B2926',
-  党员大会: '#A81C24',
-  党小组会: '#8a8f99',
-  党课: '#7c5cd6',
-  主题党日: '#d97706',
-  组织生活会: '#3f9d63',
-  民主评议: '#3f9d63'
+
+const MEETING_KIND_STYLES: Record<string, { color: string; bg: string }> = {
+  支委会: { color: '#2B2926', bg: 'rgba(43, 41, 38, 0.10)' },
+  党员大会: { color: '#A81C24', bg: 'var(--sct-err-soft)' },
+  党小组会: { color: '#0284c7', bg: 'var(--sct-info-soft)' },
+  党课: { color: '#7c5cd6', bg: 'var(--sct-purple-soft)' },
+  主题党日: { color: '#d97706', bg: 'var(--sct-warn-soft)' },
+  组织生活会: { color: '#0d9488', bg: 'var(--sct-teal-soft)' },
+  民主评议: { color: '#3f9d63', bg: 'var(--sct-ok-soft)' }
 };
 
 // ---------------- 学期范围 ----------------
@@ -51,11 +58,16 @@ function baseIdOf(id: string) {
 const freqStats = computed(() => {
   const count = (kind: string) => meetingEvents.value.filter(ev => ev.kind === kind).length;
   return [
-    { label: '支委会', target: '每月1次', done: count('支委会'), color: '#A81C24' },
-    { label: '党员大会', target: '每季度1次', done: count('党员大会'), color: '#A81C24' },
-    { label: '党课', target: '每季度1次', done: count('党课'), color: '#7c5cd6' },
-    { label: '主题党日', target: '每月1天', done: count('主题党日'), color: '#d97706' },
-    { label: '组织生活会', target: '学期末1次', done: count('组织生活会') + count('民主评议'), color: '#3f9d63' }
+    { label: tMeetingKind('支委会'), target: bi('每月1次', '1/month'), done: count('支委会'), color: '#2B2926' },
+    { label: tMeetingKind('党员大会'), target: bi('每季度1次', '1/quarter'), done: count('党员大会'), color: '#A81C24' },
+    { label: tMeetingKind('党课'), target: bi('每季度1次', '1/quarter'), done: count('党课'), color: '#7c5cd6' },
+    { label: tMeetingKind('主题党日'), target: bi('每月1天', '1/month'), done: count('主题党日'), color: '#d97706' },
+    {
+      label: tMeetingKind('组织生活会'),
+      target: bi('学期末1次', '1/semester'),
+      done: count('组织生活会') + count('民主评议'),
+      color: '#0d9488'
+    }
   ];
 });
 
@@ -63,7 +75,10 @@ const freqStats = computed(() => {
 const monthMeetingCount = computed(() => {
   const ym = today.format('YYYY-MM');
   return meetingEvents.value.filter(
-    ev => ev.date.startsWith(ym) && !ev.merged_into && ['支委会', '党员大会', '党小组会', '党课', '主题党日', '组织生活会'].includes(ev.kind ?? '')
+    ev =>
+      ev.date.startsWith(ym) &&
+      !ev.merged_into &&
+      ['支委会', '党员大会', '党小组会', '党课', '主题党日', '组织生活会'].includes(ev.kind ?? '')
   ).length;
 });
 
@@ -83,15 +98,16 @@ const genParams = reactive<GenParams>({
 });
 const genDrafts = ref<GenDraftEvent[]>([]);
 const genExisting = ref(false);
-/** 与既有计划事项重复的草稿 key（评审遗留 L1：同月同类型已有计划/进行中事项则跳过） */
 const dupKeys = ref<Set<string>>(new Set());
 
 function openGen() {
   genDrafts.value = generateSemesterDrafts(genParams);
-  // 幂等检查（A10）：本学期是否已有生成的排期
-  genExisting.value = workStore.calEvents.some(ev => ev.id.startsWith('gen-') && ev.date >= genParams.start && ev.date <= genParams.end);
-  // L1：与既有计划/进行中事项（非生成、非并入）同月同类型 → 标记重复
-  const existing = workStore.calEvents.filter(ev => !ev.id.startsWith('gen-') && !ev.merged_into && (ev.status === '计划' || ev.status === '进行中'));
+  genExisting.value = workStore.calEvents.some(
+    ev => ev.id.startsWith('gen-') && ev.date >= genParams.start && ev.date <= genParams.end
+  );
+  const existing = workStore.calEvents.filter(
+    ev => !ev.id.startsWith('gen-') && !ev.merged_into && (ev.status === '计划' || ev.status === '进行中')
+  );
   dupKeys.value = new Set(
     genDrafts.value
       .filter(d => existing.some(ev => ev.kind === d.kind && ev.date.slice(0, 7) === d.date.slice(0, 7)))
@@ -110,26 +126,25 @@ async function writeDrafts() {
     return;
   }
   const skipped = genDrafts.value.filter(d => dupKeys.value.has(d.id)).length;
-  const rows = genDrafts.value.filter(d => !dupKeys.value.has(d.id)).map(d => {
-    const ev = draftToEvent(d, 'secretary');
-    // L3：默认主责人 = 书记
-    const secretary = workStore.members.find(m => m.role === '书记');
-    if (secretary) ev.owner = secretary.id;
-    return ev;
-  });
+  const rows = genDrafts.value
+    .filter(d => !dupKeys.value.has(d.id))
+    .map(d => {
+      const ev = draftToEvent(d, 'secretary');
+      const secretary = workStore.members.find(m => m.role === '书记');
+      if (secretary) ev.owner = secretary.id;
+      return ev;
+    });
   await Promise.all(rows.map(r => dbPutEvent(r)));
-  genExisting.value = true; // 写入后本学期即刻进入幂等锁定（A10）
+  genExisting.value = true;
   const skipMsg = skipped ? `，跳过 ${skipped} 条与既有排期重复的事项` : '';
   window.$message?.success(`已写入 ${rows.length} 条排期事项，可在台历查看${skipMsg}`);
   genShow.value = false;
 }
 
-/** 学期安排表导出（A5 后半，对齐学院"月份/周次/事项/类型/主责人/协助人/备注"格式） */
 function exportSchedule() {
   const header = ['序号', '日期', '周次', '事项', '类型', '地点', '主责人', '协助人', '备注'];
   const lines: string[] = [header.join(',')];
   meetingEvents.value.forEach((ev, i) => {
-    // 学期第 N 周（自学期初起算）
     const weekOfSemester = Math.floor(dayjs(ev.date).diff(dayjs(semester.value.start), 'day') / 7) + 1;
     lines.push(
       [
@@ -140,7 +155,12 @@ function exportSchedule() {
         ev.kind ?? '',
         ev.location ?? '',
         workStore.memberName(ev.owner),
-        ev.helper ? ev.helper.split(/[、,，]/).map(id => workStore.memberName(id.trim())).join('、') : '',
+        ev.helper
+          ? ev.helper
+              .split(/[、,，]/)
+              .map(id => workStore.memberName(id.trim()))
+              .join('、')
+          : '',
         ev.status === '已完成' ? '已开展' : ''
       ]
         .map(v => `"${String(v).replaceAll('"', '""')}"`)
@@ -152,54 +172,197 @@ function exportSchedule() {
 }
 
 function dbPutEvent(row: Sct.CalEvent) {
-  // 生成事项直接落库（复用 store 的 addEvent 但保留稳定 id 以支持幂等与合并引用）
   const { addEvent } = workStore;
   return addEvent(row as Partial<Sct.CalEvent> & Pick<Sct.CalEvent, 'title' | 'date' | 'category'>);
 }
 
-// ---------------- 会议列表 ----------------
+// ---------------- 会议列表（支持搜索、类型筛选、分页与图标表头） ----------------
 const detailId = ref<string | null>(null);
 const detailShow = ref(false);
+const kindFilter = ref<string>('');
+const searchKeyword = ref<string>('');
+const pagination = reactive({
+  page: 1,
+  pageSize: 10,
+  showSizePicker: true,
+  pageSizes: [10, 15, 25, 50],
+  onChange: (page: number) => {
+    pagination.page = page;
+  },
+  onUpdatePageSize: (pageSize: number) => {
+    pagination.pageSize = pageSize;
+    pagination.page = 1;
+  }
+});
+
+const kindFilterOptions = computed(() => [
+  { label: bi('全部会议类型', 'All Meeting Types'), value: '' },
+  ...MEETING_KINDS.map(k => ({ label: tMeetingKind(k) || k, value: k }))
+]);
 
 function openDetail(id: string) {
   detailId.value = baseIdOf(id);
   detailShow.value = true;
 }
 
-const listRows = computed(() =>
-  meetingEvents.value.map(ev => ({
-    ...ev,
-    rate: workStore.attendanceRate(baseIdOf(ev.id))
-  }))
-);
+type MeetingRow = Sct.CalEvent & {
+  rate: { present: number; due: number; rate: number } | null;
+};
 
-const listColumns = [
-  { title: '日期', key: 'date', width: 110, render: (r: any) => `${dayjs(r.date).format('MM-DD')} ${WEEKDAY_CN[dayjs(r.date).day()]}` },
+const listRows = computed<MeetingRow[]>(() => {
+  const kw = searchKeyword.value.trim().toLowerCase();
+  return meetingEvents.value
+    .filter(ev => !kindFilter.value || ev.kind === kindFilter.value)
+    .filter(ev => {
+      if (!kw) return true;
+      const ownerName = workStore.memberName(ev.owner);
+      return [ev.title, ev.kind, ev.location, ev.date, ownerName]
+        .filter(Boolean)
+        .some(v => String(v).toLowerCase().includes(kw));
+    })
+    .map(ev => ({
+      ...ev,
+      rate: workStore.attendanceRate(baseIdOf(ev.id))
+    }));
+});
+
+function colHeader(icon: string, text: string) {
+  return h('span', { class: 'inline-flex items-center gap-4px whitespace-nowrap' }, [
+    SvgIconVNode({ icon, fontSize: 13 })?.(),
+    h('span', text)
+  ]);
+}
+
+function statusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warning' {
+  if (status === '已完成') return 'success';
+  if (status === '进行中') return 'info';
+  return 'warning';
+}
+
+function renderKindCapsule(kind?: string, merged?: string) {
+  const k = kind ?? '其他';
+  const st = MEETING_KIND_STYLES[k] ?? { color: '#64748b', bg: 'var(--sct-soft)' };
+  const label = tMeetingKind(k) || k;
+  return h(
+    'span',
+    {
+      class: 'inline-flex items-center gap-5px rounded-full px-10px py-2px text-12px font-semibold whitespace-nowrap',
+      style: {
+        backgroundColor: st.bg,
+        color: st.color
+      }
+    },
+    [
+      h('span', { class: 'inline-block size-6px rounded-full', style: { backgroundColor: st.color } }),
+      `${label}${merged ? bi('（并入）', ' (Merged)') : ''}`
+    ]
+  );
+}
+
+const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
   {
-    title: '类型',
-    key: 'kind',
-    width: 100,
-    render: (r: any) => h('span', { style: { color: MEETING_KIND_COLORS[r.kind] ?? '#666', fontWeight: 600 } }, r.kind + (r.merged_into ? '（并入）' : ''))
+    title: () => colHeader('lucide:calendar', bi('日期', 'Date')),
+    key: 'date',
+    width: 115,
+    resizable: true,
+    sorter: (a, b) => a.date.localeCompare(b.date),
+    render: r =>
+      `${dayjs(r.date).format('MM-DD')} ${bi(WEEKDAY_CN[dayjs(r.date).day()], WEEKDAY_EN[dayjs(r.date).day()])}`
   },
-  { title: '标题', key: 'title' },
-  { title: '地点', key: 'location', width: 100, render: (r: any) => r.location || '—' },
-  { title: '主责人', key: 'owner', width: 80, render: (r: any) => workStore.memberName(r.owner) || '—' },
-  { title: '协助人', key: 'helper', width: 90, render: (r: any) => (r.helper ? r.helper.split(/[、,，]/).map((id: string) => workStore.memberName(id.trim())).join('、') : '—') },
-  { title: '状态', key: 'status', width: 76 },
   {
-    title: '到会率',
+    title: () => colHeader('lucide:tag', bi('类型', 'Type')),
+    key: 'kind',
+    width: 145,
+    resizable: true,
+    sorter: (a, b) => (a.kind ?? '').localeCompare(b.kind ?? ''),
+    render: r => renderKindCapsule(r.kind, r.merged_into)
+  },
+  {
+    title: () => colHeader('lucide:file-text', bi('标题（可拖拽列宽）', 'Title (Resizable)')),
+    key: 'title',
+    width: 210,
+    minWidth: 130,
+    maxWidth: 500,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    sorter: (a, b) => a.title.localeCompare(b.title)
+  },
+  {
+    title: () => colHeader('lucide:map-pin', bi('地点', 'Location')),
+    key: 'location',
+    width: 115,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    sorter: (a, b) => (a.location ?? '').localeCompare(b.location ?? ''),
+    render: r => r.location || '—'
+  },
+  {
+    title: () => colHeader('lucide:user', bi('主责人', 'Owner')),
+    key: 'owner',
+    width: 95,
+    resizable: true,
+    sorter: (a, b) => workStore.memberName(a.owner).localeCompare(workStore.memberName(b.owner)),
+    render: r => workStore.memberName(r.owner) || '—'
+  },
+  {
+    title: () => colHeader('lucide:users', bi('协助人', 'Helper')),
+    key: 'helper',
+    width: 110,
+    resizable: true,
+    render: r =>
+      r.helper
+        ? r.helper
+            .split(/[、,，]/)
+            .map((id: string) => workStore.memberName(id.trim()))
+            .join('、')
+        : '—'
+  },
+  {
+    title: () => colHeader('lucide:circle-dot', bi('状态', 'Status')),
+    key: 'status',
+    width: 95,
+    resizable: true,
+    sorter: (a, b) => a.status.localeCompare(b.status),
+    render: r =>
+      h(
+        NTag,
+        {
+          size: 'tiny',
+          bordered: false,
+          type: statusTagType(r.status)
+        },
+        () => tEventStatus(r.status)
+      )
+  },
+  {
+    title: () => colHeader('lucide:percent', bi('到会率', 'Attendance')),
     key: 'rate',
-    width: 100,
-    render: (r: any) =>
+    width: 115,
+    resizable: true,
+    sorter: (a, b) => (a.rate?.rate ?? -1) - (b.rate?.rate ?? -1),
+    render: r =>
       r.status === '计划' || !r.rate ? '—' : `${Math.round(r.rate.rate * 100)}%（${r.rate.present}/${r.rate.due}）`
   },
   {
-    title: '',
+    title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
     key: 'op',
-    width: 80,
-    render: (r: any) => h('a', { style: { color: '#A81C24', cursor: 'pointer' }, onClick: () => openDetail(r.id) }, '详情')
+    width: 96,
+    render: r =>
+      h(
+        NButton,
+        {
+          size: 'tiny',
+          secondary: true,
+          type: 'primary',
+          onClick: () => openDetail(r.id)
+        },
+        {
+          icon: SvgIconVNode({ icon: 'lucide:eye', fontSize: 13 }),
+          default: () => bi('详情', 'Details')
+        }
+      )
   }
-];
+]);
 </script>
 
 <template>
@@ -207,16 +370,31 @@ const listColumns = [
     <NCard :bordered="false">
       <template #header>
         <div class="flex items-center gap-12px">
-          <span class="text-16px font-bold">三会一课</span>
+          <span class="text-16px font-bold">{{ bi('三会一课', 'Meetings & Lectures') }}</span>
           <span class="text-12px text-gray-400">{{ semester.label }}</span>
-          <NTag v-if="monthMeetingCount > 3" type="warning" size="small">本月线下会议 {{ monthMeetingCount }} 次（超过 3 次，注意合并）</NTag>
-          <NTag v-else size="small" :bordered="false">本月线下会议 {{ monthMeetingCount }} 次</NTag>
+          <NTag v-if="monthMeetingCount > 3" type="warning" size="small">
+            {{
+              bi(
+                `本月线下会议 ${monthMeetingCount} 次（超过 3 次，注意合并）`,
+                `Offline meetings this month: ${monthMeetingCount} (>3, consider merging)`
+              )
+            }}
+          </NTag>
+          <NTag v-else size="small" :bordered="false">
+            {{ bi(`本月线下会议 ${monthMeetingCount} 次`, `Offline meetings this month: ${monthMeetingCount}`) }}
+          </NTag>
         </div>
       </template>
       <template #header-extra>
         <div class="flex items-center gap-8px">
-          <NButton size="small" @click="exportSchedule">导出学期安排表</NButton>
-          <NButton type="primary" size="small" @click="openGen">按规范生成学期排期</NButton>
+          <NButton size="small" secondary @click="exportSchedule">
+            <template #icon><SvgIcon icon="lucide:download" /></template>
+            {{ bi('导出学期安排表', 'Export Semester Schedule') }}
+          </NButton>
+          <NButton type="primary" size="small" @click="openGen">
+            <template #icon><SvgIcon icon="lucide:calendar-plus" /></template>
+            {{ bi('按规范生成学期排期', 'Generate Semester Schedule') }}
+          </NButton>
         </div>
       </template>
 
@@ -229,44 +407,131 @@ const listColumns = [
         >
           <span class="inline-block size-10px rounded-full" :style="{ background: s.color }" />
           <span class="text-13px font-bold">{{ s.label }}</span>
-          <span class="text-12px text-gray-500">本学期 {{ s.done }} 次 · {{ s.target }}</span>
+          <span class="text-12px text-gray-500">
+            {{ bi(`本学期 ${s.done} 次`, `${s.done} this semester`) }} · {{ s.target }}
+          </span>
         </div>
       </div>
 
-      <NDataTable :columns="listColumns" :data="listRows" size="small" :bordered="false" :row-key="(r: any) => r.id" />
+      <div class="mb-12px flex flex-wrap items-center justify-between gap-10px">
+        <div class="flex flex-wrap items-center gap-10px">
+          <div class="w-180px">
+            <NSelect
+              v-model:value="kindFilter"
+              :options="kindFilterOptions"
+              size="small"
+              @update:value="pagination.page = 1"
+            />
+          </div>
+          <NInput
+            v-model:value="searchKeyword"
+            size="small"
+            clearable
+            class="w-240px"
+            :placeholder="bi('搜索会议标题、地点、主责人…', 'Search title, location, owner…')"
+            @update:value="pagination.page = 1"
+          >
+            <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+          </NInput>
+        </div>
+        <span class="text-12px text-gray-400">
+          {{ bi('支持拖拽列宽与排序 · 点击「详情」管理参会考勤与签到表', 'Resizable & sortable columns · Click Details for attendance & sign-in sheet') }}
+        </span>
+      </div>
+
+      <NDataTable
+        :columns="listColumns"
+        :data="listRows"
+        :pagination="pagination"
+        size="small"
+        :bordered="false"
+        :row-key="(r: MeetingRow) => r.id"
+      />
     </NCard>
 
-    <!-- 生成排期弹层 -->
-    <NModal v-model:show="genShow" preset="card" title="按规范生成学期排期" class="w-680px">
-      <NAlert v-if="genExisting" type="warning" class="mb-10px">
+    <!-- 生成排期弹层（双列规整排版，带字段图标且防止 Label 与输入框换行） -->
+    <NModal v-model:show="genShow" preset="card" title="按规范生成学期排期" class="w-760px">
+      <NAlert v-if="genExisting" type="warning" class="mb-12px">
         本学期已存在生成排期（gen- 前缀事项）。依据验收要求不重复生成；如需重排请先删除旧事项。
       </NAlert>
-      <NForm inline size="small" label-placement="left" label-width="96">
-        <NFormItem label="学期起止">
-          <NInput v-model:value="genParams.start" placeholder="YYYY-MM-DD" style="width: 130px" />
-          <NInput v-model:value="genParams.end" placeholder="YYYY-MM-DD" style="width: 130px; margin-left: 8px" />
-        </NFormItem>
-        <NFormItem label="支委会">
-          每月第 <NInputNumber v-model:value="genParams.committeeNth" size="tiny" style="width: 64px; margin: 0 4px" :min="1" :max="5" /> 个
-          <NSelect v-model:value="genParams.committeeWeekday" :options="weekdayOptions" size="tiny" style="width: 88px; margin-left: 4px" />
-        </NFormItem>
-        <NFormItem label="主题党日">
-          每月第 <NInputNumber v-model:value="genParams.partyDayNth" size="tiny" style="width: 64px; margin: 0 4px" :min="1" :max="5" /> 个
-          <NSelect v-model:value="genParams.partyDayWeekday" :options="weekdayOptions" size="tiny" style="width: 88px; margin-left: 4px" />
-        </NFormItem>
-        <NFormItem label="党员大会">
-          季度末月第 <NInputNumber v-model:value="genParams.assemblyNth" size="tiny" style="width: 64px; margin: 0 4px" :min="1" :max="5" /> 个
-          <NSelect v-model:value="genParams.assemblyWeekday" :options="weekdayOptions" size="tiny" style="width: 88px; margin-left: 4px" />
-        </NFormItem>
-        <NFormItem label="党课合并">
-          <NSwitch v-model:value="genParams.lessonMergedIntoAssembly" size="small" />
-          <span class="ml-6px text-12px text-gray-400">并入党员大会（不计入每月线下会议次数）</span>
-        </NFormItem>
+      <NForm size="small" label-placement="left" label-width="108">
+        <div class="grid grid-cols-1 gap-x-16px md:grid-cols-2">
+          <NFormItem class="md:col-span-2">
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:calendar-range" class="sct-field-icon" />
+                <span>学期起止</span>
+              </span>
+            </template>
+            <div class="flex items-center gap-8px">
+              <NInput v-model:value="genParams.start" placeholder="YYYY-MM-DD" class="w-150px" />
+              <span class="text-gray-400">至</span>
+              <NInput v-model:value="genParams.end" placeholder="YYYY-MM-DD" class="w-150px" />
+            </div>
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:users" class="sct-field-icon" />
+                <span>支委会</span>
+              </span>
+            </template>
+            <div class="flex items-center gap-6px whitespace-nowrap">
+              <span>每月第</span>
+              <NInputNumber v-model:value="genParams.committeeNth" size="small" class="w-76px" :min="1" :max="5" />
+              <span>个</span>
+              <NSelect v-model:value="genParams.committeeWeekday" :options="weekdayOptions" size="small" class="w-92px" />
+            </div>
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:flag" class="sct-field-icon" />
+                <span>主题党日</span>
+              </span>
+            </template>
+            <div class="flex items-center gap-6px whitespace-nowrap">
+              <span>每月第</span>
+              <NInputNumber v-model:value="genParams.partyDayNth" size="small" class="w-76px" :min="1" :max="5" />
+              <span>个</span>
+              <NSelect v-model:value="genParams.partyDayWeekday" :options="weekdayOptions" size="small" class="w-92px" />
+            </div>
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:landmark" class="sct-field-icon" />
+                <span>党员大会</span>
+              </span>
+            </template>
+            <div class="flex items-center gap-6px whitespace-nowrap">
+              <span>季末第</span>
+              <NInputNumber v-model:value="genParams.assemblyNth" size="small" class="w-76px" :min="1" :max="5" />
+              <span>个</span>
+              <NSelect v-model:value="genParams.assemblyWeekday" :options="weekdayOptions" size="small" class="w-92px" />
+            </div>
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:git-merge" class="sct-field-icon" />
+                <span>党课合并</span>
+              </span>
+            </template>
+            <div class="flex items-center gap-8px whitespace-nowrap">
+              <NSwitch v-model:value="genParams.lessonMergedIntoAssembly" size="small" />
+              <span class="text-12px text-gray-400">并入党员大会（不占月次数）</span>
+            </div>
+          </NFormItem>
+        </div>
       </NForm>
 
-      <div class="mb-6px flex items-center justify-between">
-        <span class="text-13px font-bold">预览（{{ genDrafts.length }} 条）</span>
-        <NButton size="tiny" @click="regenerate">重新生成</NButton>
+      <div class="mb-8px flex items-center justify-between">
+        <span class="text-13px font-bold">排期预览（{{ genDrafts.length }} 条）</span>
+        <NButton size="tiny" secondary @click="regenerate">
+          <template #icon><SvgIcon icon="lucide:refresh-cw" /></template>
+          重新计算
+        </NButton>
       </div>
       <NDataTable
         :data="genDrafts"
@@ -277,38 +542,47 @@ const listColumns = [
           {
             title: '日期（可改）',
             key: 'date',
-            width: 130,
-            render: (r: any) =>
+            width: 140,
+            render: (r: GenDraftEvent) =>
+              // naive 的 volar 泛型在此处的 h() 推导不兼容，放宽处理
               h(NDatePicker, {
                 value: dayjs(r.date).valueOf(),
                 type: 'date',
                 size: 'tiny',
-                // naive 的 volar 泛型在此处的 h() 推导不兼容，放宽处理
                 onUpdateValue: ((v: number) => {
-                  // 只改日期，保持 id 稳定（党课的 merged_into 引用党员大会 id）
                   r.date = dayjs(v).format('YYYY-MM-DD');
                 }) as unknown as undefined
               } as any)
           },
-          { title: '类型', key: 'kind', width: 90 },
+          {
+            title: '类型',
+            key: 'kind',
+            width: 110,
+            render: (r: GenDraftEvent) => renderKindCapsule(r.kind)
+          },
           {
             title: '标题',
             key: 'title',
-            render: (r: any) =>
+            render: (r: GenDraftEvent) =>
               h('span', { class: 'inline-flex items-center gap-6px' }, [
                 r.title,
-                dupKeys.has(r.id) ? h(NTag, { size: 'tiny', type: 'warning', bordered: false }, () => '与既有排期重复，将跳过') : null
+                dupKeys.has(r.id)
+                  ? h(NTag, { size: 'tiny', type: 'warning', bordered: false }, () => '与既有排期重复，将跳过')
+                  : null
               ])
           },
-          { title: '时间', key: 'start_time', width: 110, render: (r: any) => `${r.start_time}-${r.end_time}` }
+          { title: '时间', key: 'start_time', width: 110, render: (r: GenDraftEvent) => `${r.start_time}-${r.end_time}` }
         ]"
-        :row-key="(r: any) => r.id"
+        :row-key="(r: GenDraftEvent) => r.id"
       />
 
       <template #footer>
         <div class="flex justify-end gap-8px">
           <NButton @click="genShow = false">取消</NButton>
-          <NButton type="primary" :disabled="genExisting" @click="writeDrafts">写入台历（{{ genDrafts.length }} 条）</NButton>
+          <NButton type="primary" :disabled="genExisting" @click="writeDrafts">
+            <template #icon><SvgIcon icon="lucide:check" /></template>
+            写入台历（{{ genDrafts.length }} 条）
+          </NButton>
         </div>
       </template>
     </NModal>

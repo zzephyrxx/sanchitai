@@ -9,6 +9,12 @@ export const themeSettings: App.Theme.ThemeSetting = {
   themePreset: 'default' as UnionKey.ThemePreset,
   themeColor: '#2B2926',
   themeRadius: 6,
+  fontConfig: {
+    sans: 'system',
+    heading: 'follow-sans',
+    mono: 'ibm-plex',
+    scale: 100
+  },
   otherColor: {
     info: '#2080f0',
     success: '#52c41a',
@@ -32,10 +38,10 @@ export const themeSettings: App.Theme.ThemeSetting = {
       showIcon: true
     },
     multilingual: {
-      visible: false
+      visible: true
     },
     globalSearch: {
-      visible: false
+      visible: true
     }
   },
   tab: {

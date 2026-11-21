@@ -49,9 +49,9 @@ function changeLang(lang: App.I18n.LangType) {
 </script>
 
 <template>
-  <NDropdown :value="lang" :options="dropdownOptions" trigger="hover" @select="changeLang">
+  <NDropdown :value="lang" :options="dropdownOptions" trigger="click" @select="changeLang">
     <div>
-      <ButtonIcon :tooltip-content="tooltipContent" tooltip-placement="left">
+      <ButtonIcon :tooltip-content="tooltipContent">
         <SvgIcon icon="heroicons:language" />
       </ButtonIcon>
     </div>

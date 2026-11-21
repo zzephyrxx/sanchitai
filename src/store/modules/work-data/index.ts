@@ -13,7 +13,7 @@ import { db } from '@/db/db';
 import { useDexieLive } from '@/hooks/common/dexie';
 import { expandRecurrence } from '@/utils/recurrence';
 import { nodesOfStage, type DevNodeDef } from '@/constants/dev-nodes';
-import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
+import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
 
 /** 流转到新阶段时，按节点库初始化该阶段材料清单（未开始），保留已有材料状态 */
 function buildStageMaterials(targetStage: string, prevMaterials: Sct.DevMaterial[]): Sct.DevMaterial[] {
@@ -59,6 +59,32 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   const docTemplates = useDexieLive<Sct.DocTemplate[]>(() => db.docTemplates.toArray(), []);
   const docsList = useDexieLive<Sct.Doc[]>(() => db.docs.toArray(), []);
   const attendance = useDexieLive<Sct.Attendance[]>(() => db.attendance.toArray(), []);
+  const branchNameRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('branch-name'),
+    undefined
+  );
+
+  const branchName = computed(() => {
+    const val = branchNameRow.value?.value;
+    return typeof val === 'string' && val.trim() ? val.trim() : '智感硕博党支部';
+  });
+
+  async function setBranchName(name: string) {
+    const clean = name.trim();
+    if (!clean) {
+      window.$message?.warning('支部名称不能为空');
+      return;
+    }
+    await guardWrite(db.meta.put({ key: 'branch-name', value: clean }), '支部名称');
+  }
+
+  function memberMonthlyFee(member?: Sct.Member): number {
+    if (!member) return FEE_STANDARD.studentMonthly;
+    if (typeof member.fee_monthly === 'number' && !Number.isNaN(member.fee_monthly) && member.fee_monthly >= 0) {
+      return member.fee_monthly;
+    }
+    return FEE_STANDARD.studentMonthly;
+  }
 
   // ---------------- 派生 ----------------
   const memberById = computed(() => new Map(members.value.map(m => [m.id, m])));
@@ -124,16 +150,70 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     return id;
   }
 
+  function parseOccurrenceId(id: string): { baseId: string; occDate: string } | null {
+    let sep: string | null = null;
+    if (id.includes('-occ-')) {
+      sep = '-occ-';
+    } else if (id.includes('~occ~')) {
+      sep = '~occ~';
+    }
+    if (!sep) return null;
+    const [baseId, occDate] = id.split(sep);
+    return baseId && occDate ? { baseId, occDate } : null;
+  }
+
   async function updateEvent(id: string, patch: Partial<Sct.CalEvent>) {
-    await guardWrite(db.calEvents.update(id, plain(patch)), '台历事项');
+    const parsed = parseOccurrenceId(id);
+    if (parsed) {
+      const { baseId, occDate } = parsed;
+      const base = await db.calEvents.get(baseId);
+      if (!base || !base.recurrence) return;
+      const overrides = [...(base.recurrence.overrides ?? [])];
+      const idx = overrides.findIndex(o => o.date === occDate);
+      const nextOverride: { date: string; [key: string]: unknown } = {
+        ...(idx >= 0 ? overrides[idx] : {}),
+        ...plain(patch),
+        date: occDate
+      };
+      if (patch.date) {
+        nextOverride.new_date = patch.date;
+      }
+      if (idx >= 0) {
+        overrides[idx] = nextOverride;
+      } else {
+        overrides.push(nextOverride);
+      }
+      await guardWrite(
+        db.calEvents.put(
+          plain({
+            ...base,
+            recurrence: {
+              ...base.recurrence,
+              overrides
+            }
+          })
+        ),
+        '台历重复事项'
+      );
+      return;
+    }
+
+    const existing = await db.calEvents.get(id);
+    if (existing) {
+      await guardWrite(db.calEvents.put(plain({ ...existing, ...patch, id })), '台历事项');
+    } else {
+      await guardWrite(db.calEvents.update(id, plain(patch)), '台历事项');
+    }
   }
 
   async function deleteEvent(id: string) {
-    await db.calEvents.delete(id);
+    const parsed = parseOccurrenceId(id);
+    const baseId = parsed ? parsed.baseId : id;
+    await db.calEvents.delete(baseId);
   }
 
   async function setEventStatus(id: string, status: Sct.EventStatus) {
-    await guardWrite(db.calEvents.update(id, { status }), '事项状态');
+    await updateEvent(id, { status });
   }
 
   // ---------------- 人员 CRUD ----------------
@@ -153,6 +233,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       join_date: '',
       full_date: '',
       role: '',
+      fee_category: '学生党员',
+      fee_monthly: FEE_STANDARD.studentMonthly,
       ...input,
       id,
       identity: 'secretary'
@@ -300,6 +382,9 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     docTemplates,
     docsList,
     attendance,
+    branchName,
+    setBranchName,
+    memberMonthlyFee,
     attendanceOfEvent,
     initAttendance,
     setAttendance,

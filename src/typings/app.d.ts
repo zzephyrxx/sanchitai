@@ -23,6 +23,17 @@ declare namespace App {
       themeColor: string;
       /** Theme radius */
       themeRadius: number;
+      /** 全局字体配置（支持界面正文、标题衬线、数字等宽三类主要字体分开设置，以及全局字号缩放百分比） */
+      fontConfig: {
+        /** 界面与正文字体 */
+        sans: UnionKey.ThemeFontSans;
+        /** 标题与展示字体 */
+        heading: UnionKey.ThemeFontHeading;
+        /** 数字与台账等宽字体 */
+        mono: UnionKey.ThemeFontMono;
+        /** 全局缩放比例（85 ~ 125，默认 100 表示 100%） */
+        scale: number;
+      };
       /** Other color */
       otherColor: OtherColor;
       /** Whether info color is followed by the primary color */
@@ -393,6 +404,18 @@ declare namespace App {
           themeRadius: {
             title: string;
           };
+          themeFont: {
+            title: string;
+            scale: string;
+            sans: string;
+            heading: string;
+            mono: string;
+            options: {
+              sans: Record<UnionKey.ThemeFontSans, string>;
+              heading: Record<UnionKey.ThemeFontHeading, string>;
+              mono: Record<UnionKey.ThemeFontMono, string>;
+            };
+          };
           preset: {
             title: string;
             apply: string;
@@ -586,6 +609,54 @@ declare namespace App {
           left: string;
           right: string;
           unFixed: string;
+        };
+      };
+      sct: {
+        common: {
+          save: string;
+          detail: string;
+          done: string;
+          items: string;
+          totalItems: string;
+          allDay: string;
+          owner: string;
+        };
+        header: {
+          branchLabel: string;
+          branchEditTip: string;
+          branchModalTitle: string;
+          branchPlaceholder: string;
+          branchHint: string;
+          branchEmptyWarn: string;
+          branchUpdateSuccess: string;
+          identityLabel: string;
+          planningSuffix: string;
+          lockTooltip: string;
+          lockConfirm: string;
+          lockGoSettings: string;
+          lockConfirmQuestion: string;
+          lockUnsetQuestion: string;
+          footerPlatform: string;
+        };
+        calendar: {
+          today: string;
+          thisWeek: string;
+          viewDay: string;
+          viewWeek: string;
+          viewMonth: string;
+          prevPeriod: string;
+          nextPeriod: string;
+          newEvent: string;
+          scheduleType: string;
+          showAll: string;
+          filterTip: string;
+          todaySchedule: string;
+          todayEmpty: string;
+          todayEmptySub: string;
+          weekOverview: string;
+          weekEmpty: string;
+          categoryLegend: string;
+          markDone: string;
         };
       };
     };
