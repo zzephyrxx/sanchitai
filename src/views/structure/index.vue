@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import dayjs from 'dayjs';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { DEV_NODES, type DevNodeDef } from '@/constants/dev-nodes';
+import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 import EmptyFancy from '@/components/custom/empty-fancy.vue';
 
 defineOptions({ name: 'StructurePage' });
@@ -11,14 +11,20 @@ const workStore = useWorkDataStore();
 
 const ROLE_SLOTS = ['书记', '副书记', '组织委员', '宣传委员', '纪检委员'] as const;
 
-/** 岗位 → 成员 */
 function memberOfRole(role: string) {
   return workStore.members.find(m => m.role === role);
 }
 
-const unassigned = computed(() => workStore.members.filter(m => !ROLE_SLOTS.includes(m.role as (typeof ROLE_SLOTS)[number])));
+const unassigned = computed(() =>
+  workStore.members.filter(m => !ROLE_SLOTS.includes(m.role as (typeof ROLE_SLOTS)[number]))
+);
 
-const assignState = reactive<{ role: string; show: boolean }>({ role: '', show: false });
+/** 普通成员（无岗位的党员 + 预备 + 积极 + 发展 + 申请人） */
+const regularMembers = computed(() =>
+  workStore.members.filter(m => !ROLE_SLOTS.includes(m.role as (typeof ROLE_SLOTS)[number]))
+);
+
+const assignState = reactive({ role: '', show: false });
 const assignValue = ref<string | null>(null);
 
 function openAssign(role: string) {
@@ -30,7 +36,6 @@ function openAssign(role: string) {
 async function handleAssign() {
   if (!assignValue.value) return;
   const memberId = assignValue.value;
-  // 清除该成员既有岗位，再把新岗位写上
   const member = workStore.memberOf(memberId);
   if (member && member.role) {
     await workStore.updateMember(member.id, { role: '' });
@@ -80,7 +85,7 @@ function openNode(n: DevNodeDef) {
   detailShow.value = true;
 }
 
-// ---------------- 学院版流程（可编辑，存 meta） ----------------
+// ---------------- 学院版流程 ----------------
 interface AcademyNode {
   id: string;
   name: string;
@@ -93,7 +98,7 @@ const academyNodes = ref<AcademyNode[]>([]);
 const academyLoaded = ref(false);
 
 onMounted(async () => {
-  const { getMeta, setMeta } = await import('@/db/db');
+  const { getMeta } = await import('@/db/db');
   const saved = await getMeta<AcademyNode[]>('academy-flow');
   academyNodes.value = saved ?? [
     { id: 'a1', name: '发展计划下发', window: '每学期初', owner: '学院党委', note: '下发发展计划与时间窗' },
@@ -107,7 +112,6 @@ onMounted(async () => {
 async function saveAcademy() {
   try {
     const { setMeta } = await import('@/db/db');
-    // reactive proxy 不能直接进 IndexedDB（DataCloneError），须深拷贝
     await setMeta('academy-flow', JSON.parse(JSON.stringify(academyNodes.value)));
     window.$message?.success('学院版流程已保存');
   } catch (err) {
@@ -136,59 +140,99 @@ function removeAcademyNode(id: string) {
       <template #header>
         <div class="flex items-center gap-12px">
           <span class="text-16px font-bold">组织与流程</span>
-          <span class="text-12px text-gray-400">架构图 · 党员发展流程（标准重绘 + 学院自建）</span>
         </div>
       </template>
 
-      <NTabs v-model:value="flowTab" type="segment" size="small" class="mb-18px w-260px">
+      <NTabs v-model:value="flowTab" type="segment" size="small" class="mb-18px w-280px">
         <NTab name="org" tab="组织架构" />
         <NTab name="flow" tab="发展流程图" />
       </NTabs>
 
-      <!-- ============ 组织架构 ============ -->
-      <div v-if="flowTab === 'org'">
-        <!-- 书记 -->
-        <div class="flex justify-center">
-          <div
-            v-if="memberOfRole('书记')"
-            class="org-card org-card--top"
-            @click="openAssign('书记')"
-          >
-            <NAvatar round :size="44" :style="{ backgroundColor: '#A81C24', color: '#fff' }">
+      <!-- ============ 组织架构（树形图） ============ -->
+      <div v-if="flowTab === 'org'" class="org-tree-container">
+        <!-- L1: 书记 -->
+        <div class="org-tree__level">
+          <div v-if="memberOfRole('书记')" class="org-node org-node--root" @click="openAssign('书记')">
+            <NAvatar round :size="42" :style="{ backgroundColor: '#A81C24', color: '#fff' }">
               <span class="text-16px font-bold">{{ memberOfRole('书记')!.name.slice(0, 1) }}</span>
             </NAvatar>
-            <div class="mt-6px text-14px font-bold">{{ memberOfRole('书记')!.name }}</div>
-            <NTag size="tiny" :bordered="false" :color="{ color: '#A81C24', textColor: '#fff' }">书记</NTag>
+            <div class="mt-4px text-14px font-bold">{{ memberOfRole('书记')!.name }}</div>
+            <NTag size="tiny" round :color="{ color: '#A81C24', textColor: '#fff' }">书记</NTag>
           </div>
-          <div v-else class="org-card org-card--empty" @click="openAssign('书记')">
+          <div v-else class="org-node org-node--empty" @click="openAssign('书记')">
             <span class="text-20px text-gray-300">＋</span>
             <div class="text-12px text-gray-400">书记（待指派）</div>
           </div>
         </div>
 
-        <!-- 连接线 -->
-        <div class="org-connector" />
+        <!-- 连线 L1→L2 -->
+        <div class="org-tree__vline" />
 
-        <!-- 委员行 -->
-        <div class="grid grid-cols-2 gap-12px md:grid-cols-4">
-          <template v-for="role in ROLE_SLOTS.slice(1)" :key="role">
-            <div v-if="memberOfRole(role)" class="org-card">
-              <NAvatar round :size="38" :style="{ backgroundColor: 'var(--sct-soft)', color: 'var(--sct-ink)' }">
-                <span class="text-14px font-bold">{{ memberOfRole(role)!.name.slice(0, 1) }}</span>
-              </NAvatar>
-              <div class="mt-4px text-13px font-bold">{{ memberOfRole(role)!.name }}</div>
-              <NTag size="tiny" :bordered="false">{{ role }}</NTag>
-              <a class="mt-4px text-11px text-gray-400 hover:text-gray-600" @click.stop="clearRole(role)">清空</a>
-            </div>
-            <div v-else class="org-card org-card--empty" @click="openAssign(role)">
-              <span class="text-18px text-gray-300">＋</span>
-              <div class="text-12px text-gray-400">{{ role }}（待指派）</div>
+        <!-- L2: 副书记 -->
+        <div class="org-tree__level">
+          <div v-if="memberOfRole('副书记')" class="org-node" @click="openAssign('副书记')">
+            <NAvatar round :size="36" :style="{ backgroundColor: 'var(--sct-soft)', color: 'var(--sct-ink)' }">
+              <span class="text-14px font-bold">{{ memberOfRole('副书记')!.name.slice(0, 1) }}</span>
+            </NAvatar>
+            <div class="mt-4px text-13px font-bold">{{ memberOfRole('副书记')!.name }}</div>
+            <NTag size="tiny" :bordered="false">副书记</NTag>
+          </div>
+          <div v-else class="org-node org-node--empty" @click="openAssign('副书记')">
+            <span class="text-16px text-gray-300">＋</span>
+            <div class="text-11px text-gray-400">副书记（待指派）</div>
+          </div>
+        </div>
+
+        <!-- 连线 L2→L3（竖线 + 横线 + 三根竖线） -->
+        <div class="org-tree__vline" />
+        <div class="org-tree__hline-wrap">
+          <div class="org-tree__hline" />
+        </div>
+
+        <!-- L3: 委员 -->
+        <div class="org-tree__level org-tree__level--row">
+          <template v-for="role in ROLE_SLOTS.slice(2)" :key="role">
+            <div class="org-tree__branch">
+              <div class="org-tree__vline-sm" />
+              <div v-if="memberOfRole(role)" class="org-node" @click="openAssign(role)">
+                <NAvatar round :size="34" :style="{ backgroundColor: 'var(--sct-soft)', color: 'var(--sct-ink)' }">
+                  <span class="text-13px font-bold">{{ memberOfRole(role)!.name.slice(0, 1) }}</span>
+                </NAvatar>
+                <div class="mt-4px text-12px font-bold">{{ memberOfRole(role)!.name }}</div>
+                <NTag size="tiny" :bordered="false">{{ role }}</NTag>
+                <a class="mt-2px text-10px text-gray-300 hover:text-gray-500" @click.stop="clearRole(role)">清空</a>
+              </div>
+              <div v-else class="org-node org-node--empty" @click="openAssign(role)">
+                <span class="text-14px text-gray-300">＋</span>
+                <div class="text-10px text-gray-400">{{ role }}</div>
+              </div>
             </div>
           </template>
         </div>
 
-        <div class="mt-16px rounded-10px p-10px text-12px leading-relaxed text-gray-400" style="background: var(--sct-soft)">
-          点击卡片可指派/更换岗位（数据写回人员档案）；正式党员 {{ workStore.members.filter(m => m.type === '正式党员').length }} 人 · 预备党员 {{ workStore.members.filter(m => m.type === '预备党员').length }} 人 · 岗位设置依据《支部工作条例》第二十条（7 人以上设支委会）。
+        <!-- 连线 L3→成员 -->
+        <div class="org-tree__vline" />
+
+        <!-- L4: 普通成员 -->
+        <div class="org-tree__level">
+          <div class="org-members-grid">
+            <div
+              v-for="m in regularMembers"
+              :key="m.id"
+              class="org-member-card"
+              :title="`${m.type} · ${m.group || ''}`"
+            >
+              <NAvatar round :size="30" :style="{ backgroundColor: MEMBER_TYPE_COLORS[m.type] ?? '#8a8f99', color: '#fff' }">
+                <span class="text-12px font-bold">{{ m.name.slice(0, 1) }}</span>
+              </NAvatar>
+              <div class="mt-2px text-11px font-bold truncate w-full text-center">{{ m.name }}</div>
+              <div class="text-10px text-gray-400 truncate w-full text-center">{{ m.type }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-16px rounded-10px p-12px text-12px leading-relaxed text-gray-400" style="background: var(--sct-soft)">
+          点击委员卡片可指派/更换岗位（写回人员档案）· 组织架构依据《支部工作条例》第二十条
         </div>
       </div>
 
@@ -201,7 +245,6 @@ function removeAcademyNode(id: string) {
           </NTabs>
         </div>
 
-        <!-- 标准重绘 -->
         <div v-if="flowMode === 'standard'" class="flex flex-col gap-14px">
           <div v-for="stage in nodesByStage" :key="stage.key">
             <div class="mb-8px rounded-8px px-12px py-6px text-14px font-bold" style="background: var(--sct-soft); color: var(--sct-ink)">
@@ -221,14 +264,13 @@ function removeAcademyNode(id: string) {
           </div>
         </div>
 
-        <!-- 学院版（编辑） -->
-        <div v-if="flowMode === 'academy'" class="flex-col gap-10px">
+        <div v-if="flowMode === 'academy' && academyLoaded" class="flex-col gap-10px">
           <div class="mb-6px text-12px text-gray-400">学院每年初下发时间节点表，可在此维护本学院口径的流程节点：</div>
-          <div v-for="(n, idx) in academyNodes" :key="n.id" class="flex items-center gap-8px rounded-10px p-8px" style="background: var(--sct-soft)">
+          <div v-for="(n, idx) in academyNodes" :key="n.id" class="grid grid-cols-[28px_1fr_110px_90px_auto] items-center gap-8px rounded-10px p-8px" style="background: var(--sct-soft)">
             <span class="text-12px font-bold text-gray-400">{{ idx + 1 }}</span>
-            <NInput v-model:value="n.name" placeholder="节点名称" size="small" class="w-180px flex-none" />
-            <NInput v-model:value="n.window" placeholder="时间窗" size="small" class="w-120px flex-none" />
-            <NInput v-model:value="n.owner" placeholder="责任" size="small" class="w-100px flex-none" />
+            <NInput v-model:value="n.name" placeholder="节点名称" size="small" />
+            <NInput v-model:value="n.window" placeholder="时间窗" size="small" />
+            <NInput v-model:value="n.owner" placeholder="责任" size="small" />
             <NButton size="tiny" quaternary type="error" @click="removeAcademyNode(n.id)">删除</NButton>
           </div>
           <div class="flex gap-8px">
@@ -266,7 +308,7 @@ function removeAcademyNode(id: string) {
               </div>
             </NDescriptionsItem>
           </NDescriptions>
-          <div class="text-11px text-gray-400">依据《中国共产党发展党员工作细则》与中央组织部流程图重绘；学院口径请在"学院版"中维护。</div>
+          <div class="text-11px text-gray-400">依据《中国共产党发展党员工作细则》与中央组织部流程图重绘。</div>
         </NSpace>
       </NDrawerContent>
     </NDrawer>
@@ -274,57 +316,111 @@ function removeAcademyNode(id: string) {
 </template>
 
 <style scoped>
-.org-card {
+.org-tree-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 150px;
-  padding: 14px 12px;
+}
+
+.org-tree__level {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.org-tree__level--row {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+}
+
+.org-tree__vline {
+  width: 2px;
+  height: 24px;
+  background: var(--sct-muted);
+}
+
+.org-tree__hline-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.org-tree__hline {
+  position: relative;
+  height: 2px;
+  background: var(--sct-muted);
+  width: 60%;
+}
+
+.org-tree__vline-sm {
+  width: 2px;
+  height: 14px;
+  background: var(--sct-muted);
+  margin: 0 auto;
+}
+
+.org-tree__branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  max-width: 160px;
+}
+
+.org-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 16px;
   background: var(--sct-container);
   border: 1px solid var(--sct-border);
-  border-radius: 12px;
+  border-radius: var(--sct-radius);
   cursor: pointer;
   transition: box-shadow 0.15s;
+  box-shadow: var(--sct-shadow);
+  min-width: 110px;
 }
-.org-card:hover {
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+
+.org-node:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
-.org-card--top {
+
+.org-node--root {
   border-color: #a81c24;
+  border-width: 2px;
 }
-.org-card--empty {
+
+.org-node--empty {
   justify-content: center;
   border-style: dashed;
+  min-height: 80px;
 }
-.org-connector {
-  width: 2px;
-  height: 26px;
-  margin: 0 auto;
-  background: var(--sct-border);
+
+.org-members-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+  padding: 0 20px;
 }
-.flow-node {
-  padding: 10px 12px;
+
+.org-member-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 72px;
+  padding: 8px 4px;
   background: var(--sct-container);
   border: 1px solid var(--sct-border);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  border-radius: var(--sct-radius);
+  transition: transform 0.12s;
 }
-.flow-node:hover {
-  border-color: var(--sct-accent);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-}
-.flow-node__no {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 22px;
-  padding: 0 5px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--sct-accent);
-  border-radius: 6px;
+
+.org-member-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 </style>

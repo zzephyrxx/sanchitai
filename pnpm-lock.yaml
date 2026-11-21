@@ -212,27 +212,6 @@ importers:
       '@sa/utils':
         specifier: workspace:*
         version: link:packages/utils
-      '@schedule-x/calendar':
-        specifier: ^4.9.1
-        version: 4.9.1(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)(temporal-polyfill@1.0.8)
-      '@schedule-x/calendar-controls':
-        specifier: ^4.9.1
-        version: 4.9.1
-      '@schedule-x/current-time':
-        specifier: ^4.9.0
-        version: 4.9.0
-      '@schedule-x/drag-and-drop':
-        specifier: ^3.7.3
-        version: 3.7.3
-      '@schedule-x/events-service':
-        specifier: ^4.9.1
-        version: 4.9.1
-      '@schedule-x/theme-default':
-        specifier: ^4.9.1
-        version: 4.9.1
-      '@schedule-x/vue':
-        specifier: ^4.1.0
-        version: 4.1.0(@schedule-x/calendar@4.9.1(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)(temporal-polyfill@1.0.8))(@schedule-x/date-picker@4.2.0(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8))(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2))
       '@vueuse/core':
         specifier: 15.0.0
         version: 15.0.0(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2))
@@ -272,9 +251,6 @@ importers:
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
-      temporal-polyfill:
-        specifier: ^1.0.8
-        version: 1.0.8
       vue:
         specifier: 3.5.43
         version: 3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)
@@ -1942,14 +1918,6 @@ packages:
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
-  '@preact/signals-core@1.14.5':
-    resolution: {integrity: sha512-vcRv7Ityz5JVmeiVqIluLFzT/PDS/AlhHUpw3/aUWqcVUs6bDGIPXE/6RSC4evBNWYvnniozg5Syfj33al3gkg==}
-
-  '@preact/signals@2.11.4':
-    resolution: {integrity: sha512-Rb+5RPo9gWSaHtzJeauhHxiC8KP/IF2DEPkHPEOGOnuy2wnJzRqyeLRankUCYd6ADqtxS6GnWGv6Ie343d8aYw==}
-    peerDependencies:
-      preact: '>= 10.25.0 || >=11.0.0-0'
-
   '@quansync/fs@1.1.0':
     resolution: {integrity: sha512-qAPG/t3HqML1TlN7sY/pTbEjzFVAKsMjNNMGheyDosro+kT4iw2KCUoHcVdmliwWjorm4elZbgNQyU2eD97eDg==}
 
@@ -2147,41 +2115,6 @@ packages:
     resolution: {integrity: sha512-gVfBrzSqeYl0/QRJegeK9njmGxojS3oiU9cAHNY0wU22AjS44dGzt4WnnuYsTCNO8P40H4Ulykg8cxq2zWWo9Q==}
     cpu: [x64]
     os: [win32]
-
-  '@schedule-x/calendar-controls@4.9.1':
-    resolution: {integrity: sha512-CF4c4muMDmkhGH+3QufHkOyLcKCLed9FXkVNjzJT6FWrY/gL8smJK1x++6bsglBD6eISEJDqN3O2/r2qDorN8w==}
-
-  '@schedule-x/calendar@4.9.1':
-    resolution: {integrity: sha512-/Zsn49BqOklOZmftsh2B5QyqF/hMf8tUqpcBbg+W0xv7FFrYd1qsYeJfdEVPVKTa42hybyswLJvtglnKgaqC+Q==}
-    peerDependencies:
-      '@preact/signals': ^2.0.2
-      preact: ^10.19.2
-      temporal-polyfill: 0.3.2
-
-  '@schedule-x/current-time@4.9.0':
-    resolution: {integrity: sha512-qRAxCwZPnI8ahQnt+tE0g+KoBDDXvLh7YCVmihw8o994t00VMocuk8Uq7/IMkR1Jjf5qz0xNiAB01nSVM4xAbg==}
-
-  '@schedule-x/date-picker@4.2.0':
-    resolution: {integrity: sha512-qgGgG3+MccTCLd2Acw1hGpDWOrlsrFMvG75lScsNi6KHwVIHc2ckKUmV8rhe0ObvbHZqOKM6YQmAJO0lkMyW/w==}
-    peerDependencies:
-      '@preact/signals': ^2.0.2
-      preact: ^10.19.2
-
-  '@schedule-x/drag-and-drop@3.7.3':
-    resolution: {integrity: sha512-nHwZKzdIKWNTdT5BEXy4vLlHOmOH3C3M744QUIU0EOXPAFZQR1bBTviGs2NhmvaLiGstnVx2/TZtdhocy60hgg==}
-
-  '@schedule-x/events-service@4.9.1':
-    resolution: {integrity: sha512-7pZMC6Khh4/i5PwTkCJzYb4qxVuFHKi+ho5xmkLu0Kv7HNO9z06rkcJw4Kc88bsbMJLkLXi6vTnHFClROIEZVg==}
-
-  '@schedule-x/theme-default@4.9.1':
-    resolution: {integrity: sha512-mCe0Ly9ZEBc1nsEDq2vTVvASSmM6oO5a4Nt+ogeYBnsZIBk3w9pk2IcaJHcXqHIS0uA1b8TzmjlpgvorvMtZ7w==}
-
-  '@schedule-x/vue@4.1.0':
-    resolution: {integrity: sha512-PYOkl28cgJVS6RLidbE2cbrS8cns2xxnqjfdmWTUu6AW/UmB5JTcy1g5okeCMTVKAURpcB6rHj+LoXMdhbDhFQ==}
-    peerDependencies:
-      '@schedule-x/calendar': ^3.4.0 || ^4.0.0
-      '@schedule-x/date-picker': 4.2.0
-      vue: ^3
 
   '@sec-ant/readable-stream@0.4.1':
     resolution: {integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==}
@@ -5160,14 +5093,6 @@ packages:
   preact@10.12.1:
     resolution: {integrity: sha512-l8386ixSsBdbreOAkqtrwqHwdvR35ID8c3rKPa8lCWuO86dBi32QWHV4vfsZK1utLLFMvw+Z5Ad4XLkZzchscg==}
 
-  preact@10.29.8:
-    resolution: {integrity: sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==}
-    peerDependencies:
-      preact-render-to-string: '>=5'
-    peerDependenciesMeta:
-      preact-render-to-string:
-        optional: true
-
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
@@ -5599,15 +5524,6 @@ packages:
   temp-dir@2.0.0:
     resolution: {integrity: sha512-aoBAniQmmwtcKp/7BzsH8Cxzv8OL736p7v1ihGb5e9DJ9kTwGWHrQrVB5+lfVDzfGrdRzXch+ig7LHaY1JTOrg==}
     engines: {node: '>=8'}
-
-  temporal-polyfill@1.0.8:
-    resolution: {integrity: sha512-RCCGa0GddT099XG49ijdD0tDf86L8vfuZun1+JyJiO4Y2NP9PACQsG0OnvNPXwVLisdvhr/zqL2nhKQmXXx08A==}
-
-  temporal-spec@1.0.1:
-    resolution: {integrity: sha512-wxVoanmDeavXie1vu2JaQ3WIc3JZnWAOYFBsJyATaVsXsycKYUflGsyBmrRSnoCpZJpwPyr38VpgSUlQ8CbFxg==}
-
-  temporal-utils@1.0.4:
-    resolution: {integrity: sha512-4mAcgbWlaxe+gn23gk8g0iHxCVGVOhKzSCfF5HM3lfvH8BdT+/pBmH/R/E4CrIse+koUgs8ThkPzCLnui6Fi8w==}
 
   tempy@0.6.0:
     resolution: {integrity: sha512-G13vtMYPT/J8A4X2SjdtBTphZlrp1gKv6hZiOjw14RCWg6GbHuQBGtjlx75xLbYV/wEc0D7G5K4rxKP/cXk8Bw==}
@@ -7621,13 +7537,6 @@ snapshots:
 
   '@polka/url@1.0.0-next.29': {}
 
-  '@preact/signals-core@1.14.5': {}
-
-  '@preact/signals@2.11.4(preact@10.29.8)':
-    dependencies:
-      '@preact/signals-core': 1.14.5
-      preact: 10.29.8
-
   '@quansync/fs@1.1.0':
     dependencies:
       quansync: 1.0.0
@@ -7754,33 +7663,6 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.68.5':
     optional: true
-
-  '@schedule-x/calendar-controls@4.9.1': {}
-
-  '@schedule-x/calendar@4.9.1(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)(temporal-polyfill@1.0.8)':
-    dependencies:
-      '@preact/signals': 2.11.4(preact@10.29.8)
-      preact: 10.29.8
-      temporal-polyfill: 1.0.8
-
-  '@schedule-x/current-time@4.9.0': {}
-
-  '@schedule-x/date-picker@4.2.0(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)':
-    dependencies:
-      '@preact/signals': 2.11.4(preact@10.29.8)
-      preact: 10.29.8
-
-  '@schedule-x/drag-and-drop@3.7.3': {}
-
-  '@schedule-x/events-service@4.9.1': {}
-
-  '@schedule-x/theme-default@4.9.1': {}
-
-  '@schedule-x/vue@4.1.0(@schedule-x/calendar@4.9.1(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)(temporal-polyfill@1.0.8))(@schedule-x/date-picker@4.2.0(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8))(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2))':
-    dependencies:
-      '@schedule-x/calendar': 4.9.1(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)(temporal-polyfill@1.0.8)
-      '@schedule-x/date-picker': 4.2.0(@preact/signals@2.11.4(preact@10.29.8))(preact@10.29.8)
-      vue: 3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)
 
   '@sec-ant/readable-stream@0.4.1': {}
 
@@ -10865,8 +10747,6 @@ snapshots:
 
   preact@10.12.1: {}
 
-  preact@10.29.8: {}
-
   prelude-ls@1.2.1: {}
 
   prettier@3.3.3: {}
@@ -11380,15 +11260,6 @@ snapshots:
   tailwind-merge@3.7.0: {}
 
   temp-dir@2.0.0: {}
-
-  temporal-polyfill@1.0.8:
-    dependencies:
-      temporal-spec: 1.0.1
-      temporal-utils: 1.0.4
-
-  temporal-spec@1.0.1: {}
-
-  temporal-utils@1.0.4: {}
 
   tempy@0.6.0:
     dependencies:
