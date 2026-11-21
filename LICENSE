@@ -1,21 +1,37 @@
-MIT License
+# SanChiTai Personal & Non-Commercial Source-Available License v1.0
+# 三尺台个人非商业使用源码许可协议 v1.0
 
-Copyright (c) 2021 Soybean
+Copyright (c) 2026 SanChiTai Contributors. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+---
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+## English Version
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+### 1. Grant of Rights (Personal & Non-Commercial Use Only)
+Subject to the terms and conditions of this License, the copyright holder hereby grants you a non-exclusive, royalty-free, revocable, non-transferable license to view, download, compile, run, and modify the Software **solely for your own personal, academic, educational, or non-commercial student-affairs / grassroots organizational use**.
+
+### 2. Strictly Prohibited Uses
+Without prior written authorization from the copyright holder, you may **NOT**:
+1. **Commercial Use**: Use the Software, in whole or in part, for any commercial purpose, direct or indirect monetary gain, paid consulting, or internal business operations of any for-profit entity.
+2. **Resale & Paid Distribution**: Sell, rent, lease, sublicense, or charge any fee for distributing the Software, compiled installers, or derivative works.
+3. **Hosted / SaaS Services**: Deploy or operate the Software or any modified version as a hosted service, SaaS platform, or multi-tenant cloud service for third parties.
+4. **Removal of Notices**: Remove, obscure, or alter any copyright notices, attribution notices, or this License text in any copies or derivative works.
+
+### 3. Attribution & Upstream Components
+- If you share non-commercial modifications or reference this project, you must retain clear attribution to **SanChiTai (三尺台)** and include this License.
+- This project incorporates open-source third-party components (including `soybean-admin`, Vue 3, Naive UI, FullCalendar, Dexie, ECharts, and Tauri) that remain governed by their respective open-source licenses. See `THIRD_PARTY_NOTICES.md` for full details.
+
+### 4. Termination
+Any violation of the restrictions in Section 2 automatically terminates your rights under this License.
+
+### 5. Disclaimer of Warranty & Limitation of Liability
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+## 中文说明（仅供参考，以英文条款为准）
+
+1. **允许范围**：仅允许**个人学习、科研教学及个人/基层学生工作非商业自用**（可下载、本地编译运行及个人定制修改）。
+2. **严格禁止**：未经著作权人书面授权，严禁用于任何**商业用途**、**二次打包售卖**、**收费代部署/培训**、**企业内部商用**或**对外提供云端托管/SaaS 服务**；严禁删除或篡改版权声明与本许可协议。
+3. **第三方组件**：本项目所依赖的第三方开源框架与组件（如 `soybean-admin` 等）继续遵循其原有开源协议，详见 `THIRD_PARTY_NOTICES.md`。
+4. **免责声明**：本软件按“现状”提供，不附带任何明示或暗示的担保；请定期做好本地 JSON 数据备份。
