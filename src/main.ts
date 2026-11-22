@@ -50,12 +50,28 @@ async function setupApp() {
   app.mount('#app');
 }
 
-// PWA：离线 Service Worker。防御式动态加载（评审轮2 P1-4）：
-// 若 dev server 先于 vite 配置（PWA 插件）启动，静态导入会 500 白屏；动态导入失败则静默跳过
-import('virtual:pwa-register')
-  .then(m => m.registerSW({ immediate: true }))
-  .catch(() => {
-    /* dev 或插件未挂载：忽略 */
-  });
+// 清理旧版（如 v0.2.3）在 Windows WebView2 (http://tauri.localhost) 或本地浏览器残留的 Service Worker 与 Workbox 缓存，
+// 防止覆盖安装新版本后仍加载旧版静态资源。
+async function cleanupLegacyServiceWorkers() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    if (regs.length === 0) return;
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    await Promise.all(regs.map(r => r.unregister().catch(() => false)));
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k).catch(() => false)));
+    }
+    if (hadController && !sessionStorage.getItem('sct:sw-cleaned')) {
+      sessionStorage.setItem('sct:sw-cleaned', '1');
+      window.location.reload();
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+void cleanupLegacyServiceWorkers();
 
 setupApp();

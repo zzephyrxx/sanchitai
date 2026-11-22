@@ -33,15 +33,17 @@
 
 ## 二、解压源码与安装依赖
 
-1. 将压缩包 `sanchitai-v0.2.4-src.zip` 解压到**纯英文、无空格的短路径**（避免 Windows 路径过长或中文路径导致 NSIS/Cargo 报错），例如：
+1. 将压缩包 `sanchitai-v0.2.4-src.zip` 解压到一个**全新的纯英文、无空格短路径**（**不要覆盖解压到旧版 v0.2.3 目录**，避免新旧目录嵌套导致仍编译旧版代码），例如：
 
    ```text
-   D:\sanchitai
+   D:\sanchitai-0.2.4
    ```
 
-2. 在解压目录打开 **PowerShell**（或终端），安装前端依赖：
+   > 解压后进入包含 `package.json` 的目录（若压缩包内带一层 `sanchitai-v0.2.4` 文件夹，请进入该子目录），可运行 `Select-String '"version"' package.json` 确认显示 `"version": "0.2.4"`。
+
+2. 在包含 `package.json` 的目录打开 **PowerShell**（或终端），安装前端依赖：
    ```powershell
-   cd D:\sanchitai
+   cd D:\sanchitai-0.2.4
    pnpm install
    ```
    > 如国内下载较慢，可先设置镜像：`pnpm config set registry https://registry.npmmirror.com`
