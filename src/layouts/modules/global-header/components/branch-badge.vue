@@ -31,15 +31,18 @@ async function saveBranchName() {
     <template #trigger>
       <button
         type="button"
-        class="group flex flex-shrink-0 items-center gap-6px whitespace-nowrap rounded-4px px-10px py-4px text-13px transition hover:opacity-85"
+        class="group flex flex-shrink-0 items-center gap-5px whitespace-nowrap rounded-4px px-8px py-4px text-12px transition hover:opacity-85"
         style="background: var(--sct-container); border: 1px solid var(--sct-border); color: var(--sct-ink)"
         :title="$t('sct.header.branchEditTip')"
         @click="openEdit"
       >
-        <span class="text-gray-400">{{ $t('sct.header.branchLabel') }}</span>
+        <span class="hidden text-gray-400 2xl:inline">{{ $t('sct.header.branchLabel') }}</span>
         <span class="inline-block size-6px flex-shrink-0 rounded-full" style="background: #a81c24" />
         <span class="whitespace-nowrap font-bold">{{ workStore.branchName }}</span>
-        <SvgIcon icon="lucide:pen-line" class="flex-shrink-0 text-11px text-gray-400 transition group-hover:text-[#A81C24]" />
+        <SvgIcon
+          icon="lucide:pen-line"
+          class="flex-shrink-0 text-11px text-gray-400 transition group-hover:text-[#A81C24]"
+        />
       </button>
     </template>
     <div class="w-300px p-4px">

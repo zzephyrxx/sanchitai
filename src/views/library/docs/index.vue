@@ -426,8 +426,8 @@ const archiveCategoryFilter = ref<string>('全部');
 const archiveTemplateFilter = ref<string>('全部');
 
 const archiveTemplateFilterOptions = computed(() => [
-  { label: '全部来源', value: '全部' },
-  { label: '空白新建', value: '__blank__' },
+  { label: bi('全部来源', 'All Sources'), value: '全部' },
+  { label: bi('空白新建', 'Blank Doc'), value: '__blank__' },
   ...workStore.docTemplates.map(t => ({ label: t.name, value: t.id }))
 ]);
 
@@ -705,7 +705,10 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
         <div class="flex items-center gap-8px">
           <SvgIcon icon="lucide:layout-template" class="text-16px text-[#A81C24]" />
           <span class="text-15px font-bold">{{ bi('模板库', 'Document Templates') }}</span>
-          <NTag size="tiny" :bordered="false" round>{{ workStore.docTemplates.length }} 套</NTag>
+          <NTag size="tiny" type="warning" :bordered="false" round>Preview</NTag>
+          <NTag size="tiny" :bordered="false" round>
+            {{ bi(`${workStore.docTemplates.length} 套`, `${workStore.docTemplates.length}`) }}
+          </NTag>
         </div>
       </template>
       <template #header-extra>
@@ -789,7 +792,7 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
             </span>
             <span class="inline-flex shrink-0 items-center gap-2px text-11px text-[var(--sct-accent)] opacity-80">
               <SvgIcon icon="lucide:arrow-right" class="text-11px" />
-              套用
+              {{ bi('套用', 'Use') }}
             </span>
           </div>
         </div>
@@ -802,7 +805,9 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
         <div class="flex items-center gap-8px">
           <SvgIcon icon="lucide:archive" class="text-16px text-[var(--sct-ink)] opacity-80" />
           <span class="text-15px font-bold">{{ bi('归档区', 'Archived Documents') }}</span>
-          <NTag size="tiny" :bordered="false" round>{{ workStore.docsList.length }} 份</NTag>
+          <NTag size="tiny" :bordered="false" round>
+            {{ bi(`${workStore.docsList.length} 份`, `${workStore.docsList.length}`) }}
+          </NTag>
         </div>
       </template>
       <template #header-extra>
@@ -817,7 +822,7 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
           v-model:value="archiveCategoryFilter"
           size="small"
           class="w-120px"
-          :options="[{ label: '全部分类', value: '全部' }, ...categorySelectOptions]"
+          :options="[{ label: bi('全部分类', 'All Categories'), value: '全部' }, ...categorySelectOptions]"
           @update:value="pagination.page = 1"
         />
         <NSelect

@@ -808,7 +808,9 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
         </template>
         <template #header-extra>
           <div class="flex items-center gap-4px">
-            <span v-if="todayEvents.length > 6" class="text-11px text-gray-400">可滚动</span>
+            <span v-if="todayEvents.length > 6" class="text-11px text-gray-400">
+              {{ isEn ? 'Scroll' : '可滚动' }}
+            </span>
             <NTag size="tiny" :bordered="false" round>{{ todayEvents.length }} {{ $t('sct.common.items') }}</NTag>
           </div>
         </template>
@@ -1105,11 +1107,11 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           <div class="flex items-center gap-10px">
             <SvgIcon icon="lucide:trash-2" class="text-14px text-[#d43030]" />
             <span class="max-w-220px truncate text-12px font-medium text-[var(--sct-ink)]">
-              已删除「{{ undoBar.snapshot.title }}」
+              {{ isEn ? `Deleted "${undoBar.snapshot.title}"` : `已删除「${undoBar.snapshot.title}」` }}
             </span>
             <NButton size="tiny" type="primary" secondary @click="handleUndoDelete">
               <template #icon><SvgIcon icon="lucide:undo-2" /></template>
-              撤销删除
+              {{ isEn ? 'Undo' : '撤销删除' }}
             </NButton>
             <button type="button" class="text-12px text-gray-400 hover:text-gray-600" @click="closeUndoBar">
               <SvgIcon icon="lucide:x" />
@@ -1124,7 +1126,15 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
     <NModal
       :show="moveConfirm.visible"
       preset="card"
-      :title="moveConfirm.kind === 'resize' ? '确认调整日程时长' : '确认调整日程时间'"
+      :title="
+        moveConfirm.kind === 'resize'
+          ? isEn
+            ? 'Confirm Duration Change'
+            : '确认调整日程时长'
+          : isEn
+            ? 'Confirm Reschedule'
+            : '确认调整日程时间'
+      "
       class="w-420px max-w-92vw"
       :mask-closable="true"
       @update:show="val => !val && cancelMoveConfirm()"
@@ -1137,14 +1147,14 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 
         <div class="rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-10px text-12px">
           <div class="flex items-center justify-between gap-8px text-gray-500">
-            <span>原时间</span>
+            <span>{{ isEn ? 'Original' : '原时间' }}</span>
             <span class="font-mono">{{ moveConfirm.oldText }}</span>
           </div>
           <div class="my-6px flex justify-center text-gray-400">
             <SvgIcon icon="lucide:arrow-down" class="text-13px" />
           </div>
           <div class="flex items-center justify-between gap-8px font-semibold text-[var(--sct-ink)]">
-            <span>调整为</span>
+            <span>{{ isEn ? 'Updated' : '调整为' }}</span>
             <span class="font-mono text-[var(--sct-accent)]">{{ moveConfirm.newText }}</span>
           </div>
         </div>
@@ -1152,10 +1162,12 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 
       <template #footer>
         <div class="flex justify-end gap-8px">
-          <NButton size="small" secondary :disabled="moveConfirm.saving" @click="cancelMoveConfirm">取消还原</NButton>
+          <NButton size="small" secondary :disabled="moveConfirm.saving" @click="cancelMoveConfirm">
+            {{ isEn ? 'Cancel & Revert' : '取消还原' }}
+          </NButton>
           <NButton size="small" type="primary" :loading="moveConfirm.saving" @click="confirmMoveAdjustment">
             <template #icon><SvgIcon icon="lucide:check" /></template>
-            确认调整
+            {{ isEn ? 'Confirm' : '确认调整' }}
           </NButton>
         </div>
       </template>

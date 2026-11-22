@@ -360,6 +360,7 @@ function rowProps(row: MemberYearPointSummary) {
       <template #header>
         <div class="flex flex-wrap items-center gap-10px">
           <span class="text-16px font-bold">{{ bi('党员积分', 'Party Member Points') }}</span>
+          <NTag size="tiny" type="warning" :bordered="false" round>Preview</NTag>
           <NSelect v-model:value="selectedYear" :options="yearOptions" size="small" class="w-116px" />
           <span class="hidden text-12px text-gray-400 xl:inline">
             {{
@@ -396,14 +397,21 @@ function rowProps(row: MemberYearPointSummary) {
           <span>{{ bi('考核党员', 'Members') }}</span>
           <b class="text-[#A81C24] font-mono">{{ kpiStats.total }}</b>
           <span class="ml-2px text-12px text-gray-500">
-            （正式 {{ kpiStats.formalCount }} · 预备 {{ kpiStats.probationCount }}）
+            {{
+              bi(
+                `（正式 ${kpiStats.formalCount} · 预备 ${kpiStats.probationCount}）`,
+                `(${kpiStats.formalCount} Full · ${kpiStats.probationCount} Prob.)`
+              )
+            }}
           </span>
         </div>
         <div class="flex items-center gap-4px rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
           <SvgIcon icon="lucide:trending-up" class="text-14px text-gray-400" />
           <span>{{ bi('支部平均分', 'Average') }}</span>
           <b class="font-mono text-[#2563eb]">{{ formatScore(kpiStats.avg) }}</b>
-          <span class="ml-4px text-12px text-gray-500">最高 {{ formatScore(kpiStats.max) }} 分</span>
+          <span class="ml-4px text-12px text-gray-500">
+            {{ bi(`最高 ${formatScore(kpiStats.max)} 分`, `Max ${formatScore(kpiStats.max)}`) }}
+          </span>
         </div>
 
         <button
@@ -437,7 +445,9 @@ function rowProps(row: MemberYearPointSummary) {
           <b class="font-mono" :style="{ color: kpiStats.pendingItems > 0 ? '#d97706' : 'var(--sct-ink)' }">
             {{ kpiStats.pendingItems }}
           </b>
-          <span class="text-12px text-gray-500">条（{{ kpiStats.pendingMembers }} 人）</span>
+          <span class="text-12px text-gray-500">
+            {{ bi(`条（${kpiStats.pendingMembers} 人）`, `(${kpiStats.pendingMembers})`) }}
+          </span>
           <span class="points-kpi-btn__cue">
             <SvgIcon :icon="filterMode === 'pending' ? 'lucide:check' : 'lucide:list-filter'" class="text-11px" />
             <span>{{ filterMode === 'pending' ? bi('已筛选', 'Active') : bi('筛选', 'Filter') }}</span>
@@ -449,10 +459,12 @@ function rowProps(row: MemberYearPointSummary) {
       <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
         <div class="flex flex-wrap items-center gap-8px">
           <NRadioGroup v-model:value="filterMode" size="small">
-            <NRadioButton value="all">全部 ({{ allSummaries.length }})</NRadioButton>
-            <NRadioButton value="warning">预警 ({{ kpiStats.warningCount }})</NRadioButton>
-            <NRadioButton value="pending">有待核实 ({{ kpiStats.pendingMembers }})</NRadioButton>
-            <NRadioButton value="pass">合格 ({{ allSummaries.length - kpiStats.warningCount }})</NRadioButton>
+            <NRadioButton value="all">{{ bi('全部', 'All') }} ({{ allSummaries.length }})</NRadioButton>
+            <NRadioButton value="warning">{{ bi('预警', 'Warning') }} ({{ kpiStats.warningCount }})</NRadioButton>
+            <NRadioButton value="pending">{{ bi('有待核实', 'Pending') }} ({{ kpiStats.pendingMembers }})</NRadioButton>
+            <NRadioButton value="pass">
+              {{ bi('合格', 'Pass') }} ({{ allSummaries.length - kpiStats.warningCount }})
+            </NRadioButton>
           </NRadioGroup>
           <div class="w-210px shrink-0">
             <NInput

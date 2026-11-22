@@ -224,6 +224,8 @@ const animatedFeeDue = useCountUp(() => monthRate.value.due, 800);
 const animatedFeePaid = useCountUp(() => monthRate.value.paid, 850);
 const animatedFeeUnpaid = useCountUp(() => Math.max(0, monthRate.value.due - monthRate.value.paid), 700);
 
+const MONTH_SHORT_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 // ---------------- 近半年（26 周）日程热力 ----------------
 const heat = computed(() => {
   const totalWeeks = 26;
@@ -252,7 +254,10 @@ const heat = computed(() => {
     const isMonthChange = month !== prevMonth;
     const isNearEnd = w >= totalWeeks - 2;
     const isInitialStub = w === 0 && start.add(14, 'day').month() !== month;
-    const monthLabel = isMonthChange && !isInitialStub && !isNearEnd && w - lastLabelWeek >= 3 ? `${month + 1}月` : '';
+    const monthLabel =
+      isMonthChange && !isInitialStub && !isNearEnd && w - lastLabelWeek >= 3
+        ? bi(`${month + 1}月`, MONTH_SHORT_EN[month])
+        : '';
     if (monthLabel) lastLabelWeek = w;
     prevMonth = month;
 
@@ -672,10 +677,10 @@ const weekCategoryCount = computed(() => {
               <div class="dash-heat-wrap mx-auto flex w-full max-w-410px items-end gap-5px">
                 <!-- 星期轴 -->
                 <div class="dash-heat-axis flex shrink-0 flex-col justify-between text-10px text-gray-400 leading-none">
-                  <span>一</span>
-                  <span>三</span>
-                  <span>五</span>
-                  <span>日</span>
+                  <span>{{ bi('一', 'M') }}</span>
+                  <span>{{ bi('三', 'W') }}</span>
+                  <span>{{ bi('五', 'F') }}</span>
+                  <span>{{ bi('日', 'S') }}</span>
                 </div>
                 <!-- 26 周列（自适应网格，无横向溢出，月份浮层不撑宽列宽） -->
                 <div class="dash-heat-grid min-w-0 flex-1">

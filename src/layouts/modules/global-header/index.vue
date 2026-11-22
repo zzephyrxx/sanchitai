@@ -38,10 +38,10 @@ const { isFullscreen, toggle } = useFullscreen();
     <GlobalLogo v-if="showLogo" class="h-full" :style="{ width: themeStore.sider.width + 'px' }" />
     <MenuToggler v-if="showMenuToggler" :collapsed="appStore.siderCollapse" @click="appStore.toggleSiderCollapse" />
     <div v-if="showMenu" :id="GLOBAL_HEADER_MENU_ID" class="h-full flex-y-center flex-1-hidden"></div>
-    <div v-else class="h-full flex-y-center flex-1-hidden">
-      <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
+    <div v-else class="mr-8px h-full min-w-0 flex-y-center flex-1-hidden">
+      <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-10px" />
     </div>
-    <div class="h-full flex-y-center flex-shrink-0 justify-end gap-6px">
+    <div class="h-full flex-y-center flex-shrink-0 justify-end gap-4px">
       <OpenModeButton />
       <BranchBadge />
       <IdentityBadge />

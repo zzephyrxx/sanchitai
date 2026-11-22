@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { $t } from '@/locales';
 import { useThemeStore } from '@/store/modules/theme';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 import SettingItem from '../../../components/setting-item.vue';
 
 defineOptions({
@@ -8,6 +9,7 @@ defineOptions({
 });
 
 const themeStore = useThemeStore();
+const { bi } = useSctI18n();
 
 function handleUpdateColor(color: string, key: App.Theme.ThemeColorKey) {
   themeStore.updateThemeColors(key, color);
@@ -15,7 +17,7 @@ function handleUpdateColor(color: string, key: App.Theme.ThemeColorKey) {
 
 function handleResetColors() {
   themeStore.resetPresetColors();
-  window.$message?.success('主题颜色已重置为当前皮肤默认配色');
+  window.$message?.success(bi('主题颜色已重置为当前皮肤默认配色', 'Theme colors reset to active skin defaults'));
 }
 
 const swatches: string[] = [
@@ -87,7 +89,7 @@ const swatches: string[] = [
     <div class="pt-4px">
       <NButton block size="small" secondary @click="handleResetColors">
         <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-        重置主题颜色
+        {{ bi('重置主题颜色', 'Reset Theme Colors') }}
       </NButton>
     </div>
   </div>

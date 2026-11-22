@@ -554,7 +554,9 @@ function handleResetMeetingLayout() {
         >
           <span class="inline-block size-10px rounded-full" :style="{ background: s.color }" />
           <span class="text-13px font-bold">{{ s.label }}</span>
-          <span class="text-12px text-gray-500">{{ `${activePeriod.shortScope} ${s.done} 次` }} · {{ s.target }}</span>
+          <span class="text-12px text-gray-500">
+            {{ bi(`${activePeriod.shortScope} ${s.done} 次`, `${s.done} ${activePeriod.shortScope}`) }} · {{ s.target }}
+          </span>
         </div>
       </div>
 

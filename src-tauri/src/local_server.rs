@@ -502,6 +502,13 @@ pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
                 }
             }
         }
+        if Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &normalized_url])
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
         Command::new("cmd")
             .args(["/C", "start", "", &normalized_url])
             .spawn()

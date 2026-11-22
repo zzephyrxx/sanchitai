@@ -482,7 +482,8 @@ function fmtSize(size: number) {
       <template #header>
         <div class="flex items-center gap-10px">
           <span class="shrink-0 text-16px font-bold">{{ bi('政策文件', 'Policy Documents') }}</span>
-          <NTabs v-model:value="activeMainTab" type="segment" size="small" class="w-300px shrink-0">
+          <NTag size="tiny" type="warning" :bordered="false" round class="shrink-0">Preview</NTag>
+          <NTabs v-model:value="activeMainTab" type="segment" size="small" class="w-290px shrink-0">
             <NTab name="rules" :tab="`${bi('政策与法规', 'Regulations')}（${policyCards.length}）`" />
             <NTab name="archive" :tab="`${bi('本单位归档', 'Local Archive')}（${importedFiles.length}）`" />
           </NTabs>
@@ -599,7 +600,12 @@ function fmtSize(size: number) {
                   <li v-for="(p, i) in card.points.slice(0, 3)" :key="i" class="mb-4px line-clamp-2">{{ p }}</li>
                 </ul>
                 <div v-if="card.points.length > 3" class="mt-2px text-11px text-gray-400">
-                  还有 {{ card.points.length - 3 }} 条要点 · 点击卡片查看完整内容
+                  {{
+                    bi(
+                      `还有 ${card.points.length - 3} 条要点 · 点击卡片查看完整内容`,
+                      `+${card.points.length - 3} more points · Click card to view all`
+                    )
+                  }}
                 </div>
               </div>
               <div
@@ -755,7 +761,7 @@ function fmtSize(size: number) {
           <div class="mt-18px flex items-center justify-between gap-10px border-t border-[var(--sct-border)] pt-14px">
             <NButton size="small" secondary @click="copyReadingPoints">
               <template #icon><SvgIcon icon="lucide:copy" /></template>
-              复制要点
+              {{ bi('复制要点', 'Copy Points') }}
             </NButton>
             <div class="flex items-center gap-8px">
               <NButton
@@ -768,9 +774,9 @@ function fmtSize(size: number) {
                 type="primary"
               >
                 <template #icon><SvgIcon icon="lucide:external-link" /></template>
-                查看权威原文
+                {{ bi('查看权威原文', 'View Official Text') }}
               </NButton>
-              <NButton size="small" @click="readerShow = false">关闭</NButton>
+              <NButton size="small" @click="readerShow = false">{{ bi('关闭', 'Close') }}</NButton>
             </div>
           </div>
         </div>
@@ -829,8 +835,13 @@ function fmtSize(size: number) {
 
 <style scoped>
 .lib-cat-tabs {
-  width: 70%;
+  width: fit-content;
+  min-width: 68%;
   max-width: 100%;
+}
+.lib-cat-tabs :deep(.n-tabs-tab) {
+  padding-left: 12px;
+  padding-right: 12px;
 }
 @media (max-width: 960px) {
   .lib-cat-tabs {
@@ -851,12 +862,15 @@ function fmtSize(size: number) {
   transform: translateY(-2px);
 }
 .policy-reader-card {
+  position: relative;
+  z-index: 1;
   width: min(620px, 92vw);
   overflow: hidden;
   border-radius: 16px;
-  background: var(--sct-container);
+  background-color: var(--sct-container);
   border: 1px solid var(--sct-border);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  opacity: 1;
 }
 .policy-reader-ribbon {
   height: 5px;

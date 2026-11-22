@@ -780,8 +780,13 @@ function mdSummaryLines(md?: string): string[] {
   overflow: hidden;
 }
 .lib-cat-tabs {
-  width: 70%;
+  width: fit-content;
+  min-width: 68%;
   max-width: 100%;
+}
+.lib-cat-tabs :deep(.n-tabs-tab) {
+  padding-left: 12px;
+  padding-right: 12px;
 }
 @media (max-width: 960px) {
   .lib-cat-tabs {

@@ -113,7 +113,7 @@ html[data-preset='crm-frosted-glass'] {
   --sct-soft: #e9e5d9;
   --sct-muted: #6e6a5e;
   --sct-ink: #16150f;
-  --sct-accent: #1e5c42;
+  --sct-accent: #1e6b4b;
   --sct-radius: 0px;
   --sct-shadow: none;
   --sct-ok-soft: #dfe8e3;
@@ -132,7 +132,7 @@ html[data-preset='crm-frosted-glass'].dark {
   --sct-soft: #26241d;
   --sct-muted: #9e998b;
   --sct-ink: #f4f2ec;
-  --sct-accent: #2d8660;
+  --sct-accent: #34b37e;
   --sct-radius: 0px;
   --sct-shadow: none;
   --sct-ok-soft: #172b22;
@@ -190,6 +190,20 @@ html[data-preset='crm-frosted-glass'] .n-popover:not(.n-tooltip) {
   border: 1px solid var(--sct-border) !important;
   box-shadow: none !important;
   color: var(--sct-ink);
+}
+
+html[data-preset='crm-frosted-glass'] .policy-reader-card,
+html[data-preset='crm-frosted-glass'] .cal-undo-bar {
+  border-radius: 0px !important;
+  background-color: #fbfaf6 !important;
+  border: 1px solid var(--sct-border) !important;
+  box-shadow: 4px 4px 0 var(--sct-accent) !important;
+  opacity: 1 !important;
+}
+
+html[data-preset='crm-frosted-glass'].dark .policy-reader-card,
+html[data-preset='crm-frosted-glass'].dark .cal-undo-bar {
+  background-color: #1c1b16 !important;
 }
 
 /* 电子纸下的 Tooltip 悬浮提示气泡：采用 KONTUR 墨黑底 (#16150F) + 暖纸白字 (#F4F2EC) + 1px 台账边框，清晰醒目 */
