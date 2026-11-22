@@ -13,6 +13,11 @@ function handleUpdateColor(color: string, key: App.Theme.ThemeColorKey) {
   themeStore.updateThemeColors(key, color);
 }
 
+function handleResetColors() {
+  themeStore.resetPresetColors();
+  window.$message?.success('主题颜色已重置为当前皮肤默认配色');
+}
+
 const swatches: string[] = [
   '#3b82f6',
   '#6366f1',
@@ -79,10 +84,10 @@ const swatches: string[] = [
         />
       </div>
     </SettingItem>
-    <div class="flex justify-end">
-      <NButton size="tiny" secondary @click="themeStore.resetPresetColors()">
+    <div class="pt-4px">
+      <NButton block size="small" secondary @click="handleResetColors">
         <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-        恢复当前皮肤默认配色
+        重置主题颜色
       </NButton>
     </div>
   </div>

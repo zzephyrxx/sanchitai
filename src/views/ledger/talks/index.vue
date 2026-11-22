@@ -300,28 +300,38 @@ async function handleAdd() {
           <div
             v-for="c in coverage"
             :key="c.member.id"
-            class="rounded-8px px-9px py-7px"
+            class="flex items-center gap-7px rounded-8px px-8px py-7px"
             :style="{ background: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)' }"
           >
-            <div class="flex items-center justify-between gap-4px">
-              <span class="truncate text-13px font-bold">{{ c.member.name }}</span>
-              <NTag
-                size="tiny"
-                :bordered="false"
-                class="shrink-0"
-                :color="{
-                  color: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)',
-                  textColor: c.latest ? '#3f9d63' : '#8a8f99'
-                }"
+            <IconSolarUserRoundedBoldDuotone
+              class="shrink-0 text-20px"
+              :style="{ color: c.latest ? '#3f9d63' : '#94a3b8' }"
+            />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-4px">
+                <span class="truncate text-13px font-bold">{{ c.member.name }}</span>
+                <span
+                  class="inline-flex shrink-0 items-center gap-2px text-11px font-medium"
+                  :style="{ color: c.latest ? '#3f9d63' : '#8a8f99' }"
+                  :title="
+                    c.latest
+                      ? bi('今年已覆盖谈心谈话', 'Covered this year')
+                      : bi('今年尚未覆盖谈心谈话', 'Not covered yet')
+                  "
+                >
+                  <SvgIcon
+                    :icon="c.latest ? 'lucide:message-circle-check' : 'lucide:message-circle-dashed'"
+                    class="text-13px"
+                  />
+                  <span>{{ c.latest ? bi('已覆盖', 'Done') : bi('未覆盖', 'None') }}</span>
+                </span>
+              </div>
+              <div
+                class="mt-2px truncate text-11px text-gray-500"
+                :title="c.latest ? `${c.latest.date} · ${c.latest.type}` : ''"
               >
-                {{ c.latest ? bi('已覆盖', 'Done') : bi('未覆盖', 'None') }}
-              </NTag>
-            </div>
-            <div
-              class="mt-2px truncate text-11px text-gray-500"
-              :title="c.latest ? `${c.latest.date} · ${c.latest.type}` : ''"
-            >
-              {{ c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年未谈话', 'No talk yet') }}
+                {{ c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年未谈话', 'No talk yet') }}
+              </div>
             </div>
           </div>
         </div>

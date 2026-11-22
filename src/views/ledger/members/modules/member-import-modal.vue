@@ -383,24 +383,26 @@ async function executeImport() {
     v-model:show="show"
     preset="card"
     :title="bi('批量导入成员（Excel / CSV）', 'Batch Import Members (Excel / CSV)')"
-    class="max-w-95vw w-900px"
+    class="max-w-95vw w-810px"
     :mask-closable="false"
   >
     <div class="flex flex-col gap-14px">
-      <NSteps :current="step" size="small">
-        <NStep
-          :title="bi('上传表格', 'Upload File')"
-          :description="bi('支持 .xlsx / .xls / .csv', '.xlsx / .xls / .csv')"
-        />
-        <NStep
-          :title="bi('智能列映射', 'Map Columns')"
-          :description="bi('确认列名与字段对应关系', 'Confirm column mapping')"
-        />
-        <NStep
-          :title="bi('预览并导入', 'Preview & Import')"
-          :description="bi('校验日期、查重并入库', 'Validate & commit')"
-        />
-      </NSteps>
+      <div class="member-import-steps mx-auto w-full max-w-680px">
+        <NSteps :current="step" size="small">
+          <NStep
+            :title="bi('上传表格', 'Upload File')"
+            :description="bi('支持 .xlsx / .xls / .csv', '.xlsx / .xls / .csv')"
+          />
+          <NStep
+            :title="bi('智能列映射', 'Map Columns')"
+            :description="bi('确认列名与字段对应关系', 'Confirm column mapping')"
+          />
+          <NStep
+            :title="bi('预览并导入', 'Preview & Import')"
+            :description="bi('校验日期、查重并入库', 'Validate & commit')"
+          />
+        </NSteps>
+      </div>
 
       <!-- Step 1: 上传表格 -->
       <div v-if="step === 1" class="flex flex-col gap-12px">
@@ -672,4 +674,12 @@ async function executeImport() {
   </NModal>
 </template>
 
-<style scoped></style>
+<style scoped>
+.member-import-steps :deep(.n-steps) {
+  justify-content: center;
+}
+
+.member-import-steps :deep(.n-step:last-child) {
+  flex: 0 0 auto;
+}
+</style>

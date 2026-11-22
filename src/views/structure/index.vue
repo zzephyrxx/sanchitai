@@ -192,6 +192,16 @@ async function handleDeleteGroup(groupName: string) {
   window.$message?.success(`已删除「${groupName}」，原成员已归入未分组`);
 }
 
+async function handleMoveMemberGroup(memberId: string, targetGroupName: string) {
+  const member = workStore.members.find(m => m.id === memberId);
+  if (!member) return;
+  const currentGroup = (member.group ?? '').trim();
+  const nextGroup = targetGroupName.trim();
+  if (currentGroup === nextGroup) return;
+  await workStore.updateMember(memberId, { group: nextGroup });
+  window.$message?.success(`已将「${member.name}」调整至「${nextGroup || '未分组'}」`);
+}
+
 const currentAssignOccupied = computed(() => {
   if (assignState.mode === 'youth' && assignState.youthSlotId) {
     return Boolean(workStore.youthCommitteeSlots.find(s => s.id === assignState.youthSlotId)?.member_id);
@@ -729,6 +739,7 @@ async function handleDeleteAcademyNode() {
           @add-group="openAddGroupModal"
           @rename-group="openRenameGroupModal"
           @delete-group="handleDeleteGroup"
+          @move-member-group="handleMoveMemberGroup"
         />
 
         <div

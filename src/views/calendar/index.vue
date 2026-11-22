@@ -166,7 +166,15 @@ function clearHoverTimer() {
   }
 }
 
+const isDraggingEvent = ref(false);
+
+function dismissHoverPopover() {
+  clearHoverTimer();
+  hoverCard.visible = false;
+}
+
 function showHoverPopover(ev: Sct.CalEvent, targetEl: HTMLElement) {
+  if (isDraggingEvent.value || moveConfirm.visible) return;
   clearHoverTimer();
   const rect = targetEl.getBoundingClientRect();
   const popWidth = 310;
@@ -302,6 +310,7 @@ const calendarOptions = ref<CalendarOptions>({
     openDetail(info.event.id, info.event.extendedProps?.event ?? null);
   },
   eventMouseEnter(info: EventHoveringArg) {
+    if (isDraggingEvent.value || moveConfirm.visible) return;
     const ev = info.event.extendedProps?.event as Sct.CalEvent | undefined;
     if (!ev) return;
     showHoverPopover(ev, info.el);
@@ -309,13 +318,31 @@ const calendarOptions = ref<CalendarOptions>({
   eventMouseLeave() {
     scheduleHideHoverPopover();
   },
+  eventDragStart() {
+    isDraggingEvent.value = true;
+    dismissHoverPopover();
+  },
+  eventDragStop() {
+    isDraggingEvent.value = false;
+    dismissHoverPopover();
+  },
+  eventResizeStart() {
+    isDraggingEvent.value = true;
+    dismissHoverPopover();
+  },
+  eventResizeStop() {
+    isDraggingEvent.value = false;
+    dismissHoverPopover();
+  },
   eventDrop(info: EventDropArg) {
-    hoverCard.visible = false;
-    void handleMove(info);
+    isDraggingEvent.value = false;
+    dismissHoverPopover();
+    openMoveConfirm(info, 'move');
   },
   eventResize(info: EventResizeDoneArg) {
-    hoverCard.visible = false;
-    void handleMove(info);
+    isDraggingEvent.value = false;
+    dismissHoverPopover();
+    openMoveConfirm(info, 'resize');
   }
 });
 
@@ -323,14 +350,52 @@ function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-async function handleMove(info: EventDropArg | EventResizeDoneArg) {
+interface PendingMoveState {
+  visible: boolean;
+  saving: boolean;
+  kind: 'move' | 'resize';
+  title: string;
+  color: string;
+  oldText: string;
+  newText: string;
+  eventId: string;
+  patch: Partial<Sct.CalEvent>;
+  revert: (() => void) | null;
+}
+
+const moveConfirm = reactive<PendingMoveState>({
+  visible: false,
+  saving: false,
+  kind: 'move',
+  title: '',
+  color: '#A81C24',
+  oldText: '',
+  newText: '',
+  eventId: '',
+  patch: {},
+  revert: null
+});
+
+function formatEventSpan(startDate: Date | null, endDate: Date | null, allDay: boolean): string {
+  if (!startDate) return '';
+  const start = dayjs(startDate);
+  if (allDay) {
+    return `${start.format('YYYY-MM-DD')}（全天）`;
+  }
+  const end = endDate ? dayjs(endDate) : start.add(1, 'hour');
+  return `${start.format('YYYY-MM-DD')} ${start.format('HH:mm')}–${end.format('HH:mm')}`;
+}
+
+function openMoveConfirm(info: EventDropArg | EventResizeDoneArg, kind: 'move' | 'resize') {
   const ev = info.event;
-  if (!ev.start) return;
+  if (!ev.start) {
+    info.revert();
+    return;
+  }
   const start = dayjs(ev.start);
   const patch: Partial<Sct.CalEvent> = {
     date: start.format('YYYY-MM-DD')
   };
-
   if (ev.allDay) {
     patch.start_time = '';
     patch.end_time = '';
@@ -340,15 +405,55 @@ async function handleMove(info: EventDropArg | EventResizeDoneArg) {
     patch.end_time = end.format('HH:mm');
   }
 
+  const raw = ev.extendedProps?.event as Sct.CalEvent | undefined;
+  const catColor = raw ? (EVENT_CATEGORY_COLORS[raw.category]?.color ?? '#A81C24') : '#A81C24';
+
+  moveConfirm.kind = kind;
+  moveConfirm.title = raw?.title ?? ev.title;
+  moveConfirm.color = catColor;
+  moveConfirm.oldText = formatEventSpan(info.oldEvent.start, info.oldEvent.end, info.oldEvent.allDay);
+  moveConfirm.newText = formatEventSpan(ev.start, ev.end, ev.allDay);
+  moveConfirm.eventId = ev.id;
+  moveConfirm.patch = patch;
+  moveConfirm.revert = info.revert;
+  moveConfirm.saving = false;
+  moveConfirm.visible = true;
+}
+
+function cancelMoveConfirm() {
+  if (moveConfirm.revert) {
+    const revertFn = moveConfirm.revert;
+    moveConfirm.revert = null;
+    revertFn();
+  }
+  moveConfirm.visible = false;
+}
+
+async function confirmMoveAdjustment() {
+  if (!moveConfirm.eventId || moveConfirm.saving) return;
+  moveConfirm.saving = true;
+  const revertFn = moveConfirm.revert;
   try {
-    await workStore.updateEvent(ev.id, patch);
+    await workStore.updateEvent(moveConfirm.eventId, moveConfirm.patch);
+    moveConfirm.revert = null;
+    moveConfirm.visible = false;
     calendarRef.value?.getApi()?.refetchEvents();
-    window.$message?.success(
-      `已更新日程时间：${patch.date} ${patch.start_time ? `${patch.start_time}-${patch.end_time}` : '全天'}`
-    );
+    const p = moveConfirm.patch;
+    window.$message?.success(`已更新日程时间：${p.date} ${p.start_time ? `${p.start_time}-${p.end_time}` : '全天'}`);
   } catch {
-    info.revert();
+    revertFn?.();
+    moveConfirm.revert = null;
+    moveConfirm.visible = false;
     window.$message?.error('更新日程时间失败，已还原');
+  } finally {
+    moveConfirm.saving = false;
+  }
+}
+
+function handleCalendarPointerDown(e: PointerEvent) {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('.fc-event')) {
+    dismissHoverPopover();
   }
 }
 
@@ -560,7 +665,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       </div>
 
       <!-- 日历主网格 -->
-      <div class="nuxt-cal-body min-h-0 flex-1">
+      <div class="nuxt-cal-body min-h-0 flex-1" @pointerdown.capture="handleCalendarPointerDown">
         <FullCalendar ref="calendarRef" :options="calendarOptions" />
       </div>
     </div>
@@ -806,6 +911,47 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 拖拽移动 / 拉伸时长确认小弹窗 -->
+    <NModal
+      :show="moveConfirm.visible"
+      preset="card"
+      :title="moveConfirm.kind === 'resize' ? '确认调整日程时长' : '确认调整日程时间'"
+      class="w-420px max-w-92vw"
+      :mask-closable="true"
+      @update:show="val => !val && cancelMoveConfirm()"
+    >
+      <div class="flex flex-col gap-12px">
+        <div class="flex items-center gap-8px text-14px font-bold text-[var(--sct-ink)]">
+          <span class="inline-block size-9px shrink-0 rounded-full" :style="{ background: moveConfirm.color }" />
+          <span class="truncate">{{ moveConfirm.title }}</span>
+        </div>
+
+        <div class="rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-10px text-12px">
+          <div class="flex items-center justify-between gap-8px text-gray-500">
+            <span>原时间</span>
+            <span class="font-mono">{{ moveConfirm.oldText }}</span>
+          </div>
+          <div class="my-6px flex justify-center text-gray-400">
+            <SvgIcon icon="lucide:arrow-down" class="text-13px" />
+          </div>
+          <div class="flex items-center justify-between gap-8px font-semibold text-[var(--sct-ink)]">
+            <span>调整为</span>
+            <span class="font-mono text-[var(--sct-accent)]">{{ moveConfirm.newText }}</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" secondary :disabled="moveConfirm.saving" @click="cancelMoveConfirm">取消还原</NButton>
+          <NButton size="small" type="primary" :loading="moveConfirm.saving" @click="confirmMoveAdjustment">
+            <template #icon><SvgIcon icon="lucide:check" /></template>
+            确认调整
+          </NButton>
+        </div>
+      </template>
+    </NModal>
 
     <EventEditModal
       v-model:show="editModalShow"

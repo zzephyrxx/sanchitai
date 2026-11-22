@@ -25,6 +25,7 @@ const emit = defineEmits<{
   addGroup: [];
   renameGroup: [groupName: string];
   deleteGroup: [groupName: string];
+  moveMemberGroup: [memberId: string, targetGroupName: string];
 }>();
 
 const CORE_ROLE_SLOTS = ['书记', '副书记', '组织委员', '宣传委员', '纪检委员'] as const;
@@ -40,6 +41,51 @@ const ROLE_DUTIES: Record<string, string> = {
 const direction = ref<'horizontal' | 'vertical'>('horizontal');
 const showGroups = ref(true);
 const zoom = ref(100);
+const editGroupsMode = ref(false);
+const draggingMemberId = ref<string | null>(null);
+const dragOverGroupId = ref<string | null>(null);
+
+function handleMemberDragStart(e: DragEvent, member: Sct.Member) {
+  if (!editGroupsMode.value) return;
+  draggingMemberId.value = member.id;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', member.id);
+  }
+}
+
+function handleMemberDragEnd() {
+  draggingMemberId.value = null;
+  dragOverGroupId.value = null;
+}
+
+function handleGroupDragOver(e: DragEvent, groupId: string) {
+  if (!editGroupsMode.value || !draggingMemberId.value) return;
+  e.preventDefault();
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'move';
+  }
+  dragOverGroupId.value = groupId;
+}
+
+function handleGroupDragLeave(e: DragEvent, groupId: string) {
+  const current = e.currentTarget as HTMLElement | null;
+  const related = e.relatedTarget as Node | null;
+  if (current && related && current.contains(related)) return;
+  if (dragOverGroupId.value === groupId) {
+    dragOverGroupId.value = null;
+  }
+}
+
+function handleGroupDrop(e: DragEvent, grp: { id: string; name: string; isUngrouped: boolean }) {
+  if (!editGroupsMode.value) return;
+  e.preventDefault();
+  const memberId = draggingMemberId.value || e.dataTransfer?.getData('text/plain') || '';
+  draggingMemberId.value = null;
+  dragOverGroupId.value = null;
+  if (!memberId) return;
+  emit('moveMemberGroup', memberId, grp.isUngrouped ? '' : grp.name);
+}
 
 function memberOfRole(role: string): Sct.Member | undefined {
   return props.members.find(m => m.role === role);
@@ -75,7 +121,7 @@ const partyGroupsView = computed(() => {
     isUngrouped: false,
     members: listMembers
   }));
-  if (ungrouped.length) {
+  if (ungrouped.length || editGroupsMode.value) {
     list.push({
       id: 'group-ungrouped',
       name: '未分组',
@@ -499,17 +545,55 @@ watch(
             共 {{ partyGroupsView.filter(g => !g.isUngrouped).length }} 个党小组
           </NTag>
           <span class="hidden text-12px text-gray-400 md:inline">
-            独立分区展示（不与支委连线）· 点击组名右侧铅笔可手动改名并同步成员档案
+            {{
+              editGroupsMode
+                ? '编辑模式已开启 · 按住人员标签拖入目标党小组卡片即可实时重新分组'
+                : '独立分区展示（不与支委连线）· 点击组名右侧铅笔可手动改名并同步成员档案'
+            }}
           </span>
         </div>
-        <NButton size="tiny" secondary type="primary" @click="emit('addGroup')">
-          <template #icon><SvgIcon icon="lucide:plus" /></template>
-          新增党小组
-        </NButton>
+        <div class="flex items-center gap-6px">
+          <NButton
+            size="tiny"
+            :type="editGroupsMode ? 'primary' : 'default'"
+            :secondary="!editGroupsMode"
+            @click="editGroupsMode = !editGroupsMode"
+          >
+            <template #icon>
+              <SvgIcon :icon="editGroupsMode ? 'lucide:check' : 'lucide:arrow-left-right'" />
+            </template>
+            {{ editGroupsMode ? '完成编辑' : '编辑模式' }}
+          </NButton>
+          <NButton size="tiny" secondary type="primary" @click="emit('addGroup')">
+            <template #icon><SvgIcon icon="lucide:plus" /></template>
+            新增党小组
+          </NButton>
+        </div>
+      </div>
+
+      <div
+        v-if="editGroupsMode"
+        class="mb-12px flex items-center gap-8px rounded-8px border border-dashed border-[var(--sct-accent)] bg-[var(--sct-soft)] px-12px py-7px text-12px text-[var(--sct-ink)]"
+      >
+        <SvgIcon icon="lucide:hand" class="shrink-0 text-14px text-[var(--sct-accent)]" />
+        <span>
+          已进入分组拖拽编辑模式：拖动任意人员卡片到目标党小组（含「未分组」）松手即可实时保存，点击右上角「完成编辑」退出。
+        </span>
       </div>
 
       <div class="grid grid-cols-1 gap-12px sm:grid-cols-2 lg:grid-cols-3">
-        <div v-for="grp in partyGroupsView" :key="grp.id" class="mm-group-card">
+        <div
+          v-for="grp in partyGroupsView"
+          :key="grp.id"
+          class="mm-group-card"
+          :class="{
+            'mm-group-card--editing': editGroupsMode,
+            'mm-group-card--drop-active': editGroupsMode && dragOverGroupId === grp.id
+          }"
+          @dragover="handleGroupDragOver($event, grp.id)"
+          @dragleave="handleGroupDragLeave($event, grp.id)"
+          @drop="handleGroupDrop($event, grp)"
+        >
           <div class="mm-group-card__header">
             <span class="flex min-w-0 items-center gap-6px text-13px font-bold text-[var(--sct-ink)]">
               <span
@@ -519,6 +603,15 @@ watch(
               <span class="truncate">{{ grp.name }}</span>
             </span>
             <div class="flex shrink-0 items-center gap-4px">
+              <NTag
+                v-if="editGroupsMode && dragOverGroupId === grp.id"
+                size="tiny"
+                type="primary"
+                :bordered="false"
+                round
+              >
+                松手移入
+              </NTag>
               <NTag size="tiny" :bordered="false" round>{{ grp.members.length }} 人</NTag>
               <NButton
                 v-if="!grp.isUngrouped"
@@ -541,16 +634,32 @@ watch(
           </div>
 
           <div v-if="!grp.members.length" class="py-10px text-center text-12px text-gray-400">
-            暂无成员（可在「人员」页编辑成员所属党小组）
+            {{
+              editGroupsMode
+                ? '将人员卡片拖动到此处即可加入该组'
+                : '暂无成员（可开启「编辑模式」拖拽分配或在人员页修改）'
+            }}
           </div>
           <div v-else class="mm-group-card__members">
             <div
               v-for="m in grp.members"
               :key="m.id"
               class="mm-member-chip"
-              :title="`${m.name}（${m.type}${m.role ? ` · ${m.role}` : ''}）`"
-              @click="emit('selectMember', m)"
+              :class="{
+                'mm-member-chip--draggable': editGroupsMode,
+                'mm-member-chip--dragging': draggingMemberId === m.id
+              }"
+              :draggable="editGroupsMode"
+              :title="
+                editGroupsMode
+                  ? `按住拖动「${m.name}」到目标党小组`
+                  : `${m.name}（${m.type}${m.role ? ` · ${m.role}` : ''}）`
+              "
+              @dragstart="handleMemberDragStart($event, m)"
+              @dragend="handleMemberDragEnd"
+              @click="!editGroupsMode && emit('selectMember', m)"
             >
+              <SvgIcon v-if="editGroupsMode" icon="lucide:grip-vertical" class="text-12px text-gray-400" />
               <span
                 class="inline-block size-7px flex-shrink-0 rounded-full"
                 :style="{ backgroundColor: MEMBER_TYPE_COLORS[m.type] ?? '#8a8f99' }"
@@ -703,6 +812,21 @@ watch(
   background: var(--sct-soft);
   border: 1px solid var(--sct-border);
   border-radius: 10px;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.mm-group-card--editing {
+  border-style: dashed;
+}
+
+.mm-group-card--drop-active {
+  border-color: var(--sct-accent, #a81c24);
+  border-style: solid;
+  background: var(--sct-container);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sct-accent, #a81c24) 22%, transparent);
 }
 
 .mm-group-card__header {
@@ -733,11 +857,26 @@ watch(
   cursor: pointer;
   transition:
     border-color 0.15s ease,
-    transform 0.15s ease;
+    transform 0.15s ease,
+    opacity 0.15s ease;
 }
 
 .mm-member-chip:hover {
   border-color: #a81c24;
   transform: translateY(-1px);
+}
+
+.mm-member-chip--draggable {
+  cursor: grab;
+  user-select: none;
+  border-style: dashed;
+}
+
+.mm-member-chip--draggable:active {
+  cursor: grabbing;
+}
+
+.mm-member-chip--dragging {
+  opacity: 0.42;
 }
 </style>

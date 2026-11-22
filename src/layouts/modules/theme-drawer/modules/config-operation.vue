@@ -48,7 +48,12 @@ onMounted(() => {
 <template>
   <div class="w-full flex justify-between">
     <textarea id="themeConfigCopyTarget" v-model="dataClipboardText" class="absolute opacity-0 -z-1" />
-    <NButton type="error" ghost @click="handleReset">{{ $t('theme.configOperation.resetConfig') }}</NButton>
+    <NPopconfirm positive-text="确认重置" negative-text="取消" @positive-click="handleReset">
+      <template #trigger>
+        <NButton type="error" ghost>{{ $t('theme.configOperation.resetConfig') }}</NButton>
+      </template>
+      确认将全部主题配置（含皮肤、深浅模式、布局与颜色）恢复为默认值吗？
+    </NPopconfirm>
     <div ref="domRef" data-clipboard-target="#themeConfigCopyTarget">
       <NButton type="primary">{{ $t('theme.configOperation.copyConfig') }}</NButton>
     </div>
