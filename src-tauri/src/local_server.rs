@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -319,6 +319,112 @@ impl LocalServerState {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn resolve_macos_default_browser() -> Option<&'static str> {
+    let out = Command::new("/usr/bin/defaults")
+        .args([
+            "read",
+            "com.apple.LaunchServices/com.apple.launchservices.secure",
+            "LSHandlers",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut block_role: Option<String> = None;
+    let mut block_is_https = false;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line == "{" {
+            block_role = None;
+            block_is_https = false;
+        } else if let Some(rest) = line.strip_prefix("LSHandlerRoleAll = ") {
+            let cleaned = rest
+                .trim_end_matches(';')
+                .trim()
+                .trim_matches('"')
+                .to_ascii_lowercase();
+            block_role = Some(cleaned);
+        } else if line == "LSHandlerURLScheme = https;" || line == "LSHandlerURLScheme = \"https\";" {
+            block_is_https = true;
+        } else if line.starts_with('}') && block_is_https {
+            if let Some(ref role) = block_role {
+                return match role.as_str() {
+                    "com.google.chrome" => Some("chrome"),
+                    "com.microsoft.edgemac" => Some("edge"),
+                    "com.brave.browser" => Some("brave"),
+                    "org.mozilla.firefox" => Some("firefox"),
+                    "com.apple.safari" => Some("safari"),
+                    "company.thebrowser.browser" => Some("arc"),
+                    _ => None,
+                };
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_browser_bin(browser: &str) -> Option<PathBuf> {
+    let rel = match browser {
+        "chrome" => "Google Chrome.app/Contents/MacOS/Google Chrome",
+        "edge" => "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "brave" => "Brave Browser.app/Contents/MacOS/Brave Browser",
+        "firefox" => "Firefox.app/Contents/MacOS/firefox",
+        _ => return None,
+    };
+    let sys_path = PathBuf::from("/Applications").join(rel);
+    if sys_path.exists() {
+        return Some(sys_path);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let user_path = PathBuf::from(home).join("Applications").join(rel);
+        if user_path.exists() {
+            return Some(user_path);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn activate_macos_gui_browser(bin_path: &Path) {
+    let needle = bin_path.to_string_lossy();
+    let Ok(out) = Command::new("/bin/ps").args(["-eo", "pid=,args="]).output() else {
+        return;
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut target_pid: Option<u32> = None;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let Some((pid_str, args)) = trimmed.split_once(char::is_whitespace) else {
+            continue;
+        };
+        let args = args.trim_start();
+        if args.starts_with(needle.as_ref())
+            && !args.contains("--type=")
+            && !args.contains("--headless")
+            && !args.contains("--user-data-dir=")
+        {
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                target_pid = Some(pid);
+            }
+        }
+    }
+    if let Some(pid) = target_pid {
+        let script = format!(
+            "ObjC.import('AppKit'); const a = $.NSRunningApplication.runningApplicationWithProcessIdentifier({pid}); a && a.activateWithOptions(3);"
+        );
+        let _ = Command::new("/usr/bin/osascript")
+            .args(["-l", "JavaScript", "-e", &script])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
+}
+
 pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
     if !url.starts_with("http://127.0.0.1:") {
         return Err("only loopback URLs are allowed".to_string());
@@ -332,8 +438,30 @@ pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        // macOS 优先通过 Bundle ID (-b) 打开，比应用名 (-a) 更可靠，失败再尝试路径与系统默认
-        let target_meta: Option<(&str, &str)> = match browser.as_str() {
+        // macOS 上当系统后台存在第三方工具拉起的 --headless Chrome/Edge 进程时，
+        // LaunchServices (`open -b` / `open -a`) 会把 URL 错误派发到无头进程导致“无反应”。
+        // 直接拉起浏览器原生可执行文件会通过默认配置目录的 SingletonSocket 精准交给真实 GUI 浏览器。
+        let effective = if browser == "system" {
+            resolve_macos_default_browser().unwrap_or("system")
+        } else {
+            browser.as_str()
+        };
+
+        if let Some(bin_path) = find_macos_browser_bin(effective) {
+            if Command::new(&bin_path)
+                .arg(&normalized_url)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .is_ok()
+            {
+                activate_macos_gui_browser(&bin_path);
+                return Ok(());
+            }
+        }
+
+        let target_meta: Option<(&str, &str)> = match effective {
             "chrome" => Some(("com.google.Chrome", "/Applications/Google Chrome.app")),
             "edge" => Some(("com.microsoft.edgemac", "/Applications/Microsoft Edge.app")),
             "safari" => Some(("com.apple.Safari", "/Applications/Safari.app")),
