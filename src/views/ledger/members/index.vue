@@ -41,7 +41,7 @@ watch(
 const activeMap = computed(() => workStore.seatMaps.find(m => m.map_id === activeMapId.value) ?? workStore.seatMaps[0]);
 const editable = ref(false);
 
-// ---------------- 座位图预设模板 ----------------
+// ---------------- 座位图预设模板与自定义编辑 ----------------
 interface SeatMapPreset {
   id: string;
   name: string;
@@ -86,12 +86,95 @@ const SEAT_MAP_PRESETS: SeatMapPreset[] = [
   }
 ];
 
-async function applySeatMapPreset(preset: SeatMapPreset) {
+const seatMapModalShow = ref(false);
+const seatMapModalMode = ref<'create' | 'edit'>('create');
+const seatMapForm = reactive({
+  mapId: '',
+  name: '',
+  rows: 4,
+  cols: 8
+});
+
+const seatMapOverflowCount = computed(() => {
+  if (seatMapModalMode.value !== 'edit' || !seatMapForm.mapId) return 0;
+  const rows = seatMapForm.rows;
+  const cols = seatMapForm.cols;
+  if (!rows || !cols) return 0;
+  return workStore.members.filter(
+    m => m.seat?.map_id === seatMapForm.mapId && (m.seat.x > cols || m.seat.y > rows || m.seat.x < 1 || m.seat.y < 1)
+  ).length;
+});
+
+function openCreateSeatMapModal(preset?: SeatMapPreset) {
+  seatMapModalMode.value = 'create';
+  if (preset) {
+    const existingCount = workStore.seatMaps.filter(m => m.name.startsWith(preset.name)).length;
+    seatMapForm.mapId = '';
+    seatMapForm.name = existingCount ? `${preset.name} ${existingCount + 1}` : preset.name;
+    seatMapForm.rows = preset.rows;
+    seatMapForm.cols = preset.cols;
+  } else {
+    seatMapForm.mapId = '';
+    seatMapForm.name = `自定义布区 ${workStore.seatMaps.length + 1}`;
+    seatMapForm.rows = 5;
+    seatMapForm.cols = 6;
+  }
+  seatMapModalShow.value = true;
+}
+
+function openEditSeatMapModal() {
+  const cur = activeMap.value;
+  if (!cur) return;
+  seatMapModalMode.value = 'edit';
+  seatMapForm.mapId = cur.map_id;
+  seatMapForm.name = cur.name;
+  seatMapForm.rows = cur.grid.rows;
+  seatMapForm.cols = cur.grid.cols;
+  seatMapModalShow.value = true;
+}
+
+function fillSeatMapFormFromPreset(preset: SeatMapPreset) {
   const existingCount = workStore.seatMaps.filter(m => m.name.startsWith(preset.name)).length;
-  const label = existingCount ? `${preset.name} ${existingCount + 1}` : preset.name;
-  const newId = await workStore.addSeatMap({ name: label, rows: preset.rows, cols: preset.cols });
-  activeMapId.value = newId;
-  window.$message?.success(`已创建座位图「${label}」（${preset.rows}×${preset.cols}）`);
+  seatMapForm.name = existingCount ? `${preset.name} ${existingCount + 1}` : preset.name;
+  seatMapForm.rows = preset.rows;
+  seatMapForm.cols = preset.cols;
+}
+
+async function handleSaveSeatMap() {
+  const cleanName = seatMapForm.name.trim();
+  if (!cleanName) {
+    window.$message?.warning('请输入布区名称');
+    return;
+  }
+  const rows = Math.max(1, Math.min(20, Math.round(seatMapForm.rows || 4)));
+  const cols = Math.max(1, Math.min(20, Math.round(seatMapForm.cols || 6)));
+
+  try {
+    if (seatMapModalMode.value === 'create') {
+      const newId = await workStore.addSeatMap({ name: cleanName, rows, cols });
+      activeMapId.value = newId;
+      window.$message?.success(`已创建座位图「${cleanName}」（${rows}×${cols}）`);
+    } else if (seatMapForm.mapId) {
+      const { releasedCount } = await workStore.updateSeatMap(seatMapForm.mapId, { name: cleanName, rows, cols });
+      const extra = releasedCount ? `，已自动释放 ${releasedCount} 位越界座位` : '';
+      window.$message?.success(`布区「${cleanName}」已更新为 ${rows} 行 × ${cols} 列${extra}`);
+    }
+    seatMapModalShow.value = false;
+  } catch {
+    // guardWrite 已提示
+  }
+}
+
+async function handleDeleteActiveSeatMap() {
+  const targetId = seatMapForm.mapId || activeMap.value?.map_id;
+  if (!targetId) return;
+  try {
+    await workStore.deleteSeatMap(targetId);
+    seatMapModalShow.value = false;
+    window.$message?.success('座位图布区已删除（原在座成员已回到未入座名单）');
+  } catch {
+    // guardWrite 已提示
+  }
 }
 
 // ---------------- 欠缴角标（座位图使用） ----------------
@@ -1123,16 +1206,22 @@ async function removeMember(id: string) {
 
       <!-- 座位图 -->
       <div v-else>
-        <!-- 空布区时展示预设模板选择 -->
+        <!-- 空布区时展示预设模板选择 + 自定义新建 -->
         <div v-if="!workStore.seatMaps.length" class="flex flex-col gap-14px py-8px">
-          <NAlert type="info" :show-icon="true">
-            {{
-              bi(
-                '当前暂无座位图布区，请从以下常用场景模板中一键创建（可同时创建多个布区切换使用）：',
-                'No seat maps yet. Pick a preset template below to get started:'
-              )
-            }}
-          </NAlert>
+          <div class="flex flex-wrap items-center justify-between gap-10px">
+            <NAlert type="info" :show-icon="true" class="flex-1">
+              {{
+                bi(
+                  '当前暂无座位图布区，可点击预设模板（支持自定义名称与行列数）或直接新建自定义尺寸布区：',
+                  'No seat maps yet. Pick a preset (customizable name & size) or create a custom layout:'
+                )
+              }}
+            </NAlert>
+            <NButton size="small" type="primary" @click="openCreateSeatMapModal()">
+              <template #icon><SvgIcon icon="lucide:plus" /></template>
+              {{ bi('自定义新建布区', 'Custom Seat Map') }}
+            </NButton>
+          </div>
           <div class="grid grid-cols-1 gap-12px sm:grid-cols-2 lg:grid-cols-4">
             <div
               v-for="preset in SEAT_MAP_PRESETS"
@@ -1149,9 +1238,9 @@ async function removeMember(id: string) {
                 </div>
                 <div class="text-12px leading-relaxed text-gray-500">{{ preset.desc }}</div>
               </div>
-              <NButton size="small" type="primary" secondary @click="applySeatMapPreset(preset)">
-                <template #icon><SvgIcon icon="lucide:plus" /></template>
-                使用此模板
+              <NButton size="small" type="primary" secondary @click="openCreateSeatMapModal(preset)">
+                <template #icon><SvgIcon icon="lucide:sliders-horizontal" /></template>
+                使用并自定义
               </NButton>
             </div>
           </div>
@@ -1162,34 +1251,46 @@ async function removeMember(id: string) {
             <NTabs v-model:value="activeMapId" type="bar" size="small" class="min-w-0 flex-1">
               <NTab v-for="m in workStore.seatMaps" :key="m.map_id" :name="m.map_id" :tab="m.name" />
             </NTabs>
-            <NPopover trigger="click" placement="bottom-end" :width="280">
-              <template #trigger>
-                <NButton size="tiny" secondary class="shrink-0">
-                  <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
-                  {{ bi('添加预设模板', 'Add Preset Map') }}
-                </NButton>
-              </template>
-              <div class="flex flex-col gap-6px p-2px">
-                <div class="px-4px text-12px text-gray-500 font-semibold">
-                  {{ bi('选择座位图场景模板', 'Seat Map Presets') }}
-                </div>
-                <div
-                  v-for="preset in SEAT_MAP_PRESETS"
-                  :key="preset.id"
-                  class="flex cursor-pointer items-center justify-between rounded-6px px-8px py-6px hover:bg-[var(--sct-soft)]"
-                  @click="applySeatMapPreset(preset)"
-                >
-                  <div class="flex items-center gap-6px">
-                    <SvgIcon :icon="preset.icon" class="text-14px text-[var(--sct-accent)]" />
-                    <div>
-                      <div class="text-12px font-medium">{{ preset.name }}</div>
-                      <div class="text-11px text-gray-400">{{ preset.rows }} 行 × {{ preset.cols }} 列</div>
-                    </div>
+            <div class="flex shrink-0 items-center gap-8px">
+              <NButton v-if="activeMap" size="tiny" secondary @click="openEditSeatMapModal">
+                <template #icon><SvgIcon icon="lucide:pencil" /></template>
+                {{ bi('编辑布区', 'Edit Map') }}
+              </NButton>
+              <NPopover trigger="click" placement="bottom-end" :width="290">
+                <template #trigger>
+                  <NButton size="tiny" secondary>
+                    <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
+                    {{ bi('新建 / 预设模板', 'New / Presets') }}
+                  </NButton>
+                </template>
+                <div class="flex flex-col gap-6px p-2px">
+                  <div class="px-4px text-12px text-gray-500 font-semibold">
+                    {{ bi('选预设（可改名和行列）', 'Presets (Editable)') }}
                   </div>
-                  <SvgIcon icon="lucide:plus" class="text-13px text-gray-400" />
+                  <div
+                    v-for="preset in SEAT_MAP_PRESETS"
+                    :key="preset.id"
+                    class="flex cursor-pointer items-center justify-between rounded-6px px-8px py-6px hover:bg-[var(--sct-soft)]"
+                    @click="openCreateSeatMapModal(preset)"
+                  >
+                    <div class="flex items-center gap-6px">
+                      <SvgIcon :icon="preset.icon" class="text-14px text-[var(--sct-accent)]" />
+                      <div>
+                        <div class="text-12px font-medium">{{ preset.name }}</div>
+                        <div class="text-11px text-gray-400">{{ preset.rows }} 行 × {{ preset.cols }} 列</div>
+                      </div>
+                    </div>
+                    <SvgIcon icon="lucide:plus" class="text-13px text-gray-400" />
+                  </div>
+                  <div class="mt-2px border-t border-gray-100 pt-6px dark:border-gray-800">
+                    <NButton size="tiny" type="primary" secondary block @click="openCreateSeatMapModal()">
+                      <template #icon><SvgIcon icon="lucide:plus-square" /></template>
+                      {{ bi('完全自定义新建布区…', 'Custom Rows & Cols…') }}
+                    </NButton>
+                  </div>
                 </div>
-              </div>
-            </NPopover>
+              </NPopover>
+            </div>
           </div>
           <div v-if="editable" class="mb-10px text-12px text-gray-400">
             {{
@@ -1219,6 +1320,114 @@ async function removeMember(id: string) {
 
     <!-- 批量导入向导 -->
     <MemberImportModal v-model:show="importShow" />
+
+    <!-- 新建 / 编辑座位图布区（预设可改名 + 自定义行数/列数） -->
+    <NModal
+      v-model:show="seatMapModalShow"
+      preset="card"
+      :title="
+        seatMapModalMode === 'edit' ? bi('编辑座位图布区', 'Edit Seat Map') : bi('新建座位图布区', 'Create Seat Map')
+      "
+      class="w-480px max-w-95vw"
+    >
+      <div class="flex flex-col gap-12px">
+        <div v-if="seatMapModalMode === 'create'" class="flex flex-wrap items-center gap-6px">
+          <span class="text-12px text-gray-500">{{ bi('快捷套用预设：', 'Presets:') }}</span>
+          <NButton
+            v-for="preset in SEAT_MAP_PRESETS"
+            :key="preset.id"
+            size="tiny"
+            secondary
+            @click="fillSeatMapFormFromPreset(preset)"
+          >
+            {{ preset.name }}（{{ preset.rows }}×{{ preset.cols }}）
+          </NButton>
+        </div>
+
+        <NForm label-placement="left" label-width="92" size="small">
+          <NFormItem required>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:tag" class="sct-field-icon" />
+                <span>{{ bi('布区名称', 'Map Name') }}</span>
+              </span>
+            </template>
+            <NInput
+              v-model:value="seatMapForm.name"
+              :placeholder="bi('如：教六 1115 会议室 / 实验室 A 区', 'e.g. Lab A / Room 1115')"
+              maxlength="30"
+            />
+          </NFormItem>
+          <div class="grid grid-cols-2 gap-12px">
+            <NFormItem required>
+              <template #label>
+                <span class="sct-field-label">
+                  <SvgIcon icon="lucide:rows-3" class="sct-field-icon" />
+                  <span>{{ bi('行数', 'Rows') }}</span>
+                </span>
+              </template>
+              <NInputNumber v-model:value="seatMapForm.rows" :min="1" :max="20" class="w-full" />
+            </NFormItem>
+            <NFormItem required>
+              <template #label>
+                <span class="sct-field-label">
+                  <SvgIcon icon="lucide:columns-3" class="sct-field-icon" />
+                  <span>{{ bi('列数', 'Cols') }}</span>
+                </span>
+              </template>
+              <NInputNumber v-model:value="seatMapForm.cols" :min="1" :max="20" class="w-full" />
+            </NFormItem>
+          </div>
+        </NForm>
+
+        <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-12px text-gray-500">
+          {{ bi('布区规格预览：', 'Capacity: ') }}
+          <strong>{{ seatMapForm.rows }} {{ bi('行', 'rows') }} × {{ seatMapForm.cols }} {{ bi('列', 'cols') }}</strong>
+          （{{ bi('共', 'Total') }}
+          <strong>{{ (seatMapForm.rows || 0) * (seatMapForm.cols || 0) }}</strong>
+          {{ bi('个座位', 'seats') }}）
+        </div>
+
+        <NAlert v-if="seatMapOverflowCount > 0" type="warning" :show-icon="true">
+          缩小尺寸后，有
+          <strong>{{ seatMapOverflowCount }}</strong>
+          位已入座成员超出新边界，保存时将自动释放回「未入座名单」（不删除成员档案）。
+        </NAlert>
+      </div>
+
+      <template #footer>
+        <div class="flex items-center justify-between gap-8px">
+          <div>
+            <NPopconfirm v-if="seatMapModalMode === 'edit'" @positive-click="handleDeleteActiveSeatMap">
+              <template #trigger>
+                <NButton size="small" type="error" ghost>
+                  <template #icon><SvgIcon icon="lucide:trash-2" /></template>
+                  {{ bi('删除此布区', 'Delete Map') }}
+                </NButton>
+              </template>
+              {{
+                bi(
+                  '确认删除当前座位图布区？（成员档案保留，仅解除该图座位绑定）',
+                  'Delete this seat map? Members stay intact.'
+                )
+              }}
+            </NPopconfirm>
+          </div>
+          <div class="flex items-center gap-8px">
+            <NButton size="small" @click="seatMapModalShow = false">{{ bi('取消', 'Cancel') }}</NButton>
+            <NButton
+              size="small"
+              type="primary"
+              :disabled="!seatMapForm.name.trim() || !seatMapForm.rows || !seatMapForm.cols"
+              @click="handleSaveSeatMap"
+            >
+              <template #icon><SvgIcon icon="lucide:check" /></template>
+              {{ seatMapModalMode === 'edit' ? bi('保存修改', 'Save') : bi('确认创建', 'Create') }}
+            </NButton>
+          </div>
+        </div>
+      </template>
+    </NModal>
 
     <!-- 空位安排 -->
     <NModal v-model:show="pickerShow" preset="card" title="安排成员到此工位" class="w-420px">

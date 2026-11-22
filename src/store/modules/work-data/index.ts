@@ -575,15 +575,62 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
   // ---------------- 座位图布区 ----------------
   async function addSeatMap(input: { name: string; rows: number; cols: number; map_id?: string }) {
+    const cleanName = input.name.trim();
+    if (!cleanName) {
+      window.$message?.warning('请填写布区名称');
+      throw new Error('请填写布区名称');
+    }
     const mapId = input.map_id?.trim() || `map-${nanoid(6)}`;
     const row: Sct.SeatMap = {
       map_id: mapId,
-      name: input.name.trim(),
-      grid: { rows: Math.max(1, Math.min(20, input.rows)), cols: Math.max(1, Math.min(20, input.cols)) },
+      name: cleanName,
+      grid: {
+        rows: Math.max(1, Math.min(20, Math.round(input.rows))),
+        cols: Math.max(1, Math.min(20, Math.round(input.cols)))
+      },
       identity: 'secretary'
     };
     await guardWrite(db.seatMaps.put(plain(row)), '座位图布区');
     return mapId;
+  }
+
+  async function updateSeatMap(
+    mapId: string,
+    patch: { name: string; rows: number; cols: number }
+  ): Promise<{ releasedCount: number }> {
+    const cleanName = patch.name.trim();
+    if (!cleanName) {
+      window.$message?.warning('请填写布区名称');
+      throw new Error('请填写布区名称');
+    }
+    const nextRows = Math.max(1, Math.min(20, Math.round(patch.rows)));
+    const nextCols = Math.max(1, Math.min(20, Math.round(patch.cols)));
+    let releasedCount = 0;
+
+    await guardWrite(
+      db.transaction('rw', [db.seatMaps, db.members], async () => {
+        const existing = await db.seatMaps.get(mapId);
+        if (!existing) return;
+        await db.seatMaps.put(
+          plain({
+            ...existing,
+            name: cleanName,
+            grid: { rows: nextRows, cols: nextCols }
+          })
+        );
+        // RosterBoard 坐标为 1-based（x ∈ 1..cols, y ∈ 1..rows），缩小时释放越界座位
+        const seated = await db.members.filter(m => m.seat?.map_id === mapId).toArray();
+        for (const m of seated) {
+          if (m.seat && (m.seat.x > nextCols || m.seat.y > nextRows || m.seat.x < 1 || m.seat.y < 1)) {
+            await db.members.update(m.id, { seat: null });
+            releasedCount += 1;
+          }
+        }
+      }),
+      '更新座位图布区'
+    );
+
+    return { releasedCount };
   }
 
   async function deleteSeatMap(mapId: string) {
@@ -778,6 +825,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     deleteMember,
     bulkImportMembers,
     addSeatMap,
+    updateSeatMap,
     deleteSeatMap
   };
 });

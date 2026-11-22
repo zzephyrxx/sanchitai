@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
+import { DEV_STAGE_ORDER, nextStage } from '@/constants/dev-nodes';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
-import { DEV_STAGE_ORDER, nextStage } from '@/constants/dev-nodes';
 import DevDetail from './modules/dev-detail.vue';
 
 defineOptions({ name: 'DevelopmentPage' });
@@ -19,18 +19,87 @@ const STAGE_META: Record<string, { color: string; soft: string }> = {
   正式党员: { color: '#2B2926', soft: '#EFEEEC' }
 };
 
-/** 泳道数据 */
-const lanes = computed(() =>
-  DEV_STAGE_ORDER.map(stage => ({
-    stage,
-    meta: STAGE_META[stage],
-    members: workStore.devStages
+// ---------------- 搜索框与泳道纵向折叠（持久化） ----------------
+const COLLAPSE_STORAGE_KEY = 'sct:dev:collapsed-lanes:v1';
+const searchKeyword = ref('');
+
+function loadCollapsedLanes(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+const collapsedLanes = ref<Record<string, boolean>>(loadCollapsedLanes());
+
+watch(
+  collapsedLanes,
+  val => {
+    try {
+      localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(val));
+    } catch {
+      /* ignore */
+    }
+  },
+  { deep: true }
+);
+
+function toggleLaneCollapse(stage: string) {
+  collapsedLanes.value = {
+    ...collapsedLanes.value,
+    [stage]: !collapsedLanes.value[stage]
+  };
+}
+
+const allCollapsed = computed(() => DEV_STAGE_ORDER.every(stage => Boolean(collapsedLanes.value[stage])));
+
+function toggleAllLanes() {
+  const nextVal = !allCollapsed.value;
+  const nextMap: Record<string, boolean> = {};
+  DEV_STAGE_ORDER.forEach(stage => {
+    nextMap[stage] = nextVal;
+  });
+  collapsedLanes.value = nextMap;
+}
+
+const hasActiveSearch = computed(() => Boolean(searchKeyword.value.trim()));
+
+/** 泳道数据（支持搜索过滤，保留总人数与命中人数） */
+const lanes = computed(() => {
+  const kw = searchKeyword.value.trim().toLowerCase();
+  return DEV_STAGE_ORDER.map(stage => {
+    const allInStage = workStore.devStages
       .filter(d => d.stage === stage)
       .map(d => ({ stage: d, member: workStore.memberOf(d.member_id) }))
-      .filter(x => x.member)
-      .sort((a, b) => (a.stage.stage_date ?? '').localeCompare(b.stage.stage_date ?? ''))
-  }))
-);
+      .filter((x): x is { stage: Sct.DevStage; member: Sct.Member } => Boolean(x.member))
+      .sort((a, b) => (a.stage.stage_date ?? '').localeCompare(b.stage.stage_date ?? ''));
+
+    const filtered = kw
+      ? allInStage.filter(({ stage: st, member: m }) =>
+          [m.name, m.code, m.student_id, m.group, m.grade, m.major, m.advisor, st.next_node]
+            .filter(Boolean)
+            .some(v => String(v).toLowerCase().includes(kw))
+        )
+      : allInStage;
+
+    // 搜索命中时自动临时展开对应泳道，清空搜索后自动恢复原折叠态
+    const collapsed = kw
+      ? filtered.length === 0 && Boolean(collapsedLanes.value[stage])
+      : Boolean(collapsedLanes.value[stage]);
+
+    return {
+      stage,
+      meta: STAGE_META[stage],
+      totalCount: allInStage.length,
+      members: filtered,
+      collapsed
+    };
+  });
+});
 
 function stageDays(stageDate?: string) {
   if (!stageDate) return null;
@@ -83,11 +152,15 @@ function requestStageTransition(memberId: string, targetStage: string, source: '
 
 async function confirmStageTransition() {
   if (!pendingMove.memberId || !pendingMove.toStage) return;
-  await workStore.moveStageTo(pendingMove.memberId, pendingMove.toStage);
-  confirmModalShow.value = false;
+  try {
+    await workStore.moveStageTo(pendingMove.memberId, pendingMove.toStage);
+    confirmModalShow.value = false;
+  } catch {
+    // guardWrite 已提示错误
+  }
 }
 
-// ---------------- 拖拽流转（HTML5 原生 DnD + 弹窗确认） ----------------
+// ---------------- 拖拽流转（HTML5 原生 DnD + 弹窗确认，支持落入折叠泳道头） ----------------
 const dragOverStage = ref<string | null>(null);
 const draggingId = ref<string | null>(null);
 
@@ -95,6 +168,15 @@ function onDragStart(memberId: string, e: DragEvent) {
   draggingId.value = memberId;
   e.dataTransfer?.setData('text/plain', memberId);
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+}
+
+function onLaneDragLeave(stage: string, e: DragEvent) {
+  const current = e.currentTarget as HTMLElement | null;
+  const related = e.relatedTarget as Node | null;
+  if (current && related && current.contains(related)) return;
+  if (dragOverStage.value === stage) {
+    dragOverStage.value = null;
+  }
 }
 
 function onDrop(stage: string, e: DragEvent) {
@@ -123,50 +205,97 @@ function requestAdvance(member: Sct.Member) {
 </script>
 
 <template>
-  <div class="min-h-500px">
+  <div class="dev-page">
     <NCard :bordered="false">
       <template #header>
-        <div class="flex items-center gap-12px">
+        <div class="flex flex-wrap items-center gap-10px">
           <span class="text-16px font-bold">{{ bi('党员发展', 'Member Development') }}</span>
           <span class="text-12px text-gray-400">
             {{
               bi(
-                '五阶段泳道 · 点击人员查看节点时间线与材料状态 · 拖拽或点击流转均受二次确认保护',
-                '5-stage kanban · Click member to inspect timeline & materials · Drag or click transitions require confirmation'
+                '五阶段泳道 · 支持折叠与泳道内独立滚动 · 拖拽或点击流转均受二次确认保护',
+                '5-stage kanban · Collapsible scrollable lanes · Confirmation required on transition'
               )
             }}
           </span>
         </div>
       </template>
+      <template #header-extra>
+        <div class="flex flex-nowrap items-center gap-8px">
+          <div class="w-220px shrink-0">
+            <NInput
+              v-model:value="searchKeyword"
+              size="small"
+              clearable
+              :placeholder="bi('搜索姓名、编号、待办节点…', 'Search name, code, milestone…')"
+            >
+              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+            </NInput>
+          </div>
+          <NButton size="small" secondary class="shrink-0" @click="toggleAllLanes">
+            <template #icon>
+              <SvgIcon :icon="allCollapsed ? 'lucide:chevrons-down' : 'lucide:chevrons-up'" />
+            </template>
+            {{ allCollapsed ? bi('全部展开', 'Expand All') : bi('全部折叠', 'Collapse All') }}
+          </NButton>
+        </div>
+      </template>
 
       <div class="dev-lanes">
-        <div v-for="lane in lanes" :key="lane.stage" class="dev-lane">
-          <div class="dev-lane__head" :style="{ background: lane.meta.soft, color: lane.meta.color }">
-            {{ tMemberType(lane.stage) }}
-            <span class="dev-lane__count">{{ lane.members.length }}</span>
-          </div>
+        <div
+          v-for="lane in lanes"
+          :key="lane.stage"
+          class="dev-lane"
+          :class="{ 'dev-lane--over': dragOverStage === lane.stage }"
+          @dragover.prevent="dragOverStage = lane.stage"
+          @dragleave="onLaneDragLeave(lane.stage, $event)"
+          @drop.prevent="onDrop(lane.stage, $event)"
+        >
           <div
+            class="dev-lane__head"
+            :class="{ 'dev-lane__head--collapsed': lane.collapsed }"
+            :style="{ background: lane.meta.soft, color: lane.meta.color }"
+            @click="toggleLaneCollapse(lane.stage)"
+          >
+            <span class="inline-flex items-center gap-6px truncate">
+              <span>{{ tMemberType(lane.stage) }}</span>
+              <span class="dev-lane__count">
+                {{ hasActiveSearch ? `${lane.members.length}/${lane.totalCount}` : lane.totalCount }}
+              </span>
+            </span>
+            <NButton
+              size="tiny"
+              quaternary
+              circle
+              :title="lane.collapsed ? bi('展开此泳道', 'Expand lane') : bi('折叠此泳道', 'Collapse lane')"
+              @click.stop="toggleLaneCollapse(lane.stage)"
+            >
+              <template #icon>
+                <SvgIcon :icon="lane.collapsed ? 'lucide:chevron-down' : 'lucide:chevron-up'" class="text-14px" />
+              </template>
+            </NButton>
+          </div>
+
+          <div
+            v-if="!lane.collapsed"
             class="dev-lane__body"
             :class="{ 'dev-lane__body--over': dragOverStage === lane.stage }"
-            @dragover.prevent="dragOverStage = lane.stage"
-            @dragleave="dragOverStage === lane.stage && (dragOverStage = null)"
-            @drop.prevent="onDrop(lane.stage, $event)"
           >
             <div
               v-for="{ stage: st, member: m } in lane.members"
-              :key="m!.id"
+              :key="m.id"
               class="dev-card"
-              :class="{ 'dev-card--dragging': draggingId === m!.id }"
+              :class="{ 'dev-card--dragging': draggingId === m.id }"
               draggable="true"
-              @dragstart="onDragStart(m!.id, $event)"
+              @dragstart="onDragStart(m.id, $event)"
               @dragend="
                 dragOverStage = null;
                 draggingId = null;
               "
-              @click="openDetail(m!.id)"
+              @click="openDetail(m.id)"
             >
               <div class="dev-card__head">
-                <span class="dev-card__name">{{ m!.name }}</span>
+                <span class="dev-card__name">{{ m.name }}</span>
                 <span class="dev-card__days">{{ stageDays(st.stage_date) ?? '—' }}</span>
               </div>
               <div
@@ -182,19 +311,15 @@ function requestAdvance(member: Sct.Member) {
                 {{ st.next_due ? `${bi('预计', 'Due')} ${st.next_due}` : '' }}
               </div>
               <div class="dev-card__ops" @click.stop>
-                <NButton
-                  v-if="nextStage(m!.type)"
-                  size="tiny"
-                  secondary
-                  type="primary"
-                  @click="requestAdvance(m!)"
-                >
+                <NButton v-if="nextStage(m.type)" size="tiny" secondary type="primary" @click="requestAdvance(m)">
                   <template #icon><SvgIcon icon="lucide:arrow-right-circle" /></template>
-                  {{ bi(`流转到${nextStage(m!.type)}`, `Advance to ${tMemberType(nextStage(m!.type)!)}`) }}
+                  {{ bi(`流转到${nextStage(m.type)}`, `Advance to ${tMemberType(nextStage(m.type)!)}`) }}
                 </NButton>
               </div>
             </div>
-            <div v-if="!lane.members.length" class="dev-lane__empty">{{ bi('暂无人员', 'No members') }}</div>
+            <div v-if="!lane.members.length" class="dev-lane__empty">
+              {{ hasActiveSearch ? bi('无匹配成员', 'No matches') : bi('暂无人员', 'No members') }}
+            </div>
           </div>
         </div>
       </div>
@@ -249,20 +374,39 @@ function requestAdvance(member: Sct.Member) {
 </template>
 
 <style scoped>
+.dev-page {
+  min-height: 480px;
+}
 .dev-lanes {
   display: grid;
   grid-template-columns: repeat(5, minmax(190px, 1fr));
   gap: 10px;
+  align-items: start;
   overflow-x: auto;
+}
+.dev-lane {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+}
+.dev-lane--over {
+  outline: 2px dashed var(--sct-accent, #a81c24);
+  outline-offset: -2px;
 }
 .dev-lane__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   padding: 6px 10px;
   border-radius: 8px 8px 0 0;
   font-size: 13px;
   font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+.dev-lane__head--collapsed {
+  border-radius: 8px;
 }
 .dev-lane__count {
   font-size: 12px;
@@ -272,14 +416,16 @@ function requestAdvance(member: Sct.Member) {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 120px;
+  min-height: 110px;
+  max-height: max(240px, calc(100vh - 235px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   padding: 8px;
   background: var(--sct-soft);
   border-radius: 0 0 8px 8px;
 }
 .dev-lane__body--over {
-  outline: 2px dashed #2b2926;
-  outline-offset: -4px;
   background: var(--sct-soft);
 }
 .dev-card--dragging {
@@ -292,12 +438,15 @@ function requestAdvance(member: Sct.Member) {
   padding: 16px 0;
 }
 .dev-card {
+  flex-shrink: 0;
   padding: 8px 10px;
   background: var(--sct-container);
   border: 1px solid var(--sct-border);
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .dev-card:hover {
   border-color: #a81c24;
