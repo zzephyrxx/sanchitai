@@ -7,6 +7,7 @@ import GlobalBreadcrumb from '../global-breadcrumb/index.vue';
 import GlobalLogo from '../global-logo/index.vue';
 import GlobalSearch from '../global-search/index.vue';
 import BranchBadge from './components/branch-badge.vue';
+import ChangelogButton from './components/changelog-button.vue';
 import IdentityBadge from './components/identity-badge.vue';
 import LockButton from './components/lock-button.vue';
 import OpenModeButton from './components/open-mode-button.vue';
@@ -58,6 +59,7 @@ const { isFullscreen, toggle } = useFullscreen();
         @switch="(e: MouseEvent) => themeStore.toggleThemeSchemeWithTransition(e)"
       />
       <ThemeButton />
+      <ChangelogButton />
       <LockButton />
     </div>
   </DarkModeContainer>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
+import { APP_VERSION } from '@/constants/changelog';
 import { useDesktopBridge } from '@/utils/desktop-bridge';
 import type { OpenModePref } from '@/utils/desktop-bridge';
 import { buildHandoverHtml } from '@/utils/handover';
@@ -26,7 +27,6 @@ const appLock = useAppLockStore();
 const workStore = useWorkDataStore();
 const { bi } = useSctI18n();
 const desktopBridge = useDesktopBridge();
-const APP_VERSION = 'v0.2.4';
 
 // ---------------- 默认打开方式（桌面端 / 浏览器） ----------------
 const runtimeStatusLabel = computed(() => {
