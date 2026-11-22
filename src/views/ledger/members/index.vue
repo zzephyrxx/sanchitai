@@ -16,6 +16,7 @@ import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import MemberCard from './modules/member-card.vue';
+import MemberImportModal from './modules/member-import-modal.vue';
 import RosterBoard from './modules/roster-board.vue';
 
 defineOptions({ name: 'MembersPage' });
@@ -401,7 +402,8 @@ const listColumns = computed<DataTableColumns<MemberRow>>(() => [
   }
 ]);
 
-// ---------------- 新增 / 编辑成员 ----------------
+// ---------------- 新增 / 编辑成员 & 批量导入 ----------------
+const importShow = ref(false);
 const addShow = ref(false);
 const editingMemberId = ref<string | null>(null);
 const lastAutoFullDate = ref<string>('');
@@ -595,6 +597,10 @@ async function removeMember(id: string) {
             <template #icon><SvgIcon icon="lucide:printer" /></template>
             {{ bi('打印座次表', 'Print Seat Map') }}
           </NButton>
+          <NButton size="small" secondary @click="importShow = true">
+            <template #icon><SvgIcon icon="lucide:file-spreadsheet" /></template>
+            {{ bi('批量导入', 'Batch Import') }}
+          </NButton>
           <NButton type="primary" size="small" @click="openAddMember">
             <template #icon><SvgIcon icon="lucide:user-plus" /></template>
             {{ bi('新增成员', 'Add Member') }}
@@ -679,6 +685,9 @@ async function removeMember(id: string) {
 
     <!-- 人员卡 -->
     <MemberCard v-model:show="cardShow" :member-id="cardMemberId" @edit="openEditMember" />
+
+    <!-- 批量导入向导 -->
+    <MemberImportModal v-model:show="importShow" />
 
     <!-- 空位安排 -->
     <NModal v-model:show="pickerShow" preset="card" title="安排成员到此工位" class="w-420px">

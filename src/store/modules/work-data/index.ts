@@ -11,10 +11,11 @@ import { nanoid } from '@sa/utils';
 import { nodesOfStage } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
+import type { DuplicateStrategy, ImportPreviewRow } from '@/utils/member-import';
 import { computeDefaultFullDate, normalizeMemberRecord } from '@/utils/member-status';
 import { expandRecurrence } from '@/utils/recurrence';
 import { useDexieLive } from '@/hooks/common/dexie';
-import { db } from '@/db/db';
+import { db, pushBackupRing } from '@/db/db';
 import { SetupStoreId } from '@/enum';
 
 /** 流转到新阶段时，按节点库初始化该阶段材料清单（未开始），保留已有材料状态 */
@@ -339,6 +340,157 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     });
   }
 
+  /** 批量导入成员（导入前自动创建本地快照；支持跳过 / 合并更新 / 追加） */
+  async function bulkImportMembers(
+    rows: ImportPreviewRow[],
+    strategy: DuplicateStrategy,
+    options: { hasTypeMapping?: boolean } = {}
+  ): Promise<{ inserted: number; updated: number; skipped: number }> {
+    const validRows = rows.filter(r => r.errors.length === 0 && r.data.name.trim());
+    if (!validRows.length) {
+      return { inserted: 0, updated: 0, skipped: 0 };
+    }
+
+    await pushBackupRing();
+    const todayStr = dayjs().format('YYYY-MM-DD');
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    await guardWrite(
+      db.transaction('rw', [db.members, db.devStages], async () => {
+        const currentMembers = await db.members.toArray();
+        const byCode = new Map<string, Sct.Member>();
+        const byName = new Map<string, Sct.Member>();
+        currentMembers.forEach(m => {
+          if (m.code?.trim()) byCode.set(m.code.trim().toLowerCase(), m);
+          if (m.name?.trim()) byName.set(m.name.trim(), m);
+        });
+
+        for (const item of validRows) {
+          const d = item.data;
+          const codeKey = d.code.trim().toLowerCase();
+          const matched = (codeKey ? byCode.get(codeKey) : undefined) ?? byName.get(d.name.trim());
+
+          if (matched && strategy === 'skip') {
+            skipped += 1;
+            continue;
+          }
+
+          if (matched && strategy === 'merge') {
+            const nextNote = d.note
+              ? matched.note && !matched.note.includes(d.note)
+                ? `${matched.note}；${d.note}`
+                : d.note
+              : matched.note;
+
+            const mergedRaw: Sct.Member = {
+              ...matched,
+              code: d.code || matched.code,
+              role: d.role || matched.role,
+              group: d.group || matched.group,
+              grade: d.grade || matched.grade,
+              level: d.level || matched.level,
+              major: d.major || matched.major,
+              advisor: d.advisor || matched.advisor,
+              join_date: d.join_date || matched.join_date,
+              full_date: d.full_date || matched.full_date,
+              type: item.autoComputedType || options.hasTypeMapping ? d.type : matched.type,
+              fee_category: d.fee_category ?? matched.fee_category,
+              fee_monthly: d.fee_monthly ?? matched.fee_monthly,
+              note: nextNote
+            };
+            const next = normalizeMemberRecord(mergedRaw, todayStr);
+            await db.members.put(plain(next));
+
+            if (next.type !== matched.type) {
+              const prevStage = await db.devStages.get(matched.id);
+              const stageDate =
+                next.type === '正式党员'
+                  ? next.full_date || todayStr
+                  : next.type === '预备党员'
+                    ? next.join_date || todayStr
+                    : todayStr;
+              await db.devStages.put(
+                plain({
+                  member_id: matched.id,
+                  stage: next.type,
+                  stage_date: stageDate,
+                  next_node: next.type === '正式党员' ? '材料归档' : prevStage?.next_node,
+                  next_due: next.type === '预备党员' ? next.full_date || prevStage?.next_due : undefined,
+                  materials: buildStageMaterials(next.type, prevStage?.materials ?? []),
+                  timeline: [
+                    ...(prevStage?.timeline ?? []),
+                    {
+                      node: `批量导入更新为${next.type}`,
+                      date: todayStr,
+                      note: next.join_date || next.full_date ? '按入党/转正时间自动计算' : '批量导入合并更新'
+                    }
+                  ],
+                  identity: 'secretary'
+                })
+              );
+            }
+
+            if (next.code?.trim()) byCode.set(next.code.trim().toLowerCase(), next);
+            byName.set(next.name.trim(), next);
+            updated += 1;
+            continue;
+          }
+
+          // 新增成员（或 strategy === 'append'）
+          const id = `M${nanoid(6)}`;
+          const draft: Sct.Member = {
+            id,
+            code: d.code || id,
+            name: d.name.trim(),
+            type: d.type,
+            role: d.role,
+            group: d.group,
+            grade: d.grade,
+            level: d.level,
+            major: d.major,
+            advisor: d.advisor,
+            join_date: d.join_date,
+            full_date: d.full_date,
+            fee_category: d.fee_category ?? '学生党员',
+            fee_monthly: d.fee_monthly ?? FEE_STANDARD.studentMonthly,
+            note: d.note || undefined,
+            identity: 'secretary'
+          };
+          const row = normalizeMemberRecord(draft, todayStr);
+          const stageDate =
+            row.type === '正式党员'
+              ? row.full_date || todayStr
+              : row.type === '预备党员'
+                ? row.join_date || todayStr
+                : todayStr;
+
+          await db.members.put(plain(row));
+          await db.devStages.put(
+            plain({
+              member_id: id,
+              stage: row.type,
+              stage_date: stageDate,
+              next_node: row.type === '正式党员' ? '材料归档' : undefined,
+              next_due: row.type === '预备党员' ? row.full_date || undefined : undefined,
+              materials: buildStageMaterials(row.type, []),
+              timeline: [{ node: `批量导入（${row.type}）`, date: stageDate }],
+              identity: 'secretary'
+            })
+          );
+
+          if (row.code?.trim()) byCode.set(row.code.trim().toLowerCase(), row);
+          byName.set(row.name.trim(), row);
+          inserted += 1;
+        }
+      }),
+      '批量导入成员'
+    );
+
+    return { inserted, updated, skipped };
+  }
+
   // ---------------- 会议考勤 ----------------
   /** 某会议的考勤行 */
   function attendanceOfEvent(eventId: string): Sct.Attendance[] {
@@ -515,6 +667,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     setEventStatus,
     addMember,
     updateMember,
-    deleteMember
+    deleteMember,
+    bulkImportMembers
   };
 });

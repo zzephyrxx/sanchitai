@@ -3,16 +3,16 @@
   "version": "0.2.3",
   "description": "三尺台 (SanChiTai) — 面向高校学工与党支部书记的纯本地离线优先个人工作台。Offline-first personal workbench for university student-affairs & party branch workflows.",
   "keywords": [
-    "sanchitai",
-    "workbench",
-    "offline-first",
-    "local-first",
-    "vue3",
-    "naive-ui",
-    "tauri",
     "dexie",
     "fullcalendar",
-    "typescript"
+    "local-first",
+    "naive-ui",
+    "offline-first",
+    "sanchitai",
+    "tauri",
+    "typescript",
+    "vue3",
+    "workbench"
   ],
   "license": "SEE LICENSE IN LICENSE",
   "author": {
@@ -71,7 +71,8 @@
     "vue-draggable-plus": "0.6.1",
     "vue-echarts": "^8.3.2",
     "vue-i18n": "11.4.13",
-    "vue-router": "5.4.0"
+    "vue-router": "5.4.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@elegant-router/vue": "0.3.8",
