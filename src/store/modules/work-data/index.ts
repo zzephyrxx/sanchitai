@@ -7,13 +7,15 @@ import { computed } from 'vue';
 import { defineStore } from 'pinia';
 import dayjs from 'dayjs';
 import type { EventInput } from '@fullcalendar/core';
-import { SetupStoreId } from '@/enum';
 import { nanoid } from '@sa/utils';
-import { db } from '@/db/db';
-import { useDexieLive } from '@/hooks/common/dexie';
-import { expandRecurrence } from '@/utils/recurrence';
-import { nodesOfStage, type DevNodeDef } from '@/constants/dev-nodes';
+import { nodesOfStage } from '@/constants/dev-nodes';
+import type { DevNodeDef } from '@/constants/dev-nodes';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
+import { computeDefaultFullDate, normalizeMemberRecord } from '@/utils/member-status';
+import { expandRecurrence } from '@/utils/recurrence';
+import { useDexieLive } from '@/hooks/common/dexie';
+import { db } from '@/db/db';
+import { SetupStoreId } from '@/enum';
 
 /** 流转到新阶段时，按节点库初始化该阶段材料清单（未开始），保留已有材料状态 */
 function buildStageMaterials(targetStage: string, prevMaterials: Sct.DevMaterial[]): Sct.DevMaterial[] {
@@ -101,7 +103,9 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   /** 台历事件源：单次事件（范围内）+ 重复事件投影 */
   function eventsInRange(rangeStart: string, rangeEnd: string): Sct.CalEvent[] {
     const singles = calEvents.value.filter(ev => !ev.recurrence && ev.date >= rangeStart && ev.date <= rangeEnd);
-    const recurring = calEvents.value.filter(ev => ev.recurrence).flatMap(ev => expandRecurrence(ev, rangeStart, rangeEnd));
+    const recurring = calEvents.value
+      .filter(ev => ev.recurrence)
+      .flatMap(ev => expandRecurrence(ev, rangeStart, rangeEnd));
     return [...singles, ...recurring];
   }
 
@@ -223,7 +227,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       throw new Error('姓名必填');
     }
     const id = input.id ?? `M${nanoid(6)}`;
-    const row: Sct.Member = {
+    const todayStr = dayjs().format('YYYY-MM-DD');
+    const draft: Sct.Member = {
       code: id,
       group: '',
       grade: '',
@@ -239,12 +244,91 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       id,
       identity: 'secretary'
     };
-    await guardWrite(db.members.put(plain(row)), '人员');
+    const row = normalizeMemberRecord(draft, todayStr);
+    const stageDate =
+      row.type === '正式党员'
+        ? row.full_date || todayStr
+        : row.type === '预备党员'
+          ? row.join_date || todayStr
+          : todayStr;
+
+    await guardWrite(
+      db.transaction('rw', [db.members, db.devStages], async () => {
+        await db.members.put(plain(row));
+        await db.devStages.put(
+          plain({
+            member_id: id,
+            stage: row.type,
+            stage_date: stageDate,
+            next_node: row.type === '正式党员' ? '材料归档' : undefined,
+            next_due: row.type === '预备党员' ? row.full_date || undefined : undefined,
+            materials: buildStageMaterials(row.type, []),
+            timeline: [{ node: `录入成员（${row.type}）`, date: stageDate }],
+            identity: 'secretary'
+          })
+        );
+      }),
+      '人员'
+    );
     return id;
   }
 
   async function updateMember(id: string, patch: Partial<Sct.Member>) {
-    await guardWrite(db.members.update(id, plain(patch)), '人员');
+    const touchesPartyDatesOrType = 'join_date' in patch || 'full_date' in patch || 'type' in patch;
+    if (!touchesPartyDatesOrType) {
+      await guardWrite(db.members.update(id, plain(patch)), '人员');
+      return;
+    }
+
+    const existing = await db.members.get(id);
+    if (!existing) {
+      await guardWrite(db.members.update(id, plain(patch)), '人员');
+      return;
+    }
+
+    const todayStr = dayjs().format('YYYY-MM-DD');
+    const merged: Sct.Member = {
+      ...existing,
+      ...plain(patch),
+      id
+    };
+    const next = normalizeMemberRecord(merged, todayStr);
+    const typeChanged = next.type !== existing.type;
+
+    await guardWrite(
+      db.transaction('rw', [db.members, db.devStages], async () => {
+        await db.members.put(plain(next));
+        if (typeChanged) {
+          const prevStage = await db.devStages.get(id);
+          const stageDate =
+            next.type === '正式党员'
+              ? next.full_date || todayStr
+              : next.type === '预备党员'
+                ? next.join_date || todayStr
+                : todayStr;
+          await db.devStages.put(
+            plain({
+              member_id: id,
+              stage: next.type,
+              stage_date: stageDate,
+              next_node: next.type === '正式党员' ? '材料归档' : prevStage?.next_node,
+              next_due: next.type === '预备党员' ? next.full_date || prevStage?.next_due : undefined,
+              materials: buildStageMaterials(next.type, prevStage?.materials ?? []),
+              timeline: [
+                ...(prevStage?.timeline ?? []),
+                {
+                  node: `身份更新为${next.type}`,
+                  date: todayStr,
+                  note: next.join_date || next.full_date ? '按入党/转正时间自动计算' : '成员信息编辑'
+                }
+              ],
+              identity: 'secretary'
+            })
+          );
+        }
+      }),
+      '人员'
+    );
   }
 
   async function deleteMember(id: string) {
@@ -307,18 +391,42 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     const stage = devStages.value.find(d => d.member_id === memberId);
     const cur = stage?.stage ?? member.type;
     if (cur === targetStage) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = dayjs().format('YYYY-MM-DD');
+    const datePatch: Partial<Sct.Member> = { type: targetStage as Sct.MemberType };
+
+    if (targetStage === '预备党员') {
+      const joinDate = member.join_date || todayStr;
+      const fullDate =
+        member.full_date && member.full_date > todayStr ? member.full_date : computeDefaultFullDate(joinDate);
+      datePatch.join_date = joinDate;
+      datePatch.full_date = fullDate;
+      datePatch.key_dates = { ...member.key_dates, probation_end: fullDate };
+    } else if (targetStage === '正式党员') {
+      const fullDate = member.full_date && member.full_date <= todayStr ? member.full_date : todayStr;
+      const joinDate = member.join_date || dayjs(fullDate).subtract(1, 'year').format('YYYY-MM-DD');
+      const nextKeyDates = { ...member.key_dates };
+      delete nextKeyDates.probation_end;
+      datePatch.join_date = joinDate;
+      datePatch.full_date = fullDate;
+      datePatch.key_dates = nextKeyDates;
+    } else {
+      const nextKeyDates = { ...member.key_dates };
+      delete nextKeyDates.probation_end;
+      datePatch.join_date = '';
+      datePatch.full_date = '';
+      datePatch.key_dates = nextKeyDates;
+    }
 
     await guardWrite(
       db.transaction('rw', [db.members, db.devStages], async () => {
-        await db.members.update(memberId, plain({ type: targetStage as Sct.MemberType }));
+        await db.members.update(memberId, plain(datePatch));
         await db.devStages.put(
           plain({
             member_id: memberId,
             stage: targetStage,
             stage_date: todayStr,
             next_node: targetStage === '正式党员' ? '材料归档' : stage?.next_node,
-            next_due: stage?.next_due,
+            next_due: targetStage === '预备党员' ? (datePatch.full_date ?? stage?.next_due) : undefined,
             materials: buildStageMaterials(targetStage, stage?.materials ?? []),
             timeline: [...(stage?.timeline ?? []), { node: `确定为${targetStage}`, date: todayStr, note: '阶段流转' }],
             identity: 'secretary'

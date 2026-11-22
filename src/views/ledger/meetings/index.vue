@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, h, reactive, ref } from 'vue';
-import dayjs from 'dayjs';
 import { NButton, NDatePicker, NTag } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
-import { saveAs } from 'file-saver';
+import dayjs from 'dayjs';
+import { saveFileWithPicker } from '@/utils/save-file';
+import { generateSemesterDrafts, draftToEvent } from '@/utils/schedule-gen';
+import type { GenDraftEvent, GenParams } from '@/utils/schedule-gen';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
-import { generateSemesterDrafts, draftToEvent, type GenDraftEvent, type GenParams } from '@/utils/schedule-gen';
 import MeetingDetail from './modules/meeting-detail.vue';
 
 defineOptions({ name: 'MeetingsPage' });
@@ -59,7 +60,12 @@ const freqStats = computed(() => {
   const count = (kind: string) => meetingEvents.value.filter(ev => ev.kind === kind).length;
   return [
     { label: tMeetingKind('支委会'), target: bi('每月1次', '1/month'), done: count('支委会'), color: '#2B2926' },
-    { label: tMeetingKind('党员大会'), target: bi('每季度1次', '1/quarter'), done: count('党员大会'), color: '#A81C24' },
+    {
+      label: tMeetingKind('党员大会'),
+      target: bi('每季度1次', '1/quarter'),
+      done: count('党员大会'),
+      color: '#A81C24'
+    },
     { label: tMeetingKind('党课'), target: bi('每季度1次', '1/quarter'), done: count('党课'), color: '#7c5cd6' },
     { label: tMeetingKind('主题党日'), target: bi('每月1天', '1/month'), done: count('主题党日'), color: '#d97706' },
     {
@@ -141,7 +147,7 @@ async function writeDrafts() {
   genShow.value = false;
 }
 
-function exportSchedule() {
+async function exportSchedule() {
   const header = ['序号', '日期', '周次', '事项', '类型', '地点', '主责人', '协助人', '备注'];
   const lines: string[] = [header.join(',')];
   meetingEvents.value.forEach((ev, i) => {
@@ -167,8 +173,13 @@ function exportSchedule() {
         .join(',')
     );
   });
-  saveAs(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }), `三会一课学期安排表_${semester.value.label}.csv`);
-  window.$message?.success('学期安排表已导出（CSV，Excel/Word 可打开）');
+  const res = await saveFileWithPicker(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }), {
+    suggestedName: `三会一课学期安排表_${semester.value.label}.csv`,
+    types: [{ description: 'CSV 表格文件', mime: 'text/csv', extensions: ['.csv'] }]
+  });
+  if (res.status === 'saved') {
+    window.$message?.success('学期安排表已导出（CSV，Excel/Word 可打开）');
+  }
 }
 
 function dbPutEvent(row: Sct.CalEvent) {
@@ -435,7 +446,12 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
           </NInput>
         </div>
         <span class="text-12px text-gray-400">
-          {{ bi('支持拖拽列宽与排序 · 点击「详情」管理参会考勤与签到表', 'Resizable & sortable columns · Click Details for attendance & sign-in sheet') }}
+          {{
+            bi(
+              '支持拖拽列宽与排序 · 点击「详情」管理参会考勤与签到表',
+              'Resizable & sortable columns · Click Details for attendance & sign-in sheet'
+            )
+          }}
         </span>
       </div>
 
@@ -480,7 +496,12 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
               <span>每月第</span>
               <NInputNumber v-model:value="genParams.committeeNth" size="small" class="w-76px" :min="1" :max="5" />
               <span>个</span>
-              <NSelect v-model:value="genParams.committeeWeekday" :options="weekdayOptions" size="small" class="w-92px" />
+              <NSelect
+                v-model:value="genParams.committeeWeekday"
+                :options="weekdayOptions"
+                size="small"
+                class="w-92px"
+              />
             </div>
           </NFormItem>
           <NFormItem>
@@ -494,7 +515,12 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
               <span>每月第</span>
               <NInputNumber v-model:value="genParams.partyDayNth" size="small" class="w-76px" :min="1" :max="5" />
               <span>个</span>
-              <NSelect v-model:value="genParams.partyDayWeekday" :options="weekdayOptions" size="small" class="w-92px" />
+              <NSelect
+                v-model:value="genParams.partyDayWeekday"
+                :options="weekdayOptions"
+                size="small"
+                class="w-92px"
+              />
             </div>
           </NFormItem>
           <NFormItem>
@@ -508,7 +534,12 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
               <span>季末第</span>
               <NInputNumber v-model:value="genParams.assemblyNth" size="small" class="w-76px" :min="1" :max="5" />
               <span>个</span>
-              <NSelect v-model:value="genParams.assemblyWeekday" :options="weekdayOptions" size="small" class="w-92px" />
+              <NSelect
+                v-model:value="genParams.assemblyWeekday"
+                :options="weekdayOptions"
+                size="small"
+                class="w-92px"
+              />
             </div>
           </NFormItem>
           <NFormItem>
@@ -571,7 +602,12 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
                   : null
               ])
           },
-          { title: '时间', key: 'start_time', width: 110, render: (r: GenDraftEvent) => `${r.start_time}-${r.end_time}` }
+          {
+            title: '时间',
+            key: 'start_time',
+            width: 110,
+            render: (r: GenDraftEvent) => `${r.start_time}-${r.end_time}`
+          }
         ]"
         :row-key="(r: GenDraftEvent) => r.id"
       />

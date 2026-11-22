@@ -2,8 +2,11 @@
  * export.ts — 高清导出 / A4 对折拼版 / 打印 / 批量 ZIP（纯前端，无依赖）
  * ============================================================ */
 import { saveAs } from 'file-saver';
-import { H, W, paint, toBlob, type PageKind } from './render';
-import { partyAge, type PbcState } from './templates';
+import { saveFileWithPicker } from '@/utils/save-file';
+import { H, W, paint, toBlob } from './render';
+import type { PageKind } from './render';
+import { partyAge } from './templates';
+import type { PbcState } from './templates';
 
 const AW = 1754;
 const AH = 1240; /* A4 横向 @150dpi */
@@ -23,15 +26,19 @@ function safeName(s?: string): string {
     .slice(0, 40);
 }
 
-export function saveBlob(blob: Blob, filename: string): void {
-  saveAs(blob, filename);
+export async function saveBlob(blob: Blob, filename: string, direct = false): Promise<void> {
+  if (direct) {
+    saveAs(blob, filename);
+    return;
+  }
+  await saveFileWithPicker(blob, { suggestedName: filename });
 }
 
 /** 单页高清导出 */
 export async function downloadPage(
   kind: PageKind,
   S: PbcState,
-  opt: { scale?: number; type?: string; quality?: number } = {}
+  opt: { scale?: number; type?: string; quality?: number; direct?: boolean } = {}
 ): Promise<Blob> {
   const scale = opt.scale || 2;
   const type = opt.type || 'image/png';
@@ -39,16 +46,12 @@ export async function downloadPage(
   const blob = await toBlob(kind, S, scale, type, quality);
   const ext = type === 'image/jpeg' ? 'jpg' : 'png';
   const pageName = kind === 'cover' ? '封面' : '内页';
-  saveBlob(blob, `${safeName(S.name)}_政治生日卡_${pageName}.${ext}`);
+  await saveBlob(blob, `${safeName(S.name)}_政治生日卡_${pageName}.${ext}`, opt.direct);
   return blob;
 }
 
 /** A4 对折拼版：side = 'front' 正面（封面展开） / 'back' 背面（内页展开） */
-export function sheetCanvas(
-  side: 'front' | 'back',
-  S: PbcState,
-  opt: { margin?: number } = {}
-): HTMLCanvasElement {
+export function sheetCanvas(side: 'front' | 'back', S: PbcState, opt: { margin?: number } = {}): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = AW;
   c.height = AH;
@@ -124,8 +127,7 @@ export function downloadSheet(side: 'front' | 'back', S: PbcState): Promise<Blob
         return;
       }
       const sideLabel = side === 'front' ? '正面' : '背面';
-      saveBlob(b, `${safeName(S.name)}_A4拼版_${sideLabel}.png`);
-      resolve(b);
+      void saveBlob(b, `${safeName(S.name)}_A4拼版_${sideLabel}.png`).then(() => resolve(b), reject);
     }, 'image/png');
   });
 }
@@ -147,7 +149,7 @@ html,body{margin:0;padding:0;background:#fff}
 <div class="page"><img src="${front}" alt="正面"></div>
 <div class="page"><img src="${back}" alt="背面"></div>
 <div class="tip">共 2 页：第 1 页正面、第 2 页背面。双面打印请选择「短边翻转」，打印后沿中线对折、沿外框裁切。</div>
-<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>
+<script>window.onload=function(){setTimeout(function(){window.print()},400)}<${'/'}script>
 </body></html>`;
   const blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
   const w = window.open(blobUrl, '_blank');
@@ -315,7 +317,7 @@ export async function batchExportZip(
 
   files.push({ name: '名单.csv', data: new TextEncoder().encode(`\uFEFF${csv.join('\r\n')}`) });
   const zip = makeZip(files);
-  saveBlob(zip, `政治生日贺卡_${rows.length}人_${new Date().toISOString().slice(0, 10)}.zip`);
+  await saveBlob(zip, `政治生日贺卡_${rows.length}人_${new Date().toISOString().slice(0, 10)}.zip`);
   if (onProgress) onProgress(rows.length, rows.length, null);
   return files.length;
 }
@@ -340,7 +342,7 @@ export async function batchSequential(
       partyAge: row.partyAge.trim() || base.partyAge,
       partyAgeMode: row.partyAge.trim() ? 'manual' : base.partyAgeMode
     };
-    await downloadPage('cover', S, opt);
-    await downloadPage('inner', S, opt);
+    await downloadPage('cover', S, { ...opt, direct: true });
+    await downloadPage('inner', S, { ...opt, direct: true });
   }
 }

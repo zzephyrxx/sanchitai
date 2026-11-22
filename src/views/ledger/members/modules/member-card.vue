@@ -5,13 +5,14 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import dayjs from 'dayjs';
-import { useWorkDataStore } from '@/store/modules/work-data';
 import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
+import { resolveEffectiveFullDate } from '@/utils/member-status';
+import { useWorkDataStore } from '@/store/modules/work-data';
 
 defineOptions({ name: 'MemberCard' });
 
 const props = defineProps<{ show: boolean; memberId: string | null }>();
-const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>();
+const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'edit', member: Sct.Member): void }>();
 
 const router = useRouter();
 const workStore = useWorkDataStore();
@@ -51,6 +52,16 @@ const unpaidMonths = computed(() =>
     : []
 );
 
+const effectiveFullDate = computed(() =>
+  member.value
+    ? resolveEffectiveFullDate(member.value.join_date, member.value.full_date, member.value.key_dates?.probation_end)
+    : ''
+);
+
+const isProbationFuture = computed(() =>
+  Boolean(effectiveFullDate.value && effectiveFullDate.value > dayjs().format('YYYY-MM-DD'))
+);
+
 const feeStatusType = computed<'success' | 'error' | 'default' | 'warning'>(() => {
   switch (latestFee.value?.status) {
     case '已缴':
@@ -71,25 +82,42 @@ const feeStatusType = computed<'success' | 'error' | 'default' | 'warning'>(() =
       <NSpace vertical size="large">
         <div class="flex items-center justify-between gap-8px">
           <div class="flex items-center gap-8px">
-            <NTag :color="{ color: MEMBER_TYPE_COLORS[member.type] ?? '#666', textColor: '#fff' }" :bordered="false">{{ member.type }}</NTag>
+            <NTag :color="{ color: MEMBER_TYPE_COLORS[member.type] ?? '#666', textColor: '#fff' }" :bordered="false">
+              {{ member.type }}
+            </NTag>
             <NTag v-if="member.role" size="small" :bordered="false">{{ member.role }}</NTag>
           </div>
-          <NButton
-            v-if="member.type === '正式党员' || member.type === '预备党员'"
-            size="tiny"
-            type="primary"
-            secondary
-            @click="goBirthdayCard(member.id)"
-          >
-            <template #icon><SvgIcon icon="lucide:gift" /></template>
-            制作政治生日卡
-          </NButton>
+          <div class="flex items-center gap-6px">
+            <NButton
+              size="tiny"
+              secondary
+              @click="
+                emit('update:show', false);
+                emit('edit', member);
+              "
+            >
+              <template #icon><SvgIcon icon="lucide:pencil" /></template>
+              编辑
+            </NButton>
+            <NButton
+              v-if="member.type === '正式党员' || member.type === '预备党员'"
+              size="tiny"
+              type="primary"
+              secondary
+              @click="goBirthdayCard(member.id)"
+            >
+              <template #icon><SvgIcon icon="lucide:gift" /></template>
+              政治生日卡
+            </NButton>
+          </div>
         </div>
 
         <NDescriptions :column="1" size="small" label-placement="left" bordered>
           <NDescriptionsItem label="年级 / 层次">{{ member.grade }} · {{ member.level || '—' }}</NDescriptionsItem>
           <NDescriptionsItem label="研究方向组">{{ member.group || '—' }}</NDescriptionsItem>
-          <NDescriptionsItem label="专业 / 导师">{{ member.major || '—' }}{{ member.advisor ? ` / ${member.advisor}` : '' }}</NDescriptionsItem>
+          <NDescriptionsItem label="专业 / 导师">
+            {{ member.major || '—' }}{{ member.advisor ? ` / ${member.advisor}` : '' }}
+          </NDescriptionsItem>
           <NDescriptionsItem label="当前发展阶段">
             {{ devStage?.stage ?? member.type }}
             <template v-if="devStage?.stage_date">（{{ devStage.stage_date }} 起）</template>
@@ -100,13 +128,21 @@ const feeStatusType = computed<'success' | 'error' | 'default' | 'warning'>(() =
           </NDescriptionsItem>
           <NDescriptionsItem label="最近缴费状态">
             <NTag v-if="latestFee" :type="feeStatusType" size="small">
-              {{ latestFee.year_month }} {{ latestFee.status }}{{ latestFee.status === '已缴' ? `（¥${latestFee.amount.toFixed(1)}）` : '' }}
+              {{ latestFee.year_month }} {{ latestFee.status
+              }}{{ latestFee.status === '已缴' ? `（¥${latestFee.amount.toFixed(1)}）` : '' }}
             </NTag>
             <span v-else class="text-gray-400">无记录</span>
-            <div v-if="unpaidMonths.length" class="mt-4px text-12px text-[#d43030]">欠缴月份：{{ unpaidMonths.join('、') }}</div>
+            <div v-if="unpaidMonths.length" class="mt-4px text-12px text-[#d43030]">
+              欠缴月份：{{ unpaidMonths.join('、') }}
+            </div>
           </NDescriptionsItem>
           <NDescriptionsItem label="今年谈心谈话">{{ talksThisYear }} 次</NDescriptionsItem>
-          <NDescriptionsItem v-if="member.join_date" label="入党 / 转正">{{ member.join_date }}{{ member.full_date ? ` / 转正 ${member.full_date}` : '' }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.join_date || effectiveFullDate" label="入党 / 转正">
+            {{ member.join_date || '—' }}
+            <template v-if="effectiveFullDate">
+              / {{ isProbationFuture ? '预计转正' : '转正' }} {{ effectiveFullDate }}
+            </template>
+          </NDescriptionsItem>
           <NDescriptionsItem v-if="member.note" label="备注">{{ member.note }}</NDescriptionsItem>
         </NDescriptions>
 

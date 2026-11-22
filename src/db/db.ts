@@ -1,10 +1,13 @@
+import dayjs from 'dayjs';
 /**
  * 三尺台 本地数据库（Dexie / IndexedDB）
  *
  * 单一 DB 工厂（借鉴 SP runDbUpgrade 教训：schema 集中、加法演进）。
  * 备份：环形快照 5 份（meta 表）+ BackupShape 统一导入导出管线。
  */
-import Dexie, { type Table } from 'dexie';
+import { Dexie } from 'dexie';
+import type { Table } from 'dexie';
+import { normalizeMemberRecord } from '@/utils/member-status';
 
 export const DB_NAME = 'sanchitai-db';
 
@@ -62,6 +65,27 @@ class SanchitaiDB extends Dexie {
     this.version(3).stores({
       attendance: 'id, event_id, member_id, identity'
     });
+
+    // v4：党员信息表增加 join_date / full_date 索引，并回填转正时间与自动身份状态
+    this.version(4)
+      .stores({
+        members: 'id, identity, type, group, name, join_date, full_date'
+      })
+      .upgrade(async tx => {
+        const today = dayjs().format('YYYY-MM-DD');
+        await tx
+          .table('members')
+          .toCollection()
+          .modify((m: Sct.Member) => {
+            const normalized = normalizeMemberRecord(m, today);
+            m.type = normalized.type;
+            m.join_date = normalized.join_date;
+            m.full_date = normalized.full_date;
+            if (normalized.key_dates) {
+              m.key_dates = normalized.key_dates;
+            }
+          });
+      });
   }
 }
 
@@ -92,13 +116,14 @@ export interface BackupShape {
   talks: Sct.Talk[];
   doc_templates: Sct.DocTemplate[];
   docs: Sct.Doc[];
+  attendance?: Sct.Attendance[];
 }
 
 const BACKUP_RING_SIZE = 5;
 
 /** 全库导出为统一备份格式 */
 export async function exportBackup(): Promise<BackupShape> {
-  const [members, seat_maps, cal_events, dev_stages, fee_records, talks, doc_templates, docs, branchName] =
+  const [members, seat_maps, cal_events, dev_stages, fee_records, talks, doc_templates, docs, attendance, branchName] =
     await Promise.all([
       db.members.toArray(),
       db.seatMaps.toArray(),
@@ -108,10 +133,11 @@ export async function exportBackup(): Promise<BackupShape> {
       db.talks.toArray(),
       db.docTemplates.toArray(),
       db.docs.toArray(),
+      db.attendance.toArray(),
       getMeta<string>('branch-name')
     ]);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exported_at: new Date().toISOString(),
     branch_name: branchName || '智感硕博党支部',
     members,
@@ -121,7 +147,8 @@ export async function exportBackup(): Promise<BackupShape> {
     fee_records,
     talks,
     doc_templates,
-    docs
+    docs,
+    attendance
   };
 }
 
@@ -145,12 +172,76 @@ export async function listBackupRing(): Promise<Array<{ key: string; ts: string;
     .sort((a, b) => b.ts.localeCompare(a.ts));
 }
 
+/** 删除指定本地快照 */
+export async function deleteBackupSnapshot(key: string): Promise<void> {
+  if (!key.startsWith('backup-') || key === 'backup_ring_cursor') return;
+  await db.meta.delete(key);
+}
+
+/** 按入党/转正时间自动同步党员身份（预备期届满自动转为正式党员，无需手动确认） */
+export async function syncMemberPartyStatuses(): Promise<number> {
+  const today = dayjs().format('YYYY-MM-DD');
+  const allMembers = await db.members.toArray();
+  const updates: Array<{ next: Sct.Member; typeChanged: boolean }> = [];
+
+  for (const m of allMembers) {
+    const next = normalizeMemberRecord(m, today);
+    const typeChanged = next.type !== m.type;
+    const dateChanged = next.full_date !== (m.full_date ?? '') || next.join_date !== (m.join_date ?? '');
+    if (typeChanged || dateChanged) {
+      updates.push({ next, typeChanged });
+    }
+  }
+
+  if (!updates.length) return 0;
+
+  await db.transaction('rw', [db.members, db.devStages], async () => {
+    for (const { next, typeChanged } of updates) {
+      await db.members.put(next);
+      if (typeChanged) {
+        const prevStage = await db.devStages.get(next.id);
+        await db.devStages.put({
+          member_id: next.id,
+          stage: next.type,
+          stage_date: next.type === '正式党员' ? next.full_date || today : next.join_date || today,
+          next_node: next.type === '正式党员' ? '材料归档' : prevStage?.next_node,
+          next_due: next.type === '预备党员' ? next.full_date || prevStage?.next_due : undefined,
+          materials: prevStage?.materials ?? [],
+          timeline: [
+            ...(prevStage?.timeline ?? []),
+            {
+              node: next.type === '正式党员' ? '预备期满自动转为正式党员' : `身份同步为${next.type}`,
+              date: today,
+              note: '按入党/转正时间自动计算'
+            }
+          ],
+          identity: 'secretary'
+        });
+      }
+    }
+  });
+
+  return updates.filter(u => u.typeChanged).length;
+}
+
 /** 导入备份：先自动快照当前库，再整体替换 */
 export async function importBackup(shape: BackupShape): Promise<void> {
   await pushBackupRing();
+  const today = dayjs().format('YYYY-MM-DD');
+  const normalizedMembers = (shape.members ?? []).map(m => normalizeMemberRecord(m, today));
   await db.transaction(
     'rw',
-    [db.members, db.seatMaps, db.calEvents, db.devStages, db.feeRecords, db.talks, db.docTemplates, db.docs],
+    [
+      db.members,
+      db.seatMaps,
+      db.calEvents,
+      db.devStages,
+      db.feeRecords,
+      db.talks,
+      db.docTemplates,
+      db.docs,
+      db.attendance
+    ],
     async () => {
       await Promise.all([
         db.members.clear(),
@@ -160,17 +251,19 @@ export async function importBackup(shape: BackupShape): Promise<void> {
         db.feeRecords.clear(),
         db.talks.clear(),
         db.docTemplates.clear(),
-        db.docs.clear()
+        db.docs.clear(),
+        db.attendance.clear()
       ]);
       await Promise.all([
-        db.members.bulkPut(shape.members ?? []),
+        db.members.bulkPut(normalizedMembers),
         db.seatMaps.bulkPut(shape.seat_maps ?? []),
         db.calEvents.bulkPut(shape.cal_events ?? []),
         db.devStages.bulkPut(shape.dev_stages ?? []),
         db.feeRecords.bulkPut(shape.fee_records ?? []),
         db.talks.bulkPut(shape.talks ?? []),
         db.docTemplates.bulkPut(shape.doc_templates ?? []),
-        db.docs.bulkPut(shape.docs ?? [])
+        db.docs.bulkPut(shape.docs ?? []),
+        db.attendance.bulkPut(shape.attendance ?? [])
       ]);
     }
   );
@@ -179,11 +272,21 @@ export async function importBackup(shape: BackupShape): Promise<void> {
   }
 }
 
-/** 清空全部业务数据（保留 meta 备份） */
+/** 清空全部业务数据（保留 meta 备份与种子标记） */
 export async function clearAllData(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.members, db.seatMaps, db.calEvents, db.devStages, db.feeRecords, db.talks, db.docTemplates, db.docs],
+    [
+      db.members,
+      db.seatMaps,
+      db.calEvents,
+      db.devStages,
+      db.feeRecords,
+      db.talks,
+      db.docTemplates,
+      db.docs,
+      db.attendance
+    ],
     async () => {
       await Promise.all([
         db.members.clear(),
@@ -193,7 +296,8 @@ export async function clearAllData(): Promise<void> {
         db.feeRecords.clear(),
         db.talks.clear(),
         db.docTemplates.clear(),
-        db.docs.clear()
+        db.docs.clear(),
+        db.attendance.clear()
       ]);
     }
   );

@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
-import { saveAs } from 'file-saver';
-import { db, exportBackup, importBackup, pushBackupRing, listBackupRing, clearAllData, type BackupShape } from '@/db/db';
-import { resetToSeed } from '@/db/seed';
+import { buildHandoverHtml } from '@/utils/handover';
+import { saveFileWithPicker } from '@/utils/save-file';
 import { useAppLockStore, LOCK_QUESTIONS } from '@/store/modules/applock';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
-import { buildHandoverHtml } from '@/utils/handover';
+import {
+  clearAllData,
+  db,
+  deleteBackupSnapshot,
+  exportBackup,
+  importBackup,
+  listBackupRing,
+  pushBackupRing
+} from '@/db/db';
+import type { BackupShape } from '@/db/db';
+import { resetToSeed } from '@/db/seed';
 
 defineOptions({ name: 'SettingsPage' });
 
@@ -42,9 +51,19 @@ const handoverBusy = ref(false);
 async function exportHandoverData() {
   handoverBusy.value = true;
   try {
-    const shape = await exportBackup();
-    saveAs(new Blob([JSON.stringify(shape, null, 2)], { type: 'application/json;charset=utf-8' }), '交接数据包.json');
-    window.$message?.success('交接数据包已导出（接任人通过「从备份恢复」导入）');
+    const res = await saveFileWithPicker(
+      async () => {
+        const shape = await exportBackup();
+        return new Blob([JSON.stringify(shape, null, 2)], { type: 'application/json;charset=utf-8' });
+      },
+      {
+        suggestedName: '交接数据包.json',
+        types: [{ description: 'JSON 数据文件', mime: 'application/json', extensions: ['.json'] }]
+      }
+    );
+    if (res.status === 'saved') {
+      window.$message?.success('交接数据包已导出（接任人通过「从备份恢复」导入）');
+    }
   } finally {
     handoverBusy.value = false;
   }
@@ -53,10 +72,20 @@ async function exportHandoverData() {
 async function exportHandoverDoc() {
   handoverBusy.value = true;
   try {
-    const shape = await exportBackup();
-    const html = buildHandoverHtml(shape, workStore.branchName);
-    saveAs(new Blob([html], { type: 'text/html;charset=utf-8' }), `支部工作交接文档_${dayjs().format('YYYYMMDD')}.html`);
-    window.$message?.success('交接文档已导出（浏览器/Word 打开即可打印）');
+    const res = await saveFileWithPicker(
+      async () => {
+        const shape = await exportBackup();
+        const html = buildHandoverHtml(shape, workStore.branchName);
+        return new Blob([html], { type: 'text/html;charset=utf-8' });
+      },
+      {
+        suggestedName: `支部工作交接文档_${dayjs().format('YYYYMMDD')}.html`,
+        types: [{ description: 'HTML 网页文档', mime: 'text/html', extensions: ['.html'] }]
+      }
+    );
+    if (res.status === 'saved') {
+      window.$message?.success('交接文档已导出（浏览器/Word 打开即可打印）');
+    }
   } finally {
     handoverBusy.value = false;
   }
@@ -77,7 +106,10 @@ const lockForm = reactive({
 const disablePwd = ref('');
 const pwdForm = reactive({ old: '', new: '', confirm: '' });
 
-const questionOptions = [...LOCK_QUESTIONS.map(v => ({ label: v, value: v })), { label: '自定义问题…', value: '__custom__' }];
+const questionOptions = [
+  ...LOCK_QUESTIONS.map(v => ({ label: v, value: v })),
+  { label: '自定义问题…', value: '__custom__' }
+];
 
 const IDLE_OPTIONS = [
   { label: '不自动锁定', value: 0 },
@@ -88,7 +120,14 @@ const IDLE_OPTIONS = [
 
 function toggleLock(enabled: boolean) {
   if (enabled) {
-    Object.assign(lockForm, { pwd: '', confirm: '', question: LOCK_QUESTIONS[0], customQuestion: '', answer: '', idle: 0 });
+    Object.assign(lockForm, {
+      pwd: '',
+      confirm: '',
+      question: LOCK_QUESTIONS[0],
+      customQuestion: '',
+      answer: '',
+      idle: 0
+    });
     lockSetupShow.value = true;
   } else {
     disablePwd.value = '';
@@ -132,10 +171,20 @@ async function handlePwdChange() {
 
 // ---------------- 一键备份 / 恢复（A20） ----------------
 async function handleExport() {
-  const shape = await exportBackup();
-  const json = JSON.stringify(shape, null, 2);
-  saveAs(new Blob([json], { type: 'application/json;charset=utf-8' }), `三尺台备份_${new Date().toISOString().slice(0, 10)}.json`);
-  window.$message?.success('备份已导出（含成员/台历/台账/谈话/文档全部数据）');
+  const res = await saveFileWithPicker(
+    async () => {
+      const shape = await exportBackup();
+      const json = JSON.stringify(shape, null, 2);
+      return new Blob([json], { type: 'application/json;charset=utf-8' });
+    },
+    {
+      suggestedName: `三尺台备份_${new Date().toISOString().slice(0, 10)}.json`,
+      types: [{ description: 'JSON 备份文件', mime: 'application/json', extensions: ['.json'] }]
+    }
+  );
+  if (res.status === 'saved') {
+    window.$message?.success('备份已导出（含成员/台历/台账/谈话/文档全部数据）');
+  }
 }
 
 const fileInput = ref<HTMLInputElement>();
@@ -195,28 +244,70 @@ async function restoreSnapshot(key: string) {
   const target = ring.find(r => r.key === key);
   if (!target) return;
   await importBackup(target.shape);
+  await listSnapshots();
   window.$message?.success('已恢复所选快照');
 }
 
-// ---------------- 演示数据 ----------------
-const resetting = ref(false);
-async function handleReset() {
-  resetting.value = true;
+const deleteSnapModalShow = ref(false);
+const pendingDeleteSnap = ref<SnapItem | null>(null);
+const deletingSnap = ref(false);
+
+function openDeleteSnapshotConfirm(item: SnapItem) {
+  pendingDeleteSnap.value = item;
+  deleteSnapModalShow.value = true;
+}
+
+async function confirmDeleteSnapshot() {
+  if (!pendingDeleteSnap.value) return;
+  deletingSnap.value = true;
   try {
-    await resetToSeed();
-    await db.meta.delete('academy-flow'); // 学院版自定义节点一并还原
-    window.$message?.success('已重置为演示种子数据');
-    listSnapshots();
+    await deleteBackupSnapshot(pendingDeleteSnap.value.key);
+    deleteSnapModalShow.value = false;
+    pendingDeleteSnap.value = null;
+    await listSnapshots();
+    window.$message?.success('快照已删除');
   } finally {
-    resetting.value = false;
+    deletingSnap.value = false;
   }
 }
 
-async function handleClear() {
-  await clearAllData();
-  await db.meta.delete('seed_v1');
-  window.$message?.success('业务数据已清空（备份快照保留）');
-  listSnapshots();
+// ---------------- 演示数据（严格二次确认） ----------------
+const DANGER_CONFIRM_PHRASE = '我已知晓该操作危险性，确认清除全部数据';
+const dangerModalShow = ref(false);
+const dangerAction = ref<'reset' | 'clear' | null>(null);
+const dangerInput = ref('');
+const dangerBusy = ref(false);
+const resetting = ref(false);
+
+const canConfirmDanger = computed(() => dangerInput.value.trim() === DANGER_CONFIRM_PHRASE);
+
+function openDangerConfirm(action: 'reset' | 'clear') {
+  dangerAction.value = action;
+  dangerInput.value = '';
+  dangerModalShow.value = true;
+}
+
+async function confirmDangerAction() {
+  if (!canConfirmDanger.value || !dangerAction.value) return;
+  dangerBusy.value = true;
+  try {
+    if (dangerAction.value === 'reset') {
+      resetting.value = true;
+      await resetToSeed();
+      await db.meta.delete('academy-flow'); // 学院版自定义节点一并还原
+      window.$message?.success('已重置为演示种子数据');
+    } else {
+      await clearAllData();
+      window.$message?.success('业务数据已清空（本地备份快照保留）');
+    }
+    dangerModalShow.value = false;
+    dangerAction.value = null;
+    dangerInput.value = '';
+    await listSnapshots();
+  } finally {
+    resetting.value = false;
+    dangerBusy.value = false;
+  }
 }
 
 onMounted(listSnapshots);
@@ -244,7 +335,13 @@ onMounted(listSnapshots);
             <template #icon><SvgIcon icon="lucide:upload" /></template>
             {{ bi('从备份恢复…', 'Restore from Backup…') }}
           </NButton>
-          <input ref="fileInput" type="file" accept=".json,application/json" class="hidden" @change="handleFileChange" />
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".json,application/json"
+            class="hidden"
+            @change="handleFileChange"
+          />
         </div>
 
         <NDivider title-placement="left" style="font-size: 13px">
@@ -261,15 +358,25 @@ onMounted(listSnapshots);
           </NButton>
         </div>
         <div v-if="!snapshots.length" class="text-12px text-gray-400">{{ bi('暂无快照', 'No snapshots yet') }}</div>
-        <div v-for="s in snapshots" :key="s.key" class="flex items-center justify-between rounded-8px bg-[var(--sct-soft)] px-10px py-8px">
-          <div>
+        <div
+          v-for="s in snapshots"
+          :key="s.key"
+          class="flex items-center justify-between gap-8px rounded-8px bg-[var(--sct-soft)] px-10px py-8px"
+        >
+          <div class="min-w-0">
             <div class="text-13px font-bold">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
             <div class="text-11px text-gray-500">{{ s.counts }}</div>
           </div>
-          <NButton size="tiny" secondary type="primary" @click="restoreSnapshot(s.key)">
-            <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-            {{ bi('恢复此快照', 'Restore') }}
-          </NButton>
+          <div class="flex shrink-0 items-center gap-6px">
+            <NButton size="tiny" secondary type="primary" @click="restoreSnapshot(s.key)">
+              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+              {{ bi('恢复此快照', 'Restore') }}
+            </NButton>
+            <NButton size="tiny" secondary type="error" @click="openDeleteSnapshotConfirm(s)">
+              <template #icon><SvgIcon icon="lucide:trash-2" /></template>
+              {{ bi('删除', 'Delete') }}
+            </NButton>
+          </div>
         </div>
       </NSpace>
     </NCard>
@@ -343,7 +450,13 @@ onMounted(listSnapshots);
           <template v-if="appLock.enabled">
             <div class="flex items-center justify-between">
               <span class="text-13px">{{ bi('闲置自动锁定', 'Idle Auto-Lock') }}</span>
-              <NSelect :value="appLock.idleMinutes" :options="IDLE_OPTIONS" size="small" class="w-220px" @update:value="v => appLock.setIdleMinutes(v)" />
+              <NSelect
+                :value="appLock.idleMinutes"
+                :options="IDLE_OPTIONS"
+                size="small"
+                class="w-220px"
+                @update:value="v => appLock.setIdleMinutes(v)"
+              />
             </div>
             <div class="flex gap-8px">
               <NButton size="small" secondary @click="lockPwdShow = true">
@@ -355,7 +468,9 @@ onMounted(listSnapshots);
                 {{ bi('立即锁定', 'Lock Now') }}
               </NButton>
             </div>
-            <div class="text-12px text-gray-400">{{ bi('找回问题：', 'Recovery Question: ') }}{{ appLock.question }}</div>
+            <div class="text-12px text-gray-400">
+              {{ bi('找回问题：', 'Recovery Question: ') }}{{ appLock.question }}
+            </div>
           </template>
         </NSpace>
       </NCard>
@@ -372,11 +487,11 @@ onMounted(listSnapshots);
             }}
           </div>
           <div class="flex gap-8px">
-            <NButton size="small" secondary :loading="resetting" @click="handleReset">
+            <NButton size="small" secondary :loading="resetting" @click="openDangerConfirm('reset')">
               <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
               {{ bi('重置为演示种子', 'Reset to Demo Seed') }}
             </NButton>
-            <NButton size="small" type="error" ghost @click="handleClear">
+            <NButton size="small" type="error" ghost @click="openDangerConfirm('clear')">
               <template #icon><SvgIcon icon="lucide:trash-2" /></template>
               {{ bi('清空业务数据', 'Clear All Data') }}
             </NButton>
@@ -423,7 +538,13 @@ onMounted(listSnapshots);
               <span>锁屏密码</span>
             </span>
           </template>
-          <NInput v-model:value="lockForm.pwd" type="password" show-password-on="mousedown" placeholder="至少 4 位" :maxlength="32" />
+          <NInput
+            v-model:value="lockForm.pwd"
+            type="password"
+            show-password-on="mousedown"
+            placeholder="至少 4 位"
+            :maxlength="32"
+          />
         </NFormItem>
         <NFormItem required>
           <template #label>
@@ -490,7 +611,12 @@ onMounted(listSnapshots);
               <span>密码</span>
             </span>
           </template>
-          <NInput v-model:value="disablePwd" type="password" show-password-on="mousedown" @keyup.enter="handleLockDisable" />
+          <NInput
+            v-model:value="disablePwd"
+            type="password"
+            show-password-on="mousedown"
+            @keyup.enter="handleLockDisable"
+          />
         </NFormItem>
       </NForm>
       <template #footer>
@@ -520,7 +646,13 @@ onMounted(listSnapshots);
               <span>新密码</span>
             </span>
           </template>
-          <NInput v-model:value="pwdForm.new" type="password" show-password-on="mousedown" placeholder="至少 4 位" :maxlength="32" />
+          <NInput
+            v-model:value="pwdForm.new"
+            type="password"
+            show-password-on="mousedown"
+            placeholder="至少 4 位"
+            :maxlength="32"
+          />
         </NFormItem>
         <NFormItem required>
           <template #label>
@@ -536,6 +668,88 @@ onMounted(listSnapshots);
         <div class="flex justify-end gap-8px">
           <NButton @click="lockPwdShow = false">取消</NButton>
           <NButton type="primary" @click="handlePwdChange">保存</NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <!-- 快照删除：二次确认弹窗 -->
+    <NModal
+      v-model:show="deleteSnapModalShow"
+      preset="card"
+      :title="bi('确认删除快照', 'Confirm Snapshot Deletion')"
+      class="w-440px"
+      :mask-closable="false"
+    >
+      <div class="flex flex-col gap-10px text-13px leading-relaxed">
+        <div>
+          {{
+            bi(
+              '确定要永久删除以下本地快照吗？删除后将无法通过该快照恢复数据。',
+              'Are you sure you want to permanently delete this local snapshot? This cannot be undone.'
+            )
+          }}
+        </div>
+        <div v-if="pendingDeleteSnap" class="rounded-8px bg-[var(--sct-soft)] px-12px py-10px">
+          <div class="font-bold">{{ pendingDeleteSnap.ts.replace('T', ' ').slice(0, 19) }}</div>
+          <div class="mt-2px text-12px text-gray-500">{{ pendingDeleteSnap.counts }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton @click="deleteSnapModalShow = false">{{ bi('取消', 'Cancel') }}</NButton>
+          <NButton type="error" :loading="deletingSnap" @click="confirmDeleteSnapshot">
+            <template #icon><SvgIcon icon="lucide:trash-2" /></template>
+            {{ bi('确认删除', 'Confirm Delete') }}
+          </NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <!-- 重置演示种子 / 清空业务数据：严格二次确认弹窗 -->
+    <NModal
+      v-model:show="dangerModalShow"
+      preset="card"
+      :title="
+        dangerAction === 'reset'
+          ? bi('危险操作确认：重置为演示种子', 'Dangerous Action: Reset to Demo Seed')
+          : bi('危险操作确认：清空全部业务数据', 'Dangerous Action: Clear All Business Data')
+      "
+      class="w-520px"
+      :mask-closable="false"
+    >
+      <div class="flex flex-col gap-12px text-13px leading-relaxed">
+        <NAlert type="error" :show-icon="true">
+          <template v-if="dangerAction === 'reset'">
+            此操作将
+            <strong>覆盖并清空当前全部业务数据</strong>
+            ，还原为内置 22 人演示种子数据。若尚未导出 JSON 备份，当前录入的真实数据将无法找回。
+          </template>
+          <template v-else>
+            此操作将
+            <strong>永久清空当前全部成员、台历、三会一课、党员发展、党费、谈话与文档数据</strong>
+            （仅保留本地备份快照）。操作不可撤销！
+          </template>
+        </NAlert>
+        <div class="text-12px text-gray-600">为防止误操作，请在下方输入框中完整输入以下确认文字：</div>
+        <div
+          class="select-all rounded-6px border border-red-200 bg-red-50/70 px-12px py-8px text-13px text-red-700 font-semibold dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+        >
+          {{ DANGER_CONFIRM_PHRASE }}
+        </div>
+        <NInput
+          v-model:value="dangerInput"
+          :placeholder="`请输入：${DANGER_CONFIRM_PHRASE}`"
+          clearable
+          @keyup.enter="confirmDangerAction"
+        />
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton @click="dangerModalShow = false">{{ bi('取消', 'Cancel') }}</NButton>
+          <NButton type="error" :disabled="!canConfirmDanger" :loading="dangerBusy" @click="confirmDangerAction">
+            <template #icon><SvgIcon icon="lucide:alert-triangle" /></template>
+            {{ dangerAction === 'reset' ? bi('确认重置数据', 'Confirm Reset') : bi('确认清空数据', 'Confirm Clear') }}
+          </NButton>
         </div>
       </template>
     </NModal>

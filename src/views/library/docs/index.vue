@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, h, reactive, ref } from 'vue';
-import dayjs from 'dayjs';
 import { NButton, NPopconfirm } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
-import { saveAs } from 'file-saver';
+import dayjs from 'dayjs';
+import { saveFileWithPicker } from '@/utils/save-file';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
@@ -76,14 +76,20 @@ async function saveDoc() {
   window.$message?.success('已存入材料库归档区');
 }
 
-function exportMarkdown() {
+async function exportMarkdown() {
   const tpl = editingTemplate.value;
   if (!tpl) return;
-  saveAs(new Blob([previewBody.value], { type: 'text/markdown;charset=utf-8' }), `${tpl.name}.md`);
+  const res = await saveFileWithPicker(new Blob([previewBody.value], { type: 'text/markdown;charset=utf-8' }), {
+    suggestedName: `${tpl.name}.md`,
+    types: [{ description: 'Markdown 文档', mime: 'text/markdown', extensions: ['.md'] }]
+  });
+  if (res.status === 'saved') {
+    window.$message?.success('已导出 Markdown 文档');
+  }
 }
 
 /** 导出 Word 可打开的 .doc（HTML 内容 + msword MIME） */
-function exportWord() {
+async function exportWord() {
   const tpl = editingTemplate.value;
   if (!tpl) return;
   const safeTitle = tpl.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -91,8 +97,13 @@ function exportWord() {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title>
 <style>body{font-family:SimSun,serif;font-size:14pt;line-height:1.8;margin:40px;}h2{text-align:center;}</style>
 </head><body><pre style="font-family:SimSun,serif;font-size:14pt;white-space:pre-wrap;">${safeBody}</pre></body></html>`;
-  saveAs(new Blob([html], { type: 'application/msword;charset=utf-8' }), `${tpl.name}.doc`);
-  window.$message?.success('已导出 .doc（Word 可直接打开）');
+  const res = await saveFileWithPicker(new Blob([html], { type: 'application/msword;charset=utf-8' }), {
+    suggestedName: `${tpl.name}.doc`,
+    types: [{ description: 'Word 文档', mime: 'application/msword', extensions: ['.doc'] }]
+  });
+  if (res.status === 'saved') {
+    window.$message?.success('已导出 .doc（Word 可直接打开）');
+  }
 }
 
 // ---------------- 归档区（支持搜索、分页与图标表头） ----------------
@@ -317,7 +328,9 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
   border: 1px solid var(--sct-border);
   border-radius: 10px;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .tpl-card:hover {
   border-color: #a81c24;

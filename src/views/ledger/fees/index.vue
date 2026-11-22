@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
-import { saveAs } from 'file-saver';
+import { FEE_STANDARD, MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
+import { saveFileWithPicker } from '@/utils/save-file';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import { db } from '@/db/db';
-import { FEE_STANDARD, MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 
 defineOptions({ name: 'FeesPage' });
 
@@ -243,7 +243,7 @@ const monthSummary = computed(() => {
 });
 
 // ---------------- 导出（A16） ----------------
-function exportMatrix() {
+async function exportMatrix() {
   const header = ['序号', '姓名', '党费类别', '月应缴标准(元)', ...months.value, '实缴合计(元)'];
   const lines: string[] = [header.join(',')];
   feeMembers.value.forEach((m, i) => {
@@ -271,8 +271,13 @@ function exportMatrix() {
     );
   });
   const csv = `\uFEFF${lines.join('\n')}`;
-  saveAs(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `党费收缴台账_${currentMonth}.csv`);
-  window.$message?.success('已导出（Excel/Word 可直接打开）');
+  const res = await saveFileWithPicker(new Blob([csv], { type: 'text/csv;charset=utf-8' }), {
+    suggestedName: `党费收缴台账_${currentMonth}.csv`,
+    types: [{ description: 'CSV 表格文件', mime: 'text/csv', extensions: ['.csv'] }]
+  });
+  if (res.status === 'saved') {
+    window.$message?.success('已导出（Excel/Word 可直接打开）');
+  }
 }
 
 // ---------------- 视图 ----------------
@@ -330,22 +335,28 @@ const owedBadges = computed(() => {
       <!-- 本月汇总 -->
       <div class="mb-14px flex flex-wrap gap-10px">
         <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
-          {{ bi('本月应缴', 'Due This Month') }} <b class="text-[#A81C24]">{{ monthSummary.count }}</b>
-          {{ bi('人 · 合计', 'members · Total') }} <b>¥{{ monthSummary.due }}</b>
+          {{ bi('本月应缴', 'Due This Month') }}
+          <b class="text-[#A81C24]">{{ monthSummary.count }}</b>
+          {{ bi('人 · 合计', 'members · Total') }}
+          <b>¥{{ monthSummary.due }}</b>
         </div>
         <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
-          {{ bi('已缴', 'Paid') }} <b style="color: #3f9d63">{{ monthSummary.paidCount }}</b>
+          {{ bi('已缴', 'Paid') }}
+          <b style="color: #3f9d63">{{ monthSummary.paidCount }}</b>
           {{ bi('人', 'members') }} · ¥{{ monthSummary.paidAmount }}
         </div>
         <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
-          {{ bi('欠缴', 'Overdue') }} <b style="color: #d43030">{{ monthSummary.owed }}</b> {{ bi('人', 'members') }}
+          {{ bi('欠缴', 'Overdue') }}
+          <b style="color: #d43030">{{ monthSummary.owed }}</b>
+          {{ bi('人', 'members') }}
           <span v-if="monthSummary.owed" class="text-12px text-gray-500">
             {{ bi('（座位图已标红角标）', '(Red badge on seat map)') }}
           </span>
         </div>
         <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
           {{ bi('在职/自定义标准', 'In-service / Custom') }}
-          <b class="text-[#d97706]">{{ monthSummary.inServiceCount }}</b> {{ bi('人', 'members') }}
+          <b class="text-[#d97706]">{{ monthSummary.inServiceCount }}</b>
+          {{ bi('人', 'members') }}
         </div>
       </div>
 
@@ -387,12 +398,7 @@ const owedBadges = computed(() => {
                   <span>{{ bi('党费标准（点击修改）', 'Dues Standard (Click to Edit)') }}</span>
                 </span>
               </th>
-              <th
-                v-for="ym in months"
-                :key="ym"
-                class="fee-th"
-                :class="{ 'fee-th--cur': ym === currentMonth }"
-              >
+              <th v-for="ym in months" :key="ym" class="fee-th" :class="{ 'fee-th--cur': ym === currentMonth }">
                 <span class="inline-flex items-center gap-4px">
                   <SvgIcon icon="lucide:calendar" class="text-12px opacity-75" />
                   <span>{{ ym }}</span>
@@ -421,11 +427,7 @@ const owedBadges = computed(() => {
                   :title="bi('点击设置该党员的党费类别与月应缴标准', 'Click to set dues category & monthly rate')"
                   @click="openStandardModal(m)"
                 >
-                  <NTag
-                    size="tiny"
-                    :bordered="false"
-                    :type="m.fee_category === '在职党员' ? 'warning' : 'default'"
-                  >
+                  <NTag size="tiny" :bordered="false" :type="m.fee_category === '在职党员' ? 'warning' : 'default'">
                     {{ tFeeCategory(m.fee_category) }}
                   </NTag>
                   <span class="font-bold text-[var(--sct-ink)]">
@@ -471,11 +473,7 @@ const owedBadges = computed(() => {
                           <SvgIcon icon="lucide:check-circle-2" class="text-12px text-[#A81C24]" />
                           <span>缴费状态</span>
                         </div>
-                        <NSelect
-                          v-model:value="cellDraft.status"
-                          :options="STATUS_OPTIONS"
-                          size="small"
-                        />
+                        <NSelect v-model:value="cellDraft.status" :options="STATUS_OPTIONS" size="small" />
                       </div>
 
                       <div>
@@ -529,18 +527,16 @@ const owedBadges = computed(() => {
       </div>
       <div class="mt-8px text-12px text-gray-400">
         全期欠缴人员（含历史月份，共 {{ Object.keys(owedBadges).length }} 人）：{{
-          feeMembers.filter(m => owedBadges[m.id]).map(m => m.name).join('、') || '无'
+          feeMembers
+            .filter(m => owedBadges[m.id])
+            .map(m => m.name)
+            .join('、') || '无'
         }}
       </div>
     </NCard>
 
     <!-- 修改党员党费标准弹窗（与人员信息表双向同步） -->
-    <NModal
-      v-model:show="stdModalShow"
-      preset="card"
-      :title="`设置党费标准：${stdForm.memberName}`"
-      class="w-460px"
-    >
+    <NModal v-model:show="stdModalShow" preset="card" :title="`设置党费标准：${stdForm.memberName}`" class="w-460px">
       <NForm label-placement="left" label-width="120" size="small">
         <NFormItem required>
           <template #label>
@@ -549,11 +545,7 @@ const owedBadges = computed(() => {
               <span>党费类别</span>
             </span>
           </template>
-          <NSelect
-            :value="stdForm.fee_category"
-            :options="FEE_CATEGORY_OPTIONS"
-            @update:value="onStdCategoryChange"
-          />
+          <NSelect :value="stdForm.fee_category" :options="FEE_CATEGORY_OPTIONS" @update:value="onStdCategoryChange" />
         </NFormItem>
         <NFormItem required>
           <template #label>
@@ -562,13 +554,7 @@ const owedBadges = computed(() => {
               <span>月应缴党费</span>
             </span>
           </template>
-          <NInputNumber
-            v-model:value="stdForm.fee_monthly"
-            :min="0"
-            :step="0.5"
-            :precision="1"
-            class="w-full"
-          >
+          <NInputNumber v-model:value="stdForm.fee_monthly" :min="0" :step="0.5" :precision="1" class="w-full">
             <template #suffix>元/月</template>
           </NInputNumber>
         </NFormItem>

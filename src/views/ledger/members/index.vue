@@ -2,13 +2,21 @@
 import { computed, h, reactive, ref, watch } from 'vue';
 import { NButton, NPopconfirm, NTag } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
+import dayjs from 'dayjs';
+import { FEE_STANDARD, MEMBER_TYPE_COLORS, MEMBER_TYPE_ORDER } from '@/constants/sanchitai';
+import {
+  computeDefaultFullDate,
+  describePartyStatusRule,
+  isPartyStatusAutoComputed,
+  resolveEffectiveFullDate,
+  resolveMemberTypeByDates
+} from '@/utils/member-status';
+import { buildSeatSheet, printHtml } from '@/utils/print';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
-import { buildSeatSheet, printHtml } from '@/utils/print';
-import { FEE_STANDARD, MEMBER_TYPE_COLORS, MEMBER_TYPE_ORDER } from '@/constants/sanchitai';
-import RosterBoard from './modules/roster-board.vue';
 import MemberCard from './modules/member-card.vue';
+import RosterBoard from './modules/roster-board.vue';
 
 defineOptions({ name: 'MembersPage' });
 
@@ -72,7 +80,9 @@ function handleMove({
   const tasks: Array<Promise<unknown>> = [];
   if (target) {
     tasks.push(
-      workStore.updateMember(target.id, { seat: from ? { map_id: mapId, x: from.x, y: from.y } : (target.seat ?? null) })
+      workStore.updateMember(target.id, {
+        seat: from ? { map_id: mapId, x: from.x, y: from.y } : (target.seat ?? null)
+      })
     );
     tasks.push(workStore.updateMember(mover.id, { seat: { map_id: mapId, x: to.x, y: to.y } }));
   } else {
@@ -113,7 +123,9 @@ function printSeatMap() {
 const statsText = computed(() => {
   const inMap = workStore.members.filter(m => m.seat?.map_id === activeMapId.value);
   const unseated = workStore.members.filter(m => !m.seat);
-  const typeCount = MEMBER_TYPE_ORDER.map(t => `${tMemberType(t)} ${workStore.members.filter(m => m.type === t).length}`).join(' · ');
+  const typeCount = MEMBER_TYPE_ORDER.map(
+    t => `${tMemberType(t)} ${workStore.members.filter(m => m.type === t).length}`
+  ).join(' · ');
   const capacity = activeMap.value ? activeMap.value.grid.cols * activeMap.value.grid.rows : 0;
   return bi(
     `在座 ${inMap.length}/${capacity} · 未入座 ${unseated.length} ｜ ${typeCount}`,
@@ -292,7 +304,12 @@ const listColumns = computed<DataTableColumns<MemberRow>>(() => [
       row.latestFee
         ? h(
             'span',
-            { style: { color: row.latestFee.status === '欠缴' ? '#d43030' : undefined, fontWeight: row.latestFee.status === '欠缴' ? 600 : 400 } },
+            {
+              style: {
+                color: row.latestFee.status === '欠缴' ? '#d43030' : undefined,
+                fontWeight: row.latestFee.status === '欠缴' ? 600 : 400
+              }
+            },
             `${row.latestFee.year_month} ${tFeeStatus(row.latestFee.status)}`
           )
         : '—'
@@ -300,10 +317,30 @@ const listColumns = computed<DataTableColumns<MemberRow>>(() => [
   {
     title: () => colHeader('lucide:calendar', bi('入党时间', 'Join Date')),
     key: 'join_date',
-    width: 120,
+    width: 118,
     resizable: true,
     sorter: (a, b) => (a.join_date ?? '').localeCompare(b.join_date ?? ''),
     render: row => row.join_date || '—'
+  },
+  {
+    title: () => colHeader('lucide:calendar-check-2', bi('转正时间', 'Full Date')),
+    key: 'full_date',
+    width: 136,
+    resizable: true,
+    sorter: (a, b) =>
+      resolveEffectiveFullDate(a.join_date, a.full_date, a.key_dates?.probation_end).localeCompare(
+        resolveEffectiveFullDate(b.join_date, b.full_date, b.key_dates?.probation_end)
+      ),
+    render: row => {
+      const fd = resolveEffectiveFullDate(row.join_date, row.full_date, row.key_dates?.probation_end);
+      if (!fd) return '—';
+      const isFuture = fd > dayjs().format('YYYY-MM-DD');
+      if (!isFuture) return fd;
+      return h('span', { class: 'inline-flex items-center gap-4px whitespace-nowrap' }, [
+        h('span', fd),
+        h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, () => bi('预计', 'Est.'))
+      ]);
+    }
   },
   {
     title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
@@ -367,9 +404,12 @@ const listColumns = computed<DataTableColumns<MemberRow>>(() => [
 // ---------------- 新增 / 编辑成员 ----------------
 const addShow = ref(false);
 const editingMemberId = ref<string | null>(null);
+const lastAutoFullDate = ref<string>('');
 const addForm = reactive({
   name: '',
   type: '正式党员' as Sct.MemberType,
+  join_date: null as string | null,
+  full_date: null as string | null,
   fee_category: '学生党员' as Sct.FeeCategory,
   fee_monthly: FEE_STANDARD.studentMonthly,
   group: '',
@@ -378,6 +418,41 @@ const addForm = reactive({
   advisor: '',
   note: ''
 });
+
+const isDateAutoType = computed(() => isPartyStatusAutoComputed(addForm.join_date, addForm.full_date));
+const effectiveFormType = computed<Sct.MemberType>(() =>
+  resolveMemberTypeByDates(addForm.type, addForm.join_date, addForm.full_date)
+);
+const partyRuleInfo = computed(() => describePartyStatusRule(addForm.join_date, addForm.full_date));
+
+function handleJoinDateChange(val: string | null) {
+  addForm.join_date = val;
+  if (val) {
+    const suggested = computeDefaultFullDate(val);
+    if (!addForm.full_date || addForm.full_date === lastAutoFullDate.value) {
+      addForm.full_date = suggested || null;
+      lastAutoFullDate.value = suggested;
+    }
+  } else if (addForm.full_date && addForm.full_date === lastAutoFullDate.value) {
+    addForm.full_date = null;
+    lastAutoFullDate.value = '';
+  }
+  addForm.type = resolveMemberTypeByDates(addForm.type, addForm.join_date, addForm.full_date);
+}
+
+function handleFullDateChange(val: string | null) {
+  addForm.full_date = val;
+  if (val !== lastAutoFullDate.value) {
+    lastAutoFullDate.value = '';
+  }
+  addForm.type = resolveMemberTypeByDates(addForm.type, addForm.join_date, addForm.full_date);
+}
+
+function clearPartyDates() {
+  addForm.join_date = null;
+  addForm.full_date = null;
+  lastAutoFullDate.value = '';
+}
 
 const feeCategoryOptions = [
   { label: `学生党员（${FEE_STANDARD.studentMonthly} 元/月）`, value: '学生党员' },
@@ -395,9 +470,12 @@ function handleFeeCategoryChange(val: Sct.FeeCategory) {
 
 function openAddMember() {
   editingMemberId.value = null;
+  lastAutoFullDate.value = '';
   Object.assign(addForm, {
     name: '',
-    type: '正式党员',
+    type: '申请人',
+    join_date: null,
+    full_date: null,
     fee_category: '学生党员',
     fee_monthly: FEE_STANDARD.studentMonthly,
     group: '',
@@ -411,9 +489,14 @@ function openAddMember() {
 
 function openEditMember(row: Sct.Member) {
   editingMemberId.value = row.id;
+  const resolvedFull = resolveEffectiveFullDate(row.join_date, row.full_date, row.key_dates?.probation_end);
+  const autoFull = computeDefaultFullDate(row.join_date);
+  lastAutoFullDate.value = resolvedFull && resolvedFull === autoFull ? autoFull : '';
   Object.assign(addForm, {
     name: row.name,
-    type: row.type,
+    type: resolveMemberTypeByDates(row.type, row.join_date, resolvedFull),
+    join_date: row.join_date || null,
+    full_date: resolvedFull || null,
     fee_category: row.fee_category ?? '学生党员',
     fee_monthly: workStore.memberMonthlyFee(row),
     group: row.group ?? '',
@@ -434,11 +517,16 @@ async function handleSaveMember() {
     typeof addForm.fee_monthly === 'number' && !Number.isNaN(addForm.fee_monthly) && addForm.fee_monthly >= 0
       ? Number(addForm.fee_monthly.toFixed(1))
       : FEE_STANDARD.studentMonthly;
+  const finalType = effectiveFormType.value;
+  const joinDate = addForm.join_date?.trim() ?? '';
+  const fullDate = addForm.full_date?.trim() ?? '';
 
   if (editingMemberId.value) {
     await workStore.updateMember(editingMemberId.value, {
       name: addForm.name.trim(),
-      type: addForm.type,
+      type: finalType,
+      join_date: joinDate,
+      full_date: fullDate,
       fee_category: addForm.fee_category,
       fee_monthly: normalizedMonthly,
       group: addForm.group,
@@ -447,11 +535,13 @@ async function handleSaveMember() {
       advisor: addForm.advisor,
       note: addForm.note || undefined
     });
-    window.$message?.success('成员信息已更新');
+    window.$message?.success(`成员信息已更新（身份：${finalType}）`);
   } else {
     await workStore.addMember({
       name: addForm.name.trim(),
-      type: addForm.type,
+      type: finalType,
+      join_date: joinDate,
+      full_date: fullDate,
       fee_category: addForm.fee_category,
       fee_monthly: normalizedMonthly,
       group: addForm.group,
@@ -460,7 +550,7 @@ async function handleSaveMember() {
       advisor: addForm.advisor,
       note: addForm.note || undefined
     });
-    window.$message?.success('成员已加入（可在座位图编排布点）');
+    window.$message?.success(`成员已加入（身份：${finalType}，可在座位图编排布点）`);
   }
   addShow.value = false;
   editingMemberId.value = null;
@@ -567,7 +657,12 @@ async function removeMember(id: string) {
             </NInput>
           </div>
           <span class="text-12px text-gray-400">
-            {{ bi('支持拖拽表头分隔线调整列宽 · 点击列头可排序', 'Drag column dividers to resize · Click column headers to sort') }}
+            {{
+              bi(
+                '支持拖拽表头分隔线调整列宽 · 点击列头可排序',
+                'Drag column dividers to resize · Click column headers to sort'
+              )
+            }}
           </span>
         </div>
         <NDataTable
@@ -583,7 +678,7 @@ async function removeMember(id: string) {
     </NCard>
 
     <!-- 人员卡 -->
-    <MemberCard v-model:show="cardShow" :member-id="cardMemberId" />
+    <MemberCard v-model:show="cardShow" :member-id="cardMemberId" @edit="openEditMember" />
 
     <!-- 空位安排 -->
     <NModal v-model:show="pickerShow" preset="card" title="安排成员到此工位" class="w-420px">
@@ -613,16 +708,77 @@ async function removeMember(id: string) {
           </template>
           <NInput v-model:value="addForm.name" placeholder="必填" />
         </NFormItem>
+        <NFormItem>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:calendar" class="sct-field-icon" />
+              <span>{{ bi('入党时间', 'Join Date') }}</span>
+            </span>
+          </template>
+          <NDatePicker
+            :formatted-value="addForm.join_date"
+            type="date"
+            value-format="yyyy-MM-dd"
+            clearable
+            class="w-full"
+            :placeholder="
+              bi('选填：接收为预备党员日期（自动推算转正时间）', 'Optional: date accepted as probationary member')
+            "
+            @update:formatted-value="handleJoinDateChange"
+          />
+        </NFormItem>
+        <NFormItem>
+          <template #label>
+            <span class="sct-field-label">
+              <SvgIcon icon="lucide:calendar-check-2" class="sct-field-icon" />
+              <span>{{ bi('转正时间', 'Full Date') }}</span>
+            </span>
+          </template>
+          <NDatePicker
+            :formatted-value="addForm.full_date"
+            type="date"
+            value-format="yyyy-MM-dd"
+            clearable
+            class="w-full"
+            :placeholder="
+              bi('默认按入党满 1 年计算，支持按实际转正/延期手动调整', 'Defaults to +1 year; editable if extended')
+            "
+            @update:formatted-value="handleFullDateChange"
+          />
+        </NFormItem>
         <NFormItem required>
           <template #label>
             <span class="sct-field-label">
               <SvgIcon icon="lucide:award" class="sct-field-icon" />
-              <span>类型</span>
+              <span>{{ bi('党员身份', 'Status') }}</span>
             </span>
           </template>
-          <NSelect v-model:value="addForm.type" :options="typeOptions" />
+          <div class="w-full flex flex-col gap-6px">
+            <div
+              v-if="isDateAutoType"
+              class="flex items-center justify-between gap-8px rounded-6px bg-[var(--sct-soft)] px-10px py-6px"
+            >
+              <div class="flex items-center gap-8px">
+                <NTag
+                  size="small"
+                  :bordered="false"
+                  :color="{ color: MEMBER_TYPE_COLORS[effectiveFormType], textColor: '#fff' }"
+                >
+                  {{ tMemberType(effectiveFormType) }}
+                </NTag>
+                <span class="text-12px text-gray-500">{{ bi('按日期自动判定', 'Auto-computed') }}</span>
+              </div>
+              <NButton size="tiny" quaternary @click="clearPartyDates">
+                {{ bi('清空日期手动选择', 'Clear dates') }}
+              </NButton>
+            </div>
+            <NSelect v-else v-model:value="addForm.type" :options="typeOptions" />
+            <div class="text-11px leading-snug text-gray-400">
+              {{ bi(partyRuleInfo.reasonZh, partyRuleInfo.reasonEn) }}
+            </div>
+          </div>
         </NFormItem>
-        <template v-if="addForm.type === '正式党员' || addForm.type === '预备党员'">
+        <template v-if="effectiveFormType === '正式党员' || effectiveFormType === '预备党员'">
           <NFormItem>
             <template #label>
               <span class="sct-field-label">
@@ -644,13 +800,7 @@ async function removeMember(id: string) {
               </span>
             </template>
             <div class="w-full flex items-center gap-8px">
-              <NInputNumber
-                v-model:value="addForm.fee_monthly"
-                :min="0"
-                :step="0.5"
-                :precision="1"
-                class="flex-1"
-              >
+              <NInputNumber v-model:value="addForm.fee_monthly" :min="0" :step="0.5" :precision="1" class="flex-1">
                 <template #suffix>元/月</template>
               </NInputNumber>
               <span class="text-11px text-gray-400">同步至党费台账</span>

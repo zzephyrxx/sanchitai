@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { saveAs } from 'file-saver';
 import { NPopconfirm } from 'naive-ui';
+import { saveFileWithPicker } from '@/utils/save-file';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 
 defineOptions({ name: 'PolicyPage' });
@@ -257,8 +257,10 @@ async function removeFile(id: string) {
   }
 }
 
-function download(row: PolicyFile) {
-  saveAs(new Blob([row.blob], { type: row.mime }), row.name);
+async function download(row: PolicyFile) {
+  await saveFileWithPicker(new Blob([row.blob], { type: row.mime }), {
+    suggestedName: row.name
+  });
 }
 
 function fmtSize(size: number) {
@@ -279,14 +281,8 @@ const relatedTag = computed<Record<string, string>>(() => ({
         <div class="flex flex-wrap items-center gap-12px">
           <span class="text-16px font-bold">{{ bi('政策文件', 'Policy Documents') }}</span>
           <NTabs v-model:value="activeMainTab" type="segment" size="small" class="w-360px">
-            <NTab
-              name="rules"
-              :tab="`${bi('政策文件与法规要点', 'Regulations & Highlights')}（${BUILT_IN.length}）`"
-            />
-            <NTab
-              name="archive"
-              :tab="`${bi('本单位文件归档', 'Local Unit Archive')}（${importedFiles.length}）`"
-            />
+            <NTab name="rules" :tab="`${bi('政策文件与法规要点', 'Regulations & Highlights')}（${BUILT_IN.length}）`" />
+            <NTab name="archive" :tab="`${bi('本单位文件归档', 'Local Unit Archive')}（${importedFiles.length}）`" />
           </NTabs>
         </div>
       </template>
@@ -363,17 +359,11 @@ const relatedTag = computed<Record<string, string>>(() => ({
                 <li v-for="(p, i) in card.points" :key="i" class="mb-4px">{{ p }}</li>
               </ul>
             </div>
-            <div class="mt-12px flex items-center justify-between border-t border-[var(--sct-border)] pt-10px text-12px text-gray-400">
+            <div
+              class="mt-12px flex items-center justify-between border-t border-[var(--sct-border)] pt-10px text-12px text-gray-400"
+            >
               <span class="truncate pr-8px">{{ bi('出处：', 'Source: ') }}{{ card.source }}</span>
-              <NButton
-                v-if="card.url"
-                tag="a"
-                :href="card.url"
-                target="_blank"
-                size="tiny"
-                quaternary
-                type="primary"
-              >
+              <NButton v-if="card.url" tag="a" :href="card.url" target="_blank" size="tiny" quaternary type="primary">
                 <template #icon><SvgIcon icon="lucide:external-link" /></template>
                 {{ bi('权威原文', 'Full Text') }}
               </NButton>
@@ -384,7 +374,9 @@ const relatedTag = computed<Record<string, string>>(() => ({
 
       <!-- Tab 2：本单位文件归档（离线存储） -->
       <div v-else>
-        <div class="mb-14px flex items-center justify-between rounded-10px bg-[var(--sct-soft)] px-14px py-10px text-12px text-gray-500">
+        <div
+          class="mb-14px flex items-center justify-between rounded-10px bg-[var(--sct-soft)] px-14px py-10px text-12px text-gray-500"
+        >
           <span>
             {{
               bi(
@@ -419,7 +411,9 @@ const relatedTag = computed<Record<string, string>>(() => ({
               <SvgIcon icon="lucide:file-text" class="flex-shrink-0 text-20px text-[#A81C24]" />
               <div class="min-w-0">
                 <div class="truncate text-13px font-bold">{{ row.name }}</div>
-                <div class="mt-2px text-11px text-gray-400">{{ fmtSize(row.size) }} · {{ row.added_at.slice(0, 10) }}</div>
+                <div class="mt-2px text-11px text-gray-400">
+                  {{ fmtSize(row.size) }} · {{ row.added_at.slice(0, 10) }}
+                </div>
               </div>
             </div>
             <div class="flex flex-shrink-0 gap-6px">
@@ -449,7 +443,9 @@ const relatedTag = computed<Record<string, string>>(() => ({
 .policy-card {
   background: var(--sct-soft);
   border: 1px solid var(--sct-border);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .policy-card:hover {
   border-color: #a81c24;

@@ -5,6 +5,7 @@
  * 「预备党员转正大会（候选）」事项；同一成员同一期满日只生成一次。
  */
 import dayjs from 'dayjs';
+import { resolveEffectiveFullDate } from '@/utils/member-status';
 import { db } from './db';
 
 export async function ensureProbationCandidates(): Promise<void> {
@@ -12,7 +13,7 @@ export async function ensureProbationCandidates(): Promise<void> {
   const probationers = await db.members.where('type').equals('预备党员').toArray();
 
   for (const m of probationers) {
-    const end = m.key_dates?.probation_end;
+    const end = resolveEffectiveFullDate(m.join_date, m.full_date, m.key_dates?.probation_end);
     if (!end) continue;
 
     const endD = dayjs(end);

@@ -2,8 +2,10 @@
  * 种子数据导入：首次启动（库为空）时自动写入 docs/research/seed-data-draft.json 的内置副本。
  * 内容为纯虚构演示数据（见 docs/research/case-data-plan.md 脱敏声明）。
  */
-import seedJson from './seed/seed-data.json';
+import dayjs from 'dayjs';
+import { normalizeMemberRecord } from '@/utils/member-status';
 import { db, getMeta, setMeta } from './db';
+import seedJson from './seed/seed-data.json';
 
 const SEED_VERSION = 'v0.2.0';
 const SEED_FLAG = 'seed-flag';
@@ -28,11 +30,14 @@ export async function ensureSeeded(): Promise<void> {
   const flag = await getMeta<string>(SEED_FLAG);
   if (flag === SEED_VERSION) return;
 
+  const today = dayjs().format('YYYY-MM-DD');
+  const normalizedMembers = withIdentity(SEED.members).map(m => normalizeMemberRecord(m, today));
+
   await db.transaction(
     'rw',
     [db.members, db.seatMaps, db.calEvents, db.devStages, db.feeRecords, db.talks, db.docTemplates],
     async () => {
-      await db.members.bulkPut(withIdentity(SEED.members));
+      await db.members.bulkPut(normalizedMembers);
       await db.seatMaps.bulkPut(withIdentity(SEED.seat_maps));
       await db.calEvents.bulkPut(withIdentity(SEED.calendarEvents));
       await db.devStages.bulkPut(withIdentity(SEED.developmentStages));
@@ -49,7 +54,17 @@ export async function ensureSeeded(): Promise<void> {
 export async function resetToSeed(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.members, db.seatMaps, db.calEvents, db.devStages, db.feeRecords, db.talks, db.docTemplates],
+    [
+      db.members,
+      db.seatMaps,
+      db.calEvents,
+      db.devStages,
+      db.feeRecords,
+      db.talks,
+      db.docTemplates,
+      db.docs,
+      db.attendance
+    ],
     async () => {
       await Promise.all([
         db.members.clear(),
@@ -58,7 +73,9 @@ export async function resetToSeed(): Promise<void> {
         db.devStages.clear(),
         db.feeRecords.clear(),
         db.talks.clear(),
-        db.docTemplates.clear()
+        db.docTemplates.clear(),
+        db.docs.clear(),
+        db.attendance.clear()
       ]);
     }
   );
