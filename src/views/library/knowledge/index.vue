@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { NPopconfirm } from 'naive-ui';
-import { KNOWLEDGE_CATEGORIES, KNOWLEDGE_ITEMS, type KnowledgeItem } from '@/constants/knowledge-data';
-import { getMeta, setMeta } from '@/db/db';
+import { KNOWLEDGE_CATEGORIES, KNOWLEDGE_ITEMS } from '@/constants/knowledge-data';
+import type { KnowledgeItem } from '@/constants/knowledge-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import EmptyFancy from '@/components/custom/empty-fancy.vue';
+import { getMeta, setMeta } from '@/db/db';
 
 defineOptions({ name: 'KnowledgePage' });
 
@@ -69,6 +70,31 @@ const filtered = computed(() =>
   )
 );
 
+const kbPagination = reactive({
+  page: 1,
+  pageSize: 12,
+  pageSizes: [12, 24, 36]
+});
+
+watch([activeCat, keyword], () => {
+  kbPagination.page = 1;
+});
+
+watch(
+  () => filtered.value.length,
+  total => {
+    const maxPage = Math.max(1, Math.ceil(total / kbPagination.pageSize));
+    if (kbPagination.page > maxPage) {
+      kbPagination.page = maxPage;
+    }
+  }
+);
+
+const pagedFiltered = computed(() => {
+  const start = (kbPagination.page - 1) * kbPagination.pageSize;
+  return filtered.value.slice(start, start + kbPagination.pageSize);
+});
+
 const allTabLabel = computed(() => `${bi('全部', 'All')}（${allItems.value.length}）`);
 const activeItem = ref<UnifiedKnowledgeItem | null>(null);
 const previewShow = ref(false);
@@ -123,8 +149,8 @@ function triggerPickFile() {
 function readImageAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('读取图片失败'));
+    reader.addEventListener('load', () => resolve(String(reader.result || '')), { once: true });
+    reader.addEventListener('error', () => reject(new Error('读取图片失败')), { once: true });
     reader.readAsDataURL(file);
   });
 }
@@ -348,76 +374,95 @@ function mdSummaryLines(md?: string): string[] {
         </div>
       </template>
 
-      <NTabs v-model:value="activeCat" type="segment" size="small" class="mb-16px">
-        <NTab name="全部" :tab="allTabLabel" />
-        <NTab v-for="c in KNOWLEDGE_CATEGORIES" :key="c" :name="c" :tab="tKnowledgeCat(c)" />
-      </NTabs>
+      <div class="mb-16px flex justify-center">
+        <div class="lib-cat-tabs">
+          <NTabs v-model:value="activeCat" type="segment" size="small">
+            <NTab name="全部" :tab="allTabLabel" />
+            <NTab v-for="c in KNOWLEDGE_CATEGORIES" :key="c" :name="c" :tab="tKnowledgeCat(c)" />
+          </NTabs>
+        </div>
+      </div>
 
-      <EmptyFancy v-if="!filtered.length" emoji="folder" :text="bi('没有匹配的图解或文档', 'No matching infographics or documents')" />
-      <div v-else class="grid grid-cols-1 gap-14px sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        <div v-for="it in filtered" :key="it.id" class="knowledge-card" @click="openPreview(it)">
-          <!-- 1. 高清长图 / 自定义上传图片缩略图 -->
-          <div v-if="it.file || it.imageDataUrl" class="knowledge-thumb-wrap">
-            <img :src="imgUrl(it)" :alt="it.title" class="knowledge-thumb" loading="lazy" />
-            <span class="knowledge-badge">{{ it.isCustom ? bi('自定义图片', 'Custom Image') : bi('高清长图', 'Infographic') }}</span>
-          </div>
-
-          <!-- 2. 自定义上传 Markdown 缩略预览 -->
-          <div v-else-if="it.customType === 'markdown'" class="knowledge-poster-thumb knowledge-poster-thumb--md">
-            <div class="flex items-center justify-between">
-              <span class="knowledge-poster-thumb__tag">{{ bi('Markdown 文档', 'Markdown Doc') }}</span>
-              <span v-if="it.createdAt" class="text-10px text-gray-400">{{ it.createdAt }}</span>
+      <EmptyFancy
+        v-if="!filtered.length"
+        emoji="folder"
+        :text="bi('没有匹配的图解或文档', 'No matching infographics or documents')"
+      />
+      <template v-else>
+        <div class="grid grid-cols-1 gap-14px sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div v-for="it in pagedFiltered" :key="it.id" class="knowledge-card" @click="openPreview(it)">
+            <!-- 1. 高清长图 / 自定义上传图片缩略图 -->
+            <div v-if="it.file || it.imageDataUrl" class="knowledge-thumb-wrap">
+              <img :src="imgUrl(it)" :alt="it.title" class="knowledge-thumb" loading="lazy" />
+              <span class="knowledge-badge">
+                {{ it.isCustom ? bi('自定义图片', 'Custom Image') : bi('高清长图', 'Infographic') }}
+              </span>
             </div>
-            <div class="knowledge-poster-thumb__title">{{ it.title }}</div>
-            <div class="knowledge-poster-thumb__list">
-              <div v-for="(line, idx) in mdSummaryLines(it.markdown)" :key="idx" class="truncate">
-                • {{ line }}
+
+            <!-- 2. 自定义上传 Markdown 缩略预览 -->
+            <div v-else-if="it.customType === 'markdown'" class="knowledge-poster-thumb knowledge-poster-thumb--md">
+              <div class="flex items-center justify-between">
+                <span class="knowledge-poster-thumb__tag">{{ bi('Markdown 文档', 'Markdown Doc') }}</span>
+                <span v-if="it.createdAt" class="text-10px text-gray-400">{{ it.createdAt }}</span>
+              </div>
+              <div class="knowledge-poster-thumb__title">{{ it.title }}</div>
+              <div class="knowledge-poster-thumb__list">
+                <div v-for="(line, idx) in mdSummaryLines(it.markdown)" :key="idx" class="truncate">• {{ line }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- 3. 结构化权威图解缩略预览 -->
-          <div v-else class="knowledge-poster-thumb">
-            <div class="knowledge-poster-thumb__tag">{{ bi('12371.cn 权威图解', '12371.cn Guide') }}</div>
-            <div class="knowledge-poster-thumb__title">{{ it.title }}</div>
-            <div class="knowledge-poster-thumb__list">
-              <div v-for="(sec, idx) in (it.sections ?? []).slice(0, 2)" :key="idx" class="truncate">
-                • {{ sec.heading }}
+            <!-- 3. 结构化权威图解缩略预览 -->
+            <div v-else class="knowledge-poster-thumb">
+              <div class="knowledge-poster-thumb__tag">{{ bi('12371.cn 权威图解', '12371.cn Guide') }}</div>
+              <div class="knowledge-poster-thumb__title">{{ it.title }}</div>
+              <div class="knowledge-poster-thumb__list">
+                <div v-for="(sec, idx) in (it.sections ?? []).slice(0, 2)" :key="idx" class="truncate">
+                  • {{ sec.heading }}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="px-12px py-10px">
-            <div class="line-clamp-1 text-13px font-bold leading-snug" :title="it.title">{{ it.title }}</div>
-            <div class="mt-6px flex items-center justify-between">
-              <NTag size="tiny" :bordered="false">{{ tKnowledgeCat(it.category) }}</NTag>
-              <div class="flex items-center gap-6px" @click.stop>
-                <NPopconfirm v-if="it.isCustom" @positive-click="removeCustomItem(it.id)">
-                  <template #trigger>
-                    <NButton size="tiny" quaternary type="error" :title="bi('删除自定义条目', 'Delete custom item')">
-                      <template #icon><SvgIcon icon="lucide:trash-2" class="text-12px" /></template>
-                    </NButton>
-                  </template>
-                  {{ bi(`确认删除自定义知识库条目「${it.title}」吗？`, `Delete custom item "${it.title}"?`) }}
-                </NPopconfirm>
-                <span class="inline-flex items-center gap-3px text-11px text-gray-400" @click="openPreview(it)">
-                  <SvgIcon icon="lucide:maximize-2" class="text-11px" />
-                  {{ bi('查看', 'View') }}
-                </span>
+            <div class="px-12px py-10px">
+              <div class="line-clamp-1 text-13px font-bold leading-snug" :title="it.title">{{ it.title }}</div>
+              <div class="mt-6px flex items-center justify-between">
+                <NTag size="tiny" :bordered="false">{{ tKnowledgeCat(it.category) }}</NTag>
+                <div class="flex items-center gap-6px" @click.stop>
+                  <NPopconfirm v-if="it.isCustom" @positive-click="removeCustomItem(it.id)">
+                    <template #trigger>
+                      <NButton size="tiny" quaternary type="error" :title="bi('删除自定义条目', 'Delete custom item')">
+                        <template #icon><SvgIcon icon="lucide:trash-2" class="text-12px" /></template>
+                      </NButton>
+                    </template>
+                    {{ bi(`确认删除自定义知识库条目「${it.title}」吗？`, `Delete custom item "${it.title}"?`) }}
+                  </NPopconfirm>
+                  <span class="inline-flex items-center gap-3px text-11px text-gray-400" @click="openPreview(it)">
+                    <SvgIcon icon="lucide:maximize-2" class="text-11px" />
+                    {{ bi('查看', 'View') }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+        <div class="mt-16px flex justify-end">
+          <NPagination
+            v-model:page="kbPagination.page"
+            v-model:page-size="kbPagination.pageSize"
+            :item-count="filtered.length"
+            :page-sizes="kbPagination.pageSizes"
+            show-size-picker
+            size="small"
+          >
+            <template #prefix="{ itemCount }">
+              <span class="text-12px text-gray-400">{{ bi(`共 ${itemCount} 条`, `Total ${itemCount}`) }}</span>
+            </template>
+          </NPagination>
+        </div>
+      </template>
     </NCard>
 
     <!-- 预览弹窗（图片 / Markdown / 12371 结构化图解） -->
-    <NModal
-      v-model:show="previewShow"
-      preset="card"
-      :title="activeItem?.title ?? ''"
-      class="w-920px max-w-95vw"
-    >
+    <NModal v-model:show="previewShow" preset="card" :title="activeItem?.title ?? ''" class="w-920px max-w-95vw">
       <template #header-extra>
         <div class="mr-8px flex items-center gap-6px">
           <template v-if="activeItem?.file || activeItem?.imageDataUrl">
@@ -425,9 +470,7 @@ function mdSummaryLines(md?: string): string[] {
               <template #icon><SvgIcon icon="lucide:zoom-out" /></template>
               缩小
             </NButton>
-            <NButton size="tiny" secondary @click="zoomPct = 100">
-              {{ zoomPct }}%
-            </NButton>
+            <NButton size="tiny" secondary @click="zoomPct = 100">{{ zoomPct }}%</NButton>
             <NButton size="tiny" secondary @click="adjustZoom(20)">
               <template #icon><SvgIcon icon="lucide:zoom-in" /></template>
               放大
@@ -666,7 +709,10 @@ function mdSummaryLines(md?: string): string[] {
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
-  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+  transition:
+    box-shadow 0.15s,
+    transform 0.15s,
+    border-color 0.15s;
 }
 .knowledge-card:hover {
   border-color: #a81c24;
@@ -732,6 +778,15 @@ function mdSummaryLines(md?: string): string[] {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.lib-cat-tabs {
+  width: 70%;
+  max-width: 100%;
+}
+@media (max-width: 960px) {
+  .lib-cat-tabs {
+    width: 100%;
+  }
 }
 .knowledge-poster-thumb__list {
   font-size: 11px;

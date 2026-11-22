@@ -66,7 +66,6 @@ type CalViewType = 'timeGridDay' | 'timeGridWeek' | 'dayGridMonth';
 const currentView = ref<CalViewType>('timeGridWeek');
 const lastRangeStart = ref(dayjs());
 const lastRangeEnd = ref(dayjs());
-const activeCategories = ref<Set<string>>(new Set(Object.keys(EVENT_CATEGORY_COLORS)));
 
 const currentTitle = computed(() => {
   const start = lastRangeStart.value;
@@ -86,26 +85,6 @@ const currentRangeText = computed(() => {
     ? `${start.format('MMM D')} – ${end.format('MMM D')}`
     : `${start.format('M月D日')} – ${end.format('M月D日')}`;
 });
-
-function toggleCategoryFilter(cat: string) {
-  const next = new Set(activeCategories.value);
-  if (next.has(cat)) {
-    if (next.size === 1) {
-      Object.keys(EVENT_CATEGORY_COLORS).forEach(k => next.add(k));
-    } else {
-      next.delete(cat);
-    }
-  } else {
-    next.add(cat);
-  }
-  activeCategories.value = next;
-  calendarRef.value?.getApi()?.refetchEvents();
-}
-
-function resetCategoryFilter() {
-  activeCategories.value = new Set(Object.keys(EVENT_CATEGORY_COLORS));
-  calendarRef.value?.getApi()?.refetchEvents();
-}
 
 const calendarRef = ref<InstanceType<typeof FullCalendar>>();
 
@@ -142,24 +121,36 @@ function navToday() {
   calendarRef.value?.getApi()?.today();
 }
 
-// ---------------- 鼠标悬浮日程小弹窗（Hover Popover） ----------------
+// ---------------- 鼠标悬浮日程小弹窗（Hover Popover，带 0.5s 悬浮延迟 + Peel 撕纸删除） ----------------
+const HOVER_OPEN_DELAY_MS = 500;
+
 const hoverCard = reactive<{
   visible: boolean;
+  peeling: boolean;
   event: Sct.CalEvent | null;
+  sourceEl: HTMLElement | null;
   x: number;
   y: number;
   placement: 'right' | 'left';
 }>({
   visible: false,
+  peeling: false,
   event: null,
+  sourceEl: null,
   x: 0,
   y: 0,
   placement: 'right'
 });
 
+let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
 let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
+let peelFinishTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearHoverTimer() {
+  if (hoverShowTimer) {
+    clearTimeout(hoverShowTimer);
+    hoverShowTimer = null;
+  }
   if (hoverHideTimer) {
     clearTimeout(hoverHideTimer);
     hoverHideTimer = null;
@@ -169,13 +160,14 @@ function clearHoverTimer() {
 const isDraggingEvent = ref(false);
 
 function dismissHoverPopover() {
+  if (hoverCard.peeling) return;
   clearHoverTimer();
   hoverCard.visible = false;
+  hoverCard.sourceEl = null;
 }
 
-function showHoverPopover(ev: Sct.CalEvent, targetEl: HTMLElement) {
-  if (isDraggingEvent.value || moveConfirm.visible) return;
-  clearHoverTimer();
+function openHoverPopoverNow(ev: Sct.CalEvent, targetEl: HTMLElement) {
+  if (isDraggingEvent.value || moveConfirm.visible || hoverCard.peeling) return;
   const rect = targetEl.getBoundingClientRect();
   const popWidth = 310;
   const popHeight = 250;
@@ -194,20 +186,42 @@ function showHoverPopover(ev: Sct.CalEvent, targetEl: HTMLElement) {
   }
 
   hoverCard.event = ev;
+  hoverCard.sourceEl = targetEl;
   hoverCard.x = Math.round(x);
   hoverCard.y = Math.round(y);
   hoverCard.placement = placement;
   hoverCard.visible = true;
 }
 
-function scheduleHideHoverPopover() {
+function scheduleShowHoverPopover(ev: Sct.CalEvent, targetEl: HTMLElement) {
+  if (isDraggingEvent.value || moveConfirm.visible || hoverCard.peeling) return;
   clearHoverTimer();
+  hoverShowTimer = setTimeout(() => {
+    hoverShowTimer = null;
+    openHoverPopoverNow(ev, targetEl);
+  }, HOVER_OPEN_DELAY_MS);
+}
+
+function scheduleHideHoverPopover() {
+  if (hoverCard.peeling) return;
+  if (hoverShowTimer) {
+    clearTimeout(hoverShowTimer);
+    hoverShowTimer = null;
+  }
+  if (hoverHideTimer) {
+    clearTimeout(hoverHideTimer);
+    hoverHideTimer = null;
+  }
   hoverHideTimer = setTimeout(() => {
-    hoverCard.visible = false;
+    if (!hoverCard.peeling) {
+      hoverCard.visible = false;
+      hoverCard.sourceEl = null;
+    }
   }, 160);
 }
 
 function onPopoverMouseEnter() {
+  if (hoverCard.peeling) return;
   clearHoverTimer();
 }
 
@@ -215,8 +229,85 @@ function onPopoverMouseLeave() {
   scheduleHideHoverPopover();
 }
 
+// ---------------- Peel 撕纸删除 + 5 秒撤销提示条 ----------------
+const undoBar = reactive<{
+  visible: boolean;
+  snapshot: Sct.CalEvent | null;
+  key: number;
+}>({
+  visible: false,
+  snapshot: null,
+  key: 0
+});
+
+let undoTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearUndoTimer() {
+  if (undoTimer) {
+    clearTimeout(undoTimer);
+    undoTimer = null;
+  }
+}
+
+function closeUndoBar() {
+  clearUndoTimer();
+  undoBar.visible = false;
+  undoBar.snapshot = null;
+}
+
+function triggerPeelDelete(ev: Sct.CalEvent) {
+  if (hoverCard.peeling) return;
+  clearHoverTimer();
+  hoverCard.peeling = true;
+
+  const targetEl = hoverCard.sourceEl;
+  targetEl?.classList.add('cal-event-peeling');
+  const snapshot: Sct.CalEvent = JSON.parse(JSON.stringify(ev));
+
+  peelFinishTimer = setTimeout(async () => {
+    peelFinishTimer = null;
+    try {
+      await workStore.deleteEvent(snapshot.id);
+      targetEl?.classList.remove('cal-event-peeling');
+      hoverCard.visible = false;
+      hoverCard.peeling = false;
+      hoverCard.event = null;
+      hoverCard.sourceEl = null;
+      calendarRef.value?.getApi()?.refetchEvents();
+
+      clearUndoTimer();
+      undoBar.snapshot = snapshot;
+      undoBar.key += 1;
+      undoBar.visible = true;
+      undoTimer = setTimeout(() => {
+        undoBar.visible = false;
+        undoBar.snapshot = null;
+        undoTimer = null;
+      }, 5000);
+    } catch {
+      targetEl?.classList.remove('cal-event-peeling');
+      hoverCard.peeling = false;
+      window.$message?.error('删除日程失败');
+    }
+  }, 460);
+}
+
+async function handleUndoDelete() {
+  const snap = undoBar.snapshot;
+  closeUndoBar();
+  if (!snap) return;
+  await workStore.addEvent(snap);
+  calendarRef.value?.getApi()?.refetchEvents();
+  window.$message?.success(`已撤销删除，恢复日程「${snap.title}」`);
+}
+
 onBeforeUnmount(() => {
   clearHoverTimer();
+  clearUndoTimer();
+  if (peelFinishTimer) {
+    clearTimeout(peelFinishTimer);
+    peelFinishTimer = null;
+  }
 });
 
 // ---------------- FullCalendar 配置 ----------------
@@ -270,11 +361,7 @@ const calendarOptions = ref<CalendarOptions>({
   },
   events(fetchInfo, success) {
     workStore.fullCalendarEvents(fetchInfo, rawEvents => {
-      const filtered = rawEvents.filter(item => {
-        const ev = item.extendedProps?.event as Sct.CalEvent | undefined;
-        return !ev || activeCategories.value.has(ev.category);
-      });
-      success(filtered);
+      success(rawEvents);
     });
   },
   eventContent(arg: EventContentArg) {
@@ -306,14 +393,14 @@ const calendarOptions = ref<CalendarOptions>({
     openCreate(info.dateStr.slice(0, 10), info.date.getHours() || 14, info.date.getMinutes());
   },
   eventClick(info: EventClickArg) {
-    hoverCard.visible = false;
+    dismissHoverPopover();
     openDetail(info.event.id, info.event.extendedProps?.event ?? null);
   },
   eventMouseEnter(info: EventHoveringArg) {
-    if (isDraggingEvent.value || moveConfirm.visible) return;
+    if (isDraggingEvent.value || moveConfirm.visible || hoverCard.peeling) return;
     const ev = info.event.extendedProps?.event as Sct.CalEvent | undefined;
     if (!ev) return;
-    showHoverPopover(ev, info.el);
+    scheduleShowHoverPopover(ev, info.el);
   },
   eventMouseLeave() {
     scheduleHideHoverPopover();
@@ -495,8 +582,14 @@ function openDetail(_id: string, ev: Sct.CalEvent | null) {
 
 async function quickMarkDone(ev: Sct.CalEvent) {
   await workStore.setEventStatus(ev.id, '已完成');
-  hoverCard.visible = false;
+  dismissHoverPopover();
   window.$message?.success(`「${ev.title}」已标记为已完成`);
+}
+
+async function quickRestorePlan(ev: Sct.CalEvent) {
+  await workStore.setEventStatus(ev.id, '计划');
+  dismissHoverPopover();
+  window.$message?.success(`「${ev.title}」已恢复为计划中`);
 }
 
 // ---------------- 今日/本周速览 ----------------
@@ -622,48 +715,6 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
         </div>
       </div>
 
-      <!-- 次级日程类型快速筛选条 -->
-      <div
-        class="flex flex-wrap items-center justify-between gap-8px border-b border-[var(--sct-border)] px-18px py-8px"
-        style="background: var(--sct-soft)"
-      >
-        <div class="flex flex-wrap items-center gap-6px">
-          <span class="mr-2px text-11px font-semibold" style="color: var(--sct-muted)">
-            {{ $t('sct.calendar.scheduleType') }}：
-          </span>
-          <button
-            v-for="(c, cat) in EVENT_CATEGORY_COLORS"
-            :key="cat"
-            type="button"
-            class="cal-type-pill"
-            :style="{
-              borderColor: activeCategories.has(cat) ? `${c.color}55` : 'var(--sct-border)',
-              backgroundColor: activeCategories.has(cat) ? c.soft : 'var(--sct-container)',
-              color: activeCategories.has(cat) ? c.color : 'var(--sct-muted)',
-              opacity: activeCategories.has(cat) ? 1 : 0.65
-            }"
-            @click="toggleCategoryFilter(cat)"
-          >
-            <span class="inline-block size-6px rounded-full" :style="{ background: c.color }" />
-            <span>{{ tCategory(cat) }}</span>
-          </button>
-          <NButton
-            v-if="activeCategories.size < Object.keys(EVENT_CATEGORY_COLORS).length"
-            size="tiny"
-            secondary
-            type="primary"
-            class="ml-4px"
-            @click="resetCategoryFilter"
-          >
-            <template #icon><SvgIcon icon="lucide:rotate-ccw" class="text-11px" /></template>
-            {{ $t('sct.calendar.showAll') }}
-          </NButton>
-        </div>
-        <span class="hidden text-11px text-gray-400 xl:inline">
-          {{ $t('sct.calendar.filterTip') }}
-        </span>
-      </div>
-
       <!-- 日历主网格 -->
       <div class="nuxt-cal-body min-h-0 flex-1" @pointerdown.capture="handleCalendarPointerDown">
         <FullCalendar ref="calendarRef" :options="calendarOptions" />
@@ -703,7 +754,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
             :key="ev.id"
             class="cal-side-card group flex cursor-pointer items-stretch gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-container)] p-10px transition"
             @click="openDetail(ev.id, ev)"
-            @mouseenter="showHoverPopover(ev, $event.currentTarget as HTMLElement)"
+            @mouseenter="scheduleShowHoverPopover(ev, $event.currentTarget as HTMLElement)"
             @mouseleave="scheduleHideHoverPopover"
           >
             <!-- 内置垂直胶囊色带 -->
@@ -812,6 +863,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
         <div
           v-if="hoverCard.visible && hoverCard.event"
           class="nuxt-cal-popover"
+          :class="{ 'nuxt-cal-popover--peeling': hoverCard.peeling }"
           :style="{ left: `${hoverCard.x}px`, top: `${hoverCard.y}px` }"
           @mouseenter="onPopoverMouseEnter"
           @mouseleave="onPopoverMouseLeave"
@@ -885,29 +937,70 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
                 </div>
               </div>
 
-              <!-- 悬浮窗快捷操作栏 -->
-              <div class="mt-10px flex items-center justify-end gap-6px border-t border-[var(--sct-border)] pt-8px">
-                <NButton size="tiny" quaternary @click="openDetail(hoverCard.event.id, hoverCard.event)">
-                  <template #icon><SvgIcon icon="lucide:eye" /></template>
-                  {{ $t('sct.common.detail') }}
-                </NButton>
-                <NButton size="tiny" secondary @click="openEditEvent(hoverCard.event)">
-                  <template #icon><SvgIcon icon="lucide:pencil" /></template>
-                  {{ $t('common.edit') }}
-                </NButton>
+              <!-- 悬浮窗快捷操作栏（详情仅图标 · 编辑 · 完成/恢复计划 · 最右删除图标含 Peel 掀纸动画） -->
+              <div class="mt-10px flex items-center justify-between gap-6px border-t border-[var(--sct-border)] pt-8px">
+                <div class="flex items-center gap-6px">
+                  <NButton
+                    size="tiny"
+                    quaternary
+                    :title="$t('sct.common.detail')"
+                    @click="openDetail(hoverCard.event.id, hoverCard.event)"
+                  >
+                    <template #icon><SvgIcon icon="lucide:eye" /></template>
+                  </NButton>
+                  <NButton size="tiny" secondary @click="openEditEvent(hoverCard.event)">
+                    <template #icon><SvgIcon icon="lucide:pencil" /></template>
+                    {{ $t('common.edit') }}
+                  </NButton>
+                  <NButton
+                    v-if="hoverCard.event.status !== '已完成'"
+                    size="tiny"
+                    type="primary"
+                    secondary
+                    @click="quickMarkDone(hoverCard.event)"
+                  >
+                    <template #icon><SvgIcon icon="lucide:check" /></template>
+                    {{ $t('sct.common.done') }}
+                  </NButton>
+                  <NButton v-else size="tiny" type="warning" secondary @click="quickRestorePlan(hoverCard.event)">
+                    <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+                    {{ isEn ? 'Restore' : '恢复计划' }}
+                  </NButton>
+                </div>
                 <NButton
-                  v-if="hoverCard.event.status !== '已完成'"
                   size="tiny"
-                  type="primary"
-                  secondary
-                  @click="quickMarkDone(hoverCard.event)"
+                  quaternary
+                  type="error"
+                  :title="isEn ? 'Delete Event' : '删除此日程'"
+                  @click="triggerPeelDelete(hoverCard.event)"
                 >
-                  <template #icon><SvgIcon icon="lucide:check" /></template>
-                  {{ $t('sct.common.done') }}
+                  <template #icon><SvgIcon icon="lucide:trash-2" /></template>
                 </NButton>
               </div>
             </div>
           </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 5 秒撤销删除浮动条 -->
+    <Teleport to="body">
+      <Transition name="cal-undo">
+        <div v-if="undoBar.visible && undoBar.snapshot" :key="undoBar.key" class="cal-undo-bar">
+          <div class="flex items-center gap-10px">
+            <SvgIcon icon="lucide:trash-2" class="text-14px text-[#d43030]" />
+            <span class="max-w-220px truncate text-12px font-medium text-[var(--sct-ink)]">
+              已删除「{{ undoBar.snapshot.title }}」
+            </span>
+            <NButton size="tiny" type="primary" secondary @click="handleUndoDelete">
+              <template #icon><SvgIcon icon="lucide:undo-2" /></template>
+              撤销删除
+            </NButton>
+            <button type="button" class="text-12px text-gray-400 hover:text-gray-600" @click="closeUndoBar">
+              <SvgIcon icon="lucide:x" />
+            </button>
+          </div>
+          <div class="cal-undo-bar__progress" />
         </div>
       </Transition>
     </Teleport>
@@ -1112,12 +1205,13 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 }
 
-/* 悬浮小弹窗（Nuxt UI Popover 风格） */
+/* 悬浮小弹窗（Nuxt UI Popover 风格 + Peel 掀纸撕掉动效） */
 .nuxt-cal-popover {
   position: fixed;
   z-index: 3200;
-  width: 308px;
+  width: 316px;
   padding: 12px 14px;
+  overflow: hidden;
   background: var(--sct-container);
   border: 1px solid var(--sct-border);
   border-radius: 14px;
@@ -1125,6 +1219,140 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
     0 12px 32px -4px rgba(15, 23, 42, 0.14),
     0 4px 12px -2px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(10px);
+  transform-origin: right center;
+  will-change: transform, opacity, clip-path;
+}
+
+.nuxt-cal-popover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    102deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.78) 42%,
+    rgba(15, 23, 42, 0.16) 52%,
+    rgba(255, 255, 255, 0) 64%
+  );
+  transform: translateX(-110%);
+}
+
+.nuxt-cal-popover--peeling {
+  pointer-events: none;
+  animation: cal-peel-card 460ms cubic-bezier(0.32, 0.04, 0.24, 1) forwards;
+}
+
+.nuxt-cal-popover--peeling::after {
+  opacity: 1;
+  animation: cal-peel-sheen 440ms cubic-bezier(0.32, 0.04, 0.24, 1) forwards;
+}
+
+@keyframes cal-peel-card {
+  0% {
+    clip-path: inset(0 0 0 0 round 14px);
+    transform: perspective(900px) translate3d(0, 0, 0) rotateY(0deg) rotateZ(0deg) scale(1);
+    opacity: 1;
+  }
+  26% {
+    clip-path: inset(0 0 0 4% round 14px);
+    transform: perspective(900px) translate3d(12px, -5px, 0) rotateY(15deg) rotateZ(2.2deg) scale(1.015);
+    box-shadow: -18px 18px 34px rgba(15, 23, 42, 0.22);
+    opacity: 0.98;
+  }
+  70% {
+    clip-path: inset(0 0 0 58% round 14px);
+    transform: perspective(900px) translate3d(68px, -16px, 0) rotateY(44deg) rotateZ(7.5deg) scale(0.92);
+    box-shadow: -22px 20px 30px rgba(15, 23, 42, 0.16);
+    opacity: 0.72;
+  }
+  100% {
+    clip-path: inset(0 0 0 100% round 14px);
+    transform: perspective(900px) translate3d(132px, -28px, 0) rotateY(68deg) rotateZ(13deg) scale(0.82);
+    opacity: 0;
+  }
+}
+
+@keyframes cal-peel-sheen {
+  0% {
+    transform: translateX(-85%);
+  }
+  100% {
+    transform: translateX(115%);
+  }
+}
+
+:deep(.cal-event-peeling) {
+  pointer-events: none !important;
+  transform-origin: right center;
+  animation: cal-event-peel-strip 440ms cubic-bezier(0.32, 0.04, 0.24, 1) forwards;
+}
+
+@keyframes cal-event-peel-strip {
+  0% {
+    clip-path: inset(0 0 0 0);
+    transform: perspective(600px) translateX(0) rotateY(0deg) rotateZ(0deg);
+    opacity: 1;
+  }
+  35% {
+    clip-path: inset(0 0 0 22%);
+    transform: perspective(600px) translateX(10px) translateY(-3px) rotateY(22deg) rotateZ(3deg);
+    opacity: 0.9;
+  }
+  100% {
+    clip-path: inset(0 0 0 100%);
+    transform: perspective(600px) translateX(46px) translateY(-10px) rotateY(64deg) rotateZ(10deg);
+    opacity: 0;
+  }
+}
+
+/* 5 秒撤销删除浮动条 */
+.cal-undo-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 3300;
+  transform: translateX(-50%);
+  overflow: hidden;
+  padding: 9px 14px 11px;
+  background: var(--sct-container);
+  border: 1px solid var(--sct-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+}
+
+.cal-undo-bar__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2.5px;
+  width: 100%;
+  background: var(--sct-accent, #a81c24);
+  transform-origin: left center;
+  animation: cal-undo-countdown 5s linear forwards;
+}
+
+@keyframes cal-undo-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.cal-undo-enter-active,
+.cal-undo-leave-active {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.cal-undo-enter-from,
+.cal-undo-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 12px);
 }
 
 .cal-pop-enter-active,

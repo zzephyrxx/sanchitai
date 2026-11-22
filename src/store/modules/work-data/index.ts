@@ -18,6 +18,7 @@ import { computeDefaultFullDate, normalizeMemberRecord } from '@/utils/member-st
 import { expandRecurrence } from '@/utils/recurrence';
 import { useDexieLive } from '@/hooks/common/dexie';
 import { db, pushBackupRing } from '@/db/db';
+import { DEFAULT_DOC_TEMPLATES } from '@/db/seed';
 import { SetupStoreId } from '@/enum';
 
 /** 流转到新阶段时，按节点库初始化该阶段材料清单（未开始），保留已有材料状态 */
@@ -832,11 +833,61 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await db.talks.delete(id);
   }
 
-  // ---------------- 文档 ----------------
+  // ---------------- 文档与模板库 ----------------
+  async function saveDocTemplate(input: Omit<Sct.DocTemplate, 'id'> & { id?: string }) {
+    const id = input.id ?? `tpl-${nanoid(8)}`;
+    await guardWrite(
+      db.docTemplates.put(
+        plain({
+          ...input,
+          id,
+          identity: 'secretary'
+        } as Sct.DocTemplate)
+      ),
+      '文档模板'
+    );
+    return id;
+  }
+
+  async function deleteDocTemplate(id: string) {
+    await db.docTemplates.delete(id);
+  }
+
+  async function restoreDefaultDocTemplates() {
+    await guardWrite(
+      db.docTemplates.bulkPut(DEFAULT_DOC_TEMPLATES.map(t => plain({ ...t, identity: 'secretary' }))),
+      '恢复内置模板'
+    );
+  }
+
   async function addDoc(input: Partial<Sct.Doc> & Pick<Sct.Doc, 'title' | 'body' | 'created_at'>) {
     const id = input.id ?? `doc-${nanoid(8)}`;
-    await guardWrite(db.docs.put(plain({ ...input, id, identity: 'secretary' } as Sct.Doc)), '文档');
+    const nowIso = dayjs().toISOString();
+    await guardWrite(
+      db.docs.put(
+        plain({
+          ...input,
+          id,
+          updated_at: input.updated_at ?? nowIso,
+          identity: 'secretary'
+        } as Sct.Doc)
+      ),
+      '文档'
+    );
     return id;
+  }
+
+  async function updateDoc(id: string, patch: Partial<Sct.Doc>) {
+    await guardWrite(
+      db.docs.update(
+        id,
+        plain({
+          ...patch,
+          updated_at: dayjs().toISOString()
+        })
+      ),
+      '文档'
+    );
   }
 
   async function deleteDoc(id: string) {
@@ -1050,7 +1101,11 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     updateDevStage,
     addTalk,
     deleteTalk,
+    saveDocTemplate,
+    deleteDocTemplate,
+    restoreDefaultDocTemplates,
     addDoc,
+    updateDoc,
     deleteDoc,
     addPointRecord,
     updatePointRecord,

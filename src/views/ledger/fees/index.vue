@@ -25,6 +25,31 @@ const filteredFeeMembers = computed(() => {
   );
 });
 
+const feePagination = reactive({
+  page: 1,
+  pageSize: 15,
+  pageSizes: [15, 25, 40, 60]
+});
+
+watch(searchKeyword, () => {
+  feePagination.page = 1;
+});
+
+watch(
+  () => filteredFeeMembers.value.length,
+  total => {
+    const maxPage = Math.max(1, Math.ceil(total / feePagination.pageSize));
+    if (feePagination.page > maxPage) {
+      feePagination.page = maxPage;
+    }
+  }
+);
+
+const pagedFeeMembers = computed(() => {
+  const start = (feePagination.page - 1) * feePagination.pageSize;
+  return filteredFeeMembers.value.slice(start, start + feePagination.pageSize);
+});
+
 const currentMonth = dayjs().format('YYYY-MM');
 /** 展示的月份列：近 6 个月 */
 const months = computed(() => {
@@ -579,7 +604,7 @@ const owedBadges = computed(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="m in filteredFeeMembers" :key="m.id">
+            <tr v-for="m in pagedFeeMembers" :key="m.id">
               <template v-for="colKey in orderedFeeCols" :key="`${m.id}-${colKey}`">
                 <td v-if="colKey === 'name'" class="fee-td fee-td--name" :style="feeColStyle(colKey)">
                   <div class="flex items-center gap-6px">
@@ -699,13 +724,27 @@ const owedBadges = computed(() => {
           </tbody>
         </table>
       </div>
-      <div class="mt-8px text-12px text-gray-400">
-        全期欠缴人员（含历史月份，共 {{ Object.keys(owedBadges).length }} 人）：{{
-          feeMembers
-            .filter(m => owedBadges[m.id])
-            .map(m => m.name)
-            .join('、') || '无'
-        }}
+      <div class="mt-12px flex flex-wrap items-center justify-between gap-10px">
+        <div class="text-12px text-gray-400">
+          全期欠缴人员（含历史月份，共 {{ Object.keys(owedBadges).length }} 人）：{{
+            feeMembers
+              .filter(m => owedBadges[m.id])
+              .map(m => m.name)
+              .join('、') || '无'
+          }}
+        </div>
+        <NPagination
+          v-model:page="feePagination.page"
+          v-model:page-size="feePagination.pageSize"
+          :item-count="filteredFeeMembers.length"
+          :page-sizes="feePagination.pageSizes"
+          show-size-picker
+          size="small"
+        >
+          <template #prefix="{ itemCount }">
+            <span class="text-12px text-gray-400">{{ bi(`共 ${itemCount} 人`, `Total ${itemCount}`) }}</span>
+          </template>
+        </NPagination>
       </div>
     </NCard>
 

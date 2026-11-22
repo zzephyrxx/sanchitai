@@ -521,12 +521,13 @@ const weekCategoryCount = computed(() => {
         </div>
 
         <!-- 待办提醒中心 -->
-        <NCard
-          v-else-if="w.id === 'reminders'"
-          :bordered="false"
-          class="rounded-16px"
-          :title="bi('待办提醒中心', 'Action & Reminder Center')"
-        >
+        <NCard v-else-if="w.id === 'reminders'" :bordered="false" class="rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:bell-ring" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('待办提醒中心', 'Action & Reminder Center') }}</span>
+            </div>
+          </template>
           <template #header-extra>
             <span class="text-12px text-gray-400">
               {{
@@ -608,12 +609,13 @@ const weekCategoryCount = computed(() => {
         </NCard>
 
         <!-- 本月党费及以下卡片：自适应每行 3 个 -->
-        <NCard
-          v-else-if="w.id === 'feeRing'"
-          :bordered="false"
-          class="h-full rounded-16px"
-          :title="bi('本月党费', 'Monthly Dues')"
-        >
+        <NCard v-else-if="w.id === 'feeRing'" :bordered="false" class="h-full rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:wallet" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('本月党费', 'Monthly Dues') }}</span>
+            </div>
+          </template>
           <div class="flex items-center justify-around py-12px">
             <div
               class="relative size-136px rounded-full"
@@ -653,12 +655,13 @@ const weekCategoryCount = computed(() => {
           </div>
         </NCard>
 
-        <NCard
-          v-else-if="w.id === 'heatmap'"
-          :bordered="false"
-          class="h-full rounded-16px"
-          :title="bi('近半年日程热力', '6-Month Schedule Heatmap')"
-        >
+        <NCard v-else-if="w.id === 'heatmap'" :bordered="false" class="h-full rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:calendar-range" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('近半年日程热力', '6-Month Schedule Heatmap') }}</span>
+            </div>
+          </template>
           <template #header-extra>
             <span class="text-11px text-gray-400">
               {{ bi(`近 26 周 · ${heat.totalEvents} 项`, `26w · ${heat.totalEvents}`) }}
@@ -714,21 +717,23 @@ const weekCategoryCount = computed(() => {
           </div>
         </NCard>
 
-        <NCard
-          v-else-if="w.id === 'feeTrend'"
-          :bordered="false"
-          class="h-full rounded-16px"
-          :title="bi('近 6 个月党费缴纳率', '6-Month Dues Collection Rate')"
-        >
+        <NCard v-else-if="w.id === 'feeTrend'" :bordered="false" class="h-full rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:trending-up" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('近 6 个月党费缴纳率', '6-Month Dues Collection Rate') }}</span>
+            </div>
+          </template>
           <VChart class="h-190px" :option="feeOption" autoresize />
         </NCard>
 
-        <NCard
-          v-else-if="w.id === 'stageBars'"
-          :bordered="false"
-          class="h-full rounded-16px"
-          :title="bi('发展阶段分布', 'Development Stage Distribution')"
-        >
+        <NCard v-else-if="w.id === 'stageBars'" :bordered="false" class="h-full rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:git-branch" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('发展阶段分布', 'Development Stage Distribution') }}</span>
+            </div>
+          </template>
           <div class="flex flex-col gap-12px py-6px">
             <div v-for="row in stageBars" :key="row.stage" class="flex items-center gap-10px">
               <span class="w-84px truncate text-right text-12px text-gray-500">{{ tMemberType(row.stage) }}</span>
@@ -743,12 +748,13 @@ const weekCategoryCount = computed(() => {
           </div>
         </NCard>
 
-        <NCard
-          v-else-if="w.id === 'categoryBars'"
-          :bordered="false"
-          class="h-full rounded-16px"
-          :title="bi('台历事项类别', 'Calendar Event Categories')"
-        >
+        <NCard v-else-if="w.id === 'categoryBars'" :bordered="false" class="h-full rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:tags" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('台历事项类别', 'Calendar Event Categories') }}</span>
+            </div>
+          </template>
           <div class="flex flex-col gap-10px py-6px">
             <div v-for="row in categoryBars" :key="row.cat" class="flex items-center gap-10px">
               <span class="w-76px truncate text-right text-12px text-gray-500">{{ tCategory(row.cat) }}</span>
@@ -763,12 +769,13 @@ const weekCategoryCount = computed(() => {
           </div>
         </NCard>
 
-        <NCard
-          v-else-if="w.id === 'weekOverview'"
-          :bordered="false"
-          class="h-full rounded-16px"
-          :title="bi('本周类别速览', 'Weekly Category Overview')"
-        >
+        <NCard v-else-if="w.id === 'weekOverview'" :bordered="false" class="h-full rounded-16px">
+          <template #header>
+            <div class="flex items-center gap-7px">
+              <SvgIcon icon="lucide:bar-chart-3" class="text-15px text-[var(--sct-ink)] opacity-75" />
+              <span>{{ bi('本周类别速览', 'Weekly Category Overview') }}</span>
+            </div>
+          </template>
           <EmptyFancy
             v-if="!weekCategoryCount.length"
             emoji="tea"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { NPopconfirm } from 'naive-ui';
 import { saveFileWithPicker } from '@/utils/save-file';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
@@ -184,6 +184,31 @@ const filteredCards = computed(() =>
   )
 );
 
+const policyPagination = reactive({
+  page: 1,
+  pageSize: 12,
+  pageSizes: [12, 24, 36]
+});
+
+watch([activeCategory, keyword], () => {
+  policyPagination.page = 1;
+});
+
+watch(
+  () => filteredCards.value.length,
+  total => {
+    const maxPage = Math.max(1, Math.ceil(total / policyPagination.pageSize));
+    if (policyPagination.page > maxPage) {
+      policyPagination.page = maxPage;
+    }
+  }
+);
+
+const pagedPolicyCards = computed(() => {
+  const start = (policyPagination.page - 1) * policyPagination.pageSize;
+  return filteredCards.value.slice(start, start + policyPagination.pageSize);
+});
+
 // ---------------- 用户导入文件（IndexedDB blob） ----------------
 interface PolicyFile {
   id: string;
@@ -329,18 +354,22 @@ const relatedTag = computed<Record<string, string>>(() => ({
 
       <!-- Tab 1：政策文件与法规要点（一行三列） -->
       <div v-if="activeMainTab === 'rules'">
-        <NTabs v-model:value="activeCategory" type="segment" size="small" class="mb-16px">
-          <NTab
-            v-for="cat in POLICY_CATEGORIES"
-            :key="cat"
-            :name="cat"
-            :tab="cat === '全部' ? `${bi('全部', 'All')}（${BUILT_IN.length}）` : tKnowledgeCat(cat)"
-          />
-        </NTabs>
+        <div class="mb-16px flex justify-center">
+          <div class="lib-cat-tabs">
+            <NTabs v-model:value="activeCategory" type="segment" size="small">
+              <NTab
+                v-for="cat in POLICY_CATEGORIES"
+                :key="cat"
+                :name="cat"
+                :tab="cat === '全部' ? `${bi('全部', 'All')}（${BUILT_IN.length}）` : tKnowledgeCat(cat)"
+              />
+            </NTabs>
+          </div>
+        </div>
 
         <div class="grid grid-cols-1 gap-14px md:grid-cols-2 lg:grid-cols-3">
           <div
-            v-for="card in filteredCards"
+            v-for="card in pagedPolicyCards"
             :key="card.id"
             class="policy-card flex flex-col justify-between rounded-12px p-16px"
           >
@@ -369,6 +398,21 @@ const relatedTag = computed<Record<string, string>>(() => ({
               </NButton>
             </div>
           </div>
+        </div>
+
+        <div class="mt-16px flex justify-end">
+          <NPagination
+            v-model:page="policyPagination.page"
+            v-model:page-size="policyPagination.pageSize"
+            :item-count="filteredCards.length"
+            :page-sizes="policyPagination.pageSizes"
+            show-size-picker
+            size="small"
+          >
+            <template #prefix="{ itemCount }">
+              <span class="text-12px text-gray-400">{{ bi(`共 ${itemCount} 条`, `Total ${itemCount}`) }}</span>
+            </template>
+          </NPagination>
         </div>
       </div>
 
@@ -440,6 +484,15 @@ const relatedTag = computed<Record<string, string>>(() => ({
 </template>
 
 <style scoped>
+.lib-cat-tabs {
+  width: 70%;
+  max-width: 100%;
+}
+@media (max-width: 960px) {
+  .lib-cat-tabs {
+    width: 100%;
+  }
+}
 .policy-card {
   background: var(--sct-soft);
   border: 1px solid var(--sct-border);

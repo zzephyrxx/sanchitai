@@ -21,6 +21,8 @@ const SEED = seedJson as unknown as {
   docTemplates: Sct.DocTemplate[];
 };
 
+export const DEFAULT_DOC_TEMPLATES: Sct.DocTemplate[] = SEED.docTemplates;
+
 /** 给所有行打上身份域（v1 固定党支部书记） */
 function withIdentity<T>(rows: T[]): (T & { identity: string })[] {
   return rows.map(r => ({ ...r, identity: 'secretary' }));

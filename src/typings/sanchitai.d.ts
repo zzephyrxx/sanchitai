@@ -159,8 +159,10 @@ declare namespace Sct {
     event_id?: string;
     member_id?: string;
     title: string;
+    category?: string;
     body: string;
     created_at: string;
+    updated_at?: string;
     identity?: string;
   }
 

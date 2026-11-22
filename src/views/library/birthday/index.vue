@@ -1,19 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import dayjs from 'dayjs';
 import { NPopconfirm } from 'naive-ui';
-import { useWorkDataStore } from '@/store/modules/work-data';
-import { useSctI18n } from '@/hooks/common/sct-i18n';
-import {
-  H,
-  TEMPLATE_LIST,
-  TEMPLATE_MAP,
-  W,
-  partyAge,
-  type PbcState
-} from '@/utils/pbc/templates';
-import { ensureReady, paint, preview } from '@/utils/pbc/render';
+import dayjs from 'dayjs';
 import {
   batchExportZip,
   batchSequential,
@@ -21,9 +10,14 @@ import {
   downloadSheet,
   printSheet,
   saveBlob,
-  sheetCanvas,
-  type PbcRosterRow
+  sheetCanvas
 } from '@/utils/pbc/export';
+import type { PbcRosterRow } from '@/utils/pbc/export';
+import { ensureReady, paint, preview } from '@/utils/pbc/render';
+import { H, TEMPLATE_LIST, TEMPLATE_MAP, W, partyAge } from '@/utils/pbc/templates';
+import type { PbcState } from '@/utils/pbc/templates';
+import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 
 defineOptions({ name: 'PoliticalBirthdayPage' });
 
@@ -142,9 +136,7 @@ function setThumbRef(id: string, el: unknown) {
 // ---------------- 在册党员联动 ----------------
 const currentMonthMm = dayjs().format('MM');
 
-const partyMembers = computed(() =>
-  workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员')
-);
+const partyMembers = computed(() => workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员'));
 
 const thisMonthBirthdayMembers = computed(() =>
   partyMembers.value.filter(m => {
@@ -572,7 +564,12 @@ async function handleBatchExport() {
           <div>
             <div class="text-15px font-bold">{{ bi('政治生日贺卡工作坊', 'Political Birthday Card Studio') }}</div>
             <div class="text-11px text-gray-400">
-              {{ bi('6 套中式党建模板 · 支持台账选人与批量拼版打印', '6 Party templates · Roster picker & A4 batch imposition') }}
+              {{
+                bi(
+                  '6 套中式党建模板 · 支持台账选人与批量拼版打印',
+                  '6 Party templates · Roster picker & A4 batch imposition'
+                )
+              }}
             </div>
           </div>
         </div>
@@ -629,7 +626,13 @@ async function handleBatchExport() {
           />
         </div>
 
-        <NForm label-placement="left" label-width="84" size="small" :show-feedback="false" class="flex flex-col gap-10px">
+        <NForm
+          label-placement="left"
+          label-width="84"
+          size="small"
+          :show-feedback="false"
+          class="flex flex-col gap-10px"
+        >
           <NFormItem label="党员姓名">
             <NInput v-model:value="state.name" placeholder="内页显示为「×× 同志」" />
           </NFormItem>
@@ -692,7 +695,13 @@ async function handleBatchExport() {
 
       <!-- Tab 2: 版式与元素 -->
       <div v-show="activeTab === 'style'" class="flex flex-col gap-12px">
-        <NForm label-placement="left" label-width="88" size="small" :show-feedback="false" class="flex flex-col gap-10px">
+        <NForm
+          label-placement="left"
+          label-width="88"
+          size="small"
+          :show-feedback="false"
+          class="flex flex-col gap-10px"
+        >
           <NFormItem label="正文字体">
             <NSelect
               v-model:value="state.font"
@@ -740,7 +749,13 @@ async function handleBatchExport() {
           </label>
         </div>
 
-        <NForm label-placement="left" label-width="88" size="small" :show-feedback="false" class="flex flex-col gap-10px">
+        <NForm
+          label-placement="left"
+          label-width="88"
+          size="small"
+          :show-feedback="false"
+          class="flex flex-col gap-10px"
+        >
           <NFormItem label="封面主标题">
             <NInput v-model:value="state.coverTitle" placeholder="政治生日卡" />
           </NFormItem>
@@ -799,67 +814,70 @@ async function handleBatchExport() {
           </NPopconfirm>
         </div>
 
-        <div class="max-h-280px overflow-auto rounded-8px border border-[var(--sct-border)]">
-          <table class="w-full border-collapse text-12px">
-            <thead>
-              <tr class="border-b border-[var(--sct-border)] bg-[var(--sct-soft)] text-left text-gray-500">
-                <th class="w-36px px-6px py-6px text-center">#</th>
-                <th class="px-6px py-6px">
-                  <span class="inline-flex items-center gap-4px">
-                    <SvgIcon icon="lucide:user" class="text-12px" />
-                    <span>{{ bi('姓名', 'Name') }}</span>
-                  </span>
-                </th>
-                <th class="w-115px px-6px py-6px">
-                  <span class="inline-flex items-center gap-4px">
-                    <SvgIcon icon="lucide:calendar" class="text-12px" />
-                    <span>{{ bi('入党日期', 'Join Date') }}</span>
-                  </span>
-                </th>
-                <th class="px-6px py-6px">
-                  <span class="inline-flex items-center gap-4px">
-                    <SvgIcon icon="lucide:sparkles" class="text-12px" />
-                    <span>{{ bi('专属寄语', 'Custom Wishes') }}</span>
-                  </span>
-                </th>
-                <th class="w-32px px-4px py-6px" />
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(row, idx) in roster"
-                :key="idx"
-                class="border-b border-[var(--sct-border)] transition"
-                :class="{ 'bg-[#A81C24]/8': previewRowIdx === idx }"
+        <div class="max-h-360px flex flex-col gap-8px overflow-auto pr-2px">
+          <div
+            v-if="!roster.length"
+            class="rounded-8px border border-dashed border-[var(--sct-border)] py-20px text-center text-12px text-gray-400"
+          >
+            {{
+              bi(
+                '暂无名单，点击上方「载入全部在册党员」或「添加一行」开始编辑',
+                'No entries yet — click Load Members or Add Row above'
+              )
+            }}
+          </div>
+          <div
+            v-for="(row, idx) in roster"
+            :key="idx"
+            class="rounded-10px border border-[var(--sct-border)] bg-[var(--sct-container)] p-9px transition"
+            :class="{ 'border-[#A81C24] bg-[#A81C24]/5': previewRowIdx === idx }"
+          >
+            <!-- 第 1 行：预览序号 + 姓名 + 入党日期 + 删除 -->
+            <div class="flex items-center gap-6px">
+              <button
+                type="button"
+                class="shrink-0 rounded-5px px-7px py-3px text-11px font-bold transition"
+                :class="
+                  previewRowIdx === idx
+                    ? 'bg-[#A81C24] text-white'
+                    : 'bg-[var(--sct-soft)] text-[var(--sct-ink)] hover:text-[#A81C24]'
+                "
+                title="点击在右侧预览该同志贺卡"
+                @click="togglePreviewRow(idx)"
               >
-                <td class="px-4px py-4px text-center">
-                  <button
-                    type="button"
-                    class="rounded-4px px-6px py-2px text-11px font-bold transition"
-                    :class="previewRowIdx === idx ? 'bg-[#A81C24] text-white' : 'bg-[var(--sct-soft)] text-[var(--sct-ink)] hover:text-[#A81C24]'"
-                    title="点击预览该同志贺卡"
-                    @click="togglePreviewRow(idx)"
-                  >
-                    {{ idx + 1 }}
-                  </button>
-                </td>
-                <td class="px-4px py-4px">
-                  <NInput v-model:value="row.name" size="tiny" placeholder="姓名" />
-                </td>
-                <td class="px-4px py-4px">
-                  <NInput v-model:value="row.joinDate" size="tiny" placeholder="YYYY-MM-DD" />
-                </td>
-                <td class="px-4px py-4px">
-                  <NInput v-model:value="row.wishes" size="tiny" placeholder="留空继承默认寄语" />
-                </td>
-                <td class="px-4px py-4px text-center">
-                  <NButton size="tiny" quaternary type="error" @click="removeRosterRow(idx)">
-                    <template #icon><SvgIcon icon="lucide:x" /></template>
-                  </NButton>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                #{{ idx + 1 }}
+              </button>
+              <NInput v-model:value="row.name" size="tiny" class="min-w-0 flex-1" placeholder="姓名">
+                <template #prefix><SvgIcon icon="lucide:user" class="text-12px text-gray-400" /></template>
+              </NInput>
+              <NInput v-model:value="row.joinDate" size="tiny" class="w-122px shrink-0" placeholder="YYYY-MM-DD">
+                <template #prefix><SvgIcon icon="lucide:calendar" class="text-12px text-gray-400" /></template>
+              </NInput>
+              <NButton size="tiny" quaternary type="error" title="移除此行" @click="removeRosterRow(idx)">
+                <template #icon><SvgIcon icon="lucide:x" /></template>
+              </NButton>
+            </div>
+
+            <!-- 第 2 行：独占整行宽度的专属寄语编辑区 -->
+            <div class="mt-7px flex flex-col gap-4px">
+              <div class="flex items-center justify-between text-11px text-gray-500">
+                <span class="inline-flex items-center gap-4px font-medium">
+                  <SvgIcon icon="lucide:pen-line" class="text-12px text-[#A81C24]" />
+                  <span>{{ bi('专属寄语', 'Custom Wishes') }}</span>
+                </span>
+                <span class="text-10px text-gray-400">
+                  {{ row.wishes.trim() ? `${Array.from(row.wishes.trim()).length} 字` : '留空继承默认寄语' }}
+                </span>
+              </div>
+              <NInput
+                v-model:value="row.wishes"
+                type="textarea"
+                size="tiny"
+                :autosize="{ minRows: 2, maxRows: 4 }"
+                placeholder="输入该同志专属政治生日寄语（留空自动继承「内容与模板」中的默认寄语）…"
+              />
+            </div>
+          </div>
         </div>
 
         <div class="rounded-10px bg-[var(--sct-soft)] p-10px">
@@ -894,8 +912,16 @@ async function handleBatchExport() {
             <NTab name="inner" :tab="bi('内页展开页', 'Inner Spread')" />
             <NTab name="sheet" :tab="bi('A4 对折拼版', 'A4 Imposition')" />
           </NTabs>
-          <NTag v-if="previewRowIdx !== null && roster[previewRowIdx]" size="small" type="warning" closable @close="previewRowIdx = null">
-            {{ bi('正在预览名单', 'Previewing') }} #{{ previewRowIdx + 1 }}：{{ roster[previewRowIdx].name || bi('未命名', 'Unnamed') }}
+          <NTag
+            v-if="previewRowIdx !== null && roster[previewRowIdx]"
+            size="small"
+            type="warning"
+            closable
+            @close="previewRowIdx = null"
+          >
+            {{ bi('正在预览名单', 'Previewing') }} #{{ previewRowIdx + 1 }}：{{
+              roster[previewRowIdx].name || bi('未命名', 'Unnamed')
+            }}
           </NTag>
         </div>
 
@@ -928,19 +954,27 @@ async function handleBatchExport() {
             <canvas ref="previewCanvasRef" width="1200" height="933" class="block h-auto max-w-full" />
           </div>
           <span class="text-12px text-gray-400">
-            {{ viewMode === 'cover' ? '展开整幅（1200×933） · 左半为封底，右半为封面' : '展开整幅（1200×933） · 左半为入党誓词，右半为生日寄语与支部落款' }}
+            {{
+              viewMode === 'cover'
+                ? '展开整幅（1200×933） · 左半为封底，右半为封面'
+                : '展开整幅（1200×933） · 左半为入党誓词，右半为生日寄语与支部落款'
+            }}
           </span>
         </div>
 
         <div v-show="viewMode === 'sheet'" class="w-full flex flex-col gap-16px">
           <div>
-            <div class="mb-6px text-12px font-bold text-gray-500">第 1 页 · A4 正面（封面 / 封底对折拼版，含裁切线与对折虚线）</div>
+            <div class="mb-6px text-12px font-bold text-gray-500">
+              第 1 页 · A4 正面（封面 / 封底对折拼版，含裁切线与对折虚线）
+            </div>
             <div class="pbc-canvas-frame">
               <canvas ref="sheetFrontRef" class="block h-auto w-full" />
             </div>
           </div>
           <div>
-            <div class="mb-6px text-12px font-bold text-gray-500">第 2 页 · A4 背面（内页入党誓词 / 政治生日寄语对折拼版）</div>
+            <div class="mb-6px text-12px font-bold text-gray-500">
+              第 2 页 · A4 背面（内页入党誓词 / 政治生日寄语对折拼版）
+            </div>
             <div class="pbc-canvas-frame">
               <canvas ref="sheetBackRef" class="block h-auto w-full" />
             </div>
@@ -949,7 +983,9 @@ async function handleBatchExport() {
       </div>
 
       <!-- 底部导出与打印工具栏 -->
-      <div class="flex flex-wrap items-center justify-between gap-12px rounded-10px bg-[var(--sct-soft)] px-14px py-10px">
+      <div
+        class="flex flex-wrap items-center justify-between gap-12px rounded-10px bg-[var(--sct-soft)] px-14px py-10px"
+      >
         <div class="flex flex-wrap items-center gap-8px">
           <span class="text-12px font-bold text-gray-500">高清导出：</span>
           <NSelect
@@ -1029,7 +1065,10 @@ async function handleBatchExport() {
         <div>
           <div class="mb-4px font-bold text-[#A81C24]">一、制作流程</div>
           <ol class="ma-0 pl-18px">
-            <li>在「内容与模板」中选择 6 套中式党建模板之一，可直接从「支部在册党员」下拉框一键选人自动带出姓名与入党日期。</li>
+            <li>
+              在「内容与模板」中选择 6
+              套中式党建模板之一，可直接从「支部在册党员」下拉框一键选人自动带出姓名与入党日期。
+            </li>
             <li>在「版式与元素」中可微调字体（宋体/楷体/黑体）、字号缩放、烫金明暗、党徽与标准党旗显示开关。</li>
             <li>在「批量名单」中可一键载入支部全部党员或本月过政治生日的党员，打包导出高清 ZIP。</li>
           </ol>
@@ -1037,13 +1076,17 @@ async function handleBatchExport() {
         <div>
           <div class="mb-4px font-bold text-[#A81C24]">二、A4 对折双面打印规范</div>
           <p class="ma-0">
-            拼版按 A4 横向输出 2 页：第 1 页为封面与封底展开，第 2 页为内页（入党誓词 + 政治生日寄语）展开。使用彩色打印机双面打印时请选择<b>「短边翻转」</b>，打印后沿外框裁切标记裁下、沿中线虚线对折即成标准政治生日贺卡。
+            拼版按 A4 横向输出 2 页：第 1 页为封面与封底展开，第 2 页为内页（入党誓词 +
+            政治生日寄语）展开。使用彩色打印机双面打印时请选择
+            <b>「短边翻转」</b>
+            ，打印后沿外框裁切标记裁下、沿中线虚线对折即成标准政治生日贺卡。
           </p>
         </div>
         <div>
           <div class="mb-4px font-bold text-[#A81C24]">三、权威图案与离线隐私</div>
           <p class="ma-0">
-            党徽、党旗采用共产党员网（12371.cn）发布的标准规范图案，保持严格长宽比例与配色；全部画布渲染与 ZIP 打包均在本机浏览器离线完成，不上传任何个人信息。
+            党徽、党旗采用共产党员网（12371.cn）发布的标准规范图案，保持严格长宽比例与配色；全部画布渲染与 ZIP
+            打包均在本机浏览器离线完成，不上传任何个人信息。
           </p>
         </div>
       </div>
@@ -1066,7 +1109,10 @@ async function handleBatchExport() {
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .pbc-tpl-btn:hover {

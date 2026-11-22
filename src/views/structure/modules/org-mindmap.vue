@@ -520,12 +520,6 @@ watch(
               </div>
             </div>
           </div>
-
-          <!-- 快捷添加青年委员按钮 -->
-          <button type="button" class="mm-add-youth-btn" @click="emit('addYouth')">
-            <SvgIcon icon="lucide:plus-circle" class="text-14px" />
-            <span>添加青年委员（可设多名）</span>
-          </button>
         </div>
       </div>
     </div>
@@ -781,30 +775,6 @@ watch(
 
 .mm-node--empty {
   border-style: dashed;
-}
-
-.mm-add-youth-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 258px;
-  padding: 9px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #2563eb;
-  background: var(--sct-container);
-  border: 1.5px dashed rgba(37, 99, 235, 0.45);
-  border-radius: 10px;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.mm-add-youth-btn:hover {
-  border-color: #2563eb;
-  background: var(--sct-info-soft);
 }
 
 .mm-group-card {
