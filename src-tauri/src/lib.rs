@@ -2,26 +2,34 @@ mod local_server;
 
 use local_server::{
     focus_main_window, minimize_main_window, open_system_browser, start_local_server,
-    LocalServerState,
+    LocalServerState, PrefsPatch, SyncEnvelope,
 };
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 fn get_local_bridge_info(state: State<'_, LocalServerState>) -> serde_json::Value {
-    let prefs = state.read_prefs();
-    serde_json::json!({
-        "ok": true,
-        "port": state.port,
-        "bridgeUrl": state.bridge_url(),
-        "defaultOpenMode": prefs.default_open_mode,
-        "desktopAvailable": true
-    })
+    state.build_info_json()
 }
 
 #[tauri::command]
-fn open_in_browser(app: AppHandle, state: State<'_, LocalServerState>) -> Result<String, String> {
+fn pull_sync_data(state: State<'_, LocalServerState>) -> SyncEnvelope {
+    state.read_sync_data()
+}
+
+#[tauri::command]
+fn push_sync_data(state: State<'_, LocalServerState>, payload: serde_json::Value) -> Result<u64, String> {
+    state.write_sync_data(payload)
+}
+
+#[tauri::command]
+fn open_in_browser(
+    app: AppHandle,
+    state: State<'_, LocalServerState>,
+    browser_id: Option<String>,
+) -> Result<String, String> {
+    let target = browser_id.unwrap_or_else(|| state.read_prefs().preferred_browser);
     let url = state.bridge_url();
-    open_system_browser(&url)?;
+    open_system_browser(&url, &target)?;
     minimize_main_window(&app);
     Ok(url)
 }
@@ -32,23 +40,33 @@ fn focus_desktop_window(app: AppHandle) {
 }
 
 #[tauri::command]
-fn set_default_open_mode(state: State<'_, LocalServerState>, mode: String) -> Result<String, String> {
-    let saved = state.write_prefs(&mode)?;
-    Ok(saved.default_open_mode)
+fn set_launch_prefs(
+    state: State<'_, LocalServerState>,
+    default_open_mode: Option<String>,
+    preferred_browser: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let saved = state.update_prefs(PrefsPatch {
+        default_open_mode,
+        preferred_browser,
+    })?;
+    Ok(serde_json::json!({
+        "ok": true,
+        "defaultOpenMode": saved.default_open_mode,
+        "preferredBrowser": saved.preferred_browser
+    }))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let state = start_local_server(app.handle().clone())
-                .map_err(std::io::Error::other)?;
+            let state = start_local_server(app.handle().clone()).map_err(std::io::Error::other)?;
             let prefs = state.read_prefs();
             let launch_url = state.bridge_url();
             app.manage(state);
 
             if prefs.default_open_mode == "browser" {
-                let _ = open_system_browser(&launch_url);
+                let _ = open_system_browser(&launch_url, &prefs.preferred_browser);
                 minimize_main_window(&app.handle().clone());
             } else {
                 focus_main_window(&app.handle().clone());
@@ -58,9 +76,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_local_bridge_info,
+            pull_sync_data,
+            push_sync_data,
             open_in_browser,
             focus_desktop_window,
-            set_default_open_mode
+            set_launch_prefs
         ])
         .run(tauri::generate_context!())
         .expect("error while running 三尺台");

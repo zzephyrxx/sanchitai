@@ -39,11 +39,21 @@ const runtimeStatusLabel = computed(() => {
   return bi('纯网页模式（桌面安装包支持与浏览器无缝双向同步）', 'Standalone Web Mode');
 });
 
+const browserSelectOptions = computed(() =>
+  desktopBridge.installedBrowsers.value.map(b => ({ label: b.name, value: b.id }))
+);
+
 async function handleOpenModeChange(mode: OpenModePref) {
   await desktopBridge.setDefaultOpenMode(mode);
   window.$message?.success(
     mode === 'browser' ? '默认打开方式已设为「浏览器」（下次启动桌面端生效）' : '默认打开方式已设为「桌面端」'
   );
+}
+
+async function handlePreferredBrowserChange(browserId: string) {
+  await desktopBridge.setPreferredBrowser(browserId);
+  const label = desktopBridge.installedBrowsers.value.find(b => b.id === browserId)?.name ?? '系统默认浏览器';
+  window.$message?.success(`已将默认浏览器设为「${label}」`);
 }
 
 // ---------------- 支部名称设置 ----------------
@@ -460,6 +470,17 @@ onMounted(listSnapshots);
                 </span>
               </NRadioButton>
             </NRadioGroup>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-10px">
+            <span class="text-13px font-medium">{{ bi('指定打开浏览器', 'Preferred Browser') }}</span>
+            <div class="w-210px">
+              <NSelect
+                :value="desktopBridge.preferredBrowser.value"
+                :options="browserSelectOptions"
+                size="small"
+                @update:value="v => handlePreferredBrowserChange(String(v))"
+              />
+            </div>
           </div>
           <div
             class="flex flex-wrap items-center justify-between gap-8px rounded-8px bg-[var(--sct-soft)] px-10px py-7px text-12px text-gray-500"

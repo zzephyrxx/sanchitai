@@ -16,17 +16,48 @@ const MAX_HEADER_LINE_BYTES: usize = 8192;
 const MAX_CONCURRENT_CONNS: usize = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserOption {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LaunchPrefs {
-    #[serde(rename = "defaultOpenMode")]
+    #[serde(rename = "defaultOpenMode", default = "default_open_mode_str")]
     pub default_open_mode: String,
+    #[serde(rename = "preferredBrowser", default = "default_browser_str")]
+    pub preferred_browser: String,
+}
+
+fn default_open_mode_str() -> String {
+    "desktop".to_string()
+}
+
+fn default_browser_str() -> String {
+    "system".to_string()
 }
 
 impl Default for LaunchPrefs {
     fn default() -> Self {
         Self {
-            default_open_mode: "desktop".to_string(),
+            default_open_mode: default_open_mode_str(),
+            preferred_browser: default_browser_str(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PrefsPatch {
+    #[serde(rename = "defaultOpenMode")]
+    pub default_open_mode: Option<String>,
+    #[serde(rename = "preferredBrowser")]
+    pub preferred_browser: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OpenBrowserReq {
+    #[serde(rename = "browserId")]
+    browser_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +87,117 @@ fn atomic_write_file(dir: &Path, target: &Path, tmp_name: &str, bytes: &[u8]) ->
     fs::rename(&tmp, target).map_err(|e| e.to_string())
 }
 
+fn sanitize_browser_id(id: &str) -> String {
+    match id.trim().to_ascii_lowercase().as_str() {
+        "chrome" | "edge" | "safari" | "firefox" | "arc" | "brave" => {
+            id.trim().to_ascii_lowercase()
+        }
+        _ => "system".to_string(),
+    }
+}
+
+/// 探测本机已安装的常见浏览器（始终包含「系统默认浏览器」作为首项）
+pub fn detect_installed_browsers() -> Vec<BrowserOption> {
+    let mut list = vec![BrowserOption {
+        id: "system".to_string(),
+        name: "系统默认浏览器".to_string(),
+    }];
+
+    #[cfg(target_os = "macos")]
+    {
+        let candidates: &[(&str, &str, &[&str])] = &[
+            ("chrome", "Google Chrome", &["/Applications/Google Chrome.app"]),
+            ("edge", "Microsoft Edge", &["/Applications/Microsoft Edge.app"]),
+            (
+                "safari",
+                "Safari 浏览器",
+                &[
+                    "/Applications/Safari.app",
+                    "/System/Cryptexes/App/System/Applications/Safari.app",
+                ],
+            ),
+            ("arc", "Arc", &["/Applications/Arc.app"]),
+            ("firefox", "Firefox", &["/Applications/Firefox.app"]),
+            ("brave", "Brave", &["/Applications/Brave Browser.app"]),
+        ];
+        for (id, name, paths) in candidates {
+            if paths.iter().any(|p| Path::new(p).exists()) {
+                list.push(BrowserOption {
+                    id: (*id).to_string(),
+                    name: (*name).to_string(),
+                });
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let candidates: &[(&str, &str)] = &[
+            ("edge", "Microsoft Edge"),
+            ("chrome", "Google Chrome"),
+            ("firefox", "Firefox"),
+            ("brave", "Brave"),
+        ];
+        for (id, name) in candidates {
+            if find_windows_browser_exe(id).is_some() {
+                list.push(BrowserOption {
+                    id: (*id).to_string(),
+                    name: (*name).to_string(),
+                });
+            }
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let candidates: &[(&str, &str, &str)] = &[
+            ("chrome", "Google Chrome", "google-chrome"),
+            ("edge", "Microsoft Edge", "microsoft-edge"),
+            ("firefox", "Firefox", "firefox"),
+            ("brave", "Brave", "brave-browser"),
+        ];
+        for (id, name, bin) in candidates {
+            if Command::new("which")
+                .arg(bin)
+                .output()
+                .is_ok_and(|o| o.status.success())
+            {
+                list.push(BrowserOption {
+                    id: (*id).to_string(),
+                    name: (*name).to_string(),
+                });
+            }
+        }
+    }
+
+    list
+}
+
+#[cfg(target_os = "windows")]
+fn find_windows_browser_exe(browser_id: &str) -> Option<PathBuf> {
+    let rel_paths: &[&str] = match browser_id {
+        "chrome" => &[r"Google\Chrome\Application\chrome.exe"],
+        "edge" => &[r"Microsoft\Edge\Application\msedge.exe"],
+        "firefox" => &[r"Mozilla Firefox\firefox.exe"],
+        "brave" => &[r"BraveSoftware\Brave-Browser\Application\brave.exe"],
+        _ => return None,
+    };
+    let roots = [
+        std::env::var_os("ProgramFiles"),
+        std::env::var_os("ProgramFiles(x86)"),
+        std::env::var_os("LocalAppData"),
+    ];
+    for root in roots.into_iter().flatten() {
+        for rel in rel_paths {
+            let full = PathBuf::from(&root).join(rel);
+            if full.exists() {
+                return Some(full);
+            }
+        }
+    }
+    None
+}
+
 impl LocalServerState {
     pub fn bridge_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
@@ -78,21 +220,30 @@ impl LocalServerState {
                 if p.default_open_mode != "browser" {
                     p.default_open_mode = "desktop".to_string();
                 }
+                p.preferred_browser = sanitize_browser_id(&p.preferred_browser);
                 p
             })
             .unwrap_or_default()
     }
 
-    pub fn write_prefs(&self, mode: &str) -> Result<LaunchPrefs, String> {
-        let normalized = if mode == "browser" {
-            "browser"
-        } else {
-            "desktop"
-        };
-        let prefs = LaunchPrefs {
-            default_open_mode: normalized.to_string(),
-        };
+    pub fn update_prefs(&self, patch: PrefsPatch) -> Result<LaunchPrefs, String> {
         let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        let mut prefs = fs::read_to_string(self.prefs_path())
+            .ok()
+            .and_then(|s| serde_json::from_str::<LaunchPrefs>(&s).ok())
+            .unwrap_or_default();
+
+        if let Some(mode) = patch.default_open_mode {
+            prefs.default_open_mode = if mode == "browser" {
+                "browser".to_string()
+            } else {
+                "desktop".to_string()
+            };
+        }
+        if let Some(browser) = patch.preferred_browser {
+            prefs.preferred_browser = sanitize_browser_id(&browser);
+        }
+
         let content = serde_json::to_vec_pretty(&prefs).map_err(|e| e.to_string())?;
         atomic_write_file(&self.data_dir, &self.prefs_path(), "launch-prefs.json.tmp", &content)?;
         Ok(prefs)
@@ -123,30 +274,82 @@ impl LocalServerState {
         atomic_write_file(&self.data_dir, &self.sync_data_path(), "sync-data.json.tmp", &bytes)?;
         Ok(now_ms)
     }
+
+    pub fn build_info_json(&self) -> serde_json::Value {
+        let prefs = self.read_prefs();
+        let browsers = detect_installed_browsers();
+        serde_json::json!({
+            "ok": true,
+            "port": self.port,
+            "bridgeUrl": self.bridge_url(),
+            "defaultOpenMode": prefs.default_open_mode,
+            "preferredBrowser": prefs.preferred_browser,
+            "browsers": browsers,
+            "desktopAvailable": true
+        })
+    }
 }
 
-pub fn open_system_browser(url: &str) -> Result<(), String> {
+pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
     if !url.starts_with("http://127.0.0.1:") {
         return Err("only loopback URLs are allowed".to_string());
     }
+    let browser = sanitize_browser_id(browser_id);
+
     #[cfg(target_os = "macos")]
     {
+        let app_name = match browser.as_str() {
+            "chrome" => Some("Google Chrome"),
+            "edge" => Some("Microsoft Edge"),
+            "safari" => Some("Safari"),
+            "arc" => Some("Arc"),
+            "firefox" => Some("Firefox"),
+            "brave" => Some("Brave Browser"),
+            _ => None,
+        };
+        if let Some(app) = app_name {
+            let status = Command::new("open").args(["-a", app, url]).status();
+            if status.is_ok_and(|s| s.success()) {
+                return Ok(());
+            }
+        }
         Command::new("open")
             .arg(url)
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
     #[cfg(target_os = "windows")]
     {
+        if browser != "system" {
+            if let Some(exe) = find_windows_browser_exe(&browser) {
+                if Command::new(exe).arg(url).spawn().is_ok() {
+                    return Ok(());
+                }
+            }
+        }
         Command::new("cmd")
             .args(["/C", "start", "", url])
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
     #[cfg(all(unix, not(target_os = "macos")))]
     {
+        let bin = match browser.as_str() {
+            "chrome" => Some("google-chrome"),
+            "edge" => Some("microsoft-edge"),
+            "firefox" => Some("firefox"),
+            "brave" => Some("brave-browser"),
+            _ => None,
+        };
+        if let Some(b) = bin {
+            if Command::new(b).arg(url).spawn().is_ok() {
+                return Ok(());
+            }
+        }
         Command::new("xdg-open")
             .arg(url)
             .spawn()
@@ -260,7 +463,6 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
         }
     }
 
-    // 防御 DNS Rebinding：严格校验 Host 为本机回环地址
     if let Some(ref h) = host {
         if !is_allowed_host(h, state.port) {
             write_http_response(&mut stream, "403 Forbidden", "text/plain", b"Forbidden Host", None);
@@ -275,7 +477,6 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
         return;
     }
 
-    // 防御跨站 CSRF：所有写入/动作 POST 接口必须携带自定义头且 Origin 合法
     if method == "POST" && path_only.starts_with("/__sct_api/") {
         let origin_ok = cors.is_none_or(is_allowed_origin);
         if !origin_ok || !has_local_header {
@@ -310,14 +511,7 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
 
     // ---------------- Local Bridge API ----------------
     if path_only == "/__sct_api/info" && method == "GET" {
-        let prefs = state.read_prefs();
-        let resp = serde_json::json!({
-            "ok": true,
-            "port": state.port,
-            "bridgeUrl": state.bridge_url(),
-            "defaultOpenMode": prefs.default_open_mode,
-            "desktopAvailable": true
-        });
+        let resp = state.build_info_json();
         let bytes = serde_json::to_vec(&resp).unwrap_or_default();
         write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
         return;
@@ -354,10 +548,14 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
     }
 
     if path_only == "/__sct_api/prefs" && method == "POST" {
-        match serde_json::from_slice::<LaunchPrefs>(&body) {
-            Ok(req) => match state.write_prefs(&req.default_open_mode) {
+        match serde_json::from_slice::<PrefsPatch>(&body) {
+            Ok(req) => match state.update_prefs(req) {
                 Ok(saved) => {
-                    let resp = serde_json::json!({ "ok": true, "defaultOpenMode": saved.default_open_mode });
+                    let resp = serde_json::json!({
+                        "ok": true,
+                        "defaultOpenMode": saved.default_open_mode,
+                        "preferredBrowser": saved.preferred_browser
+                    });
                     let bytes = serde_json::to_vec(&resp).unwrap_or_default();
                     write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
                 }
@@ -377,13 +575,17 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
     }
 
     if path_only == "/__sct_api/open-browser" && method == "POST" {
+        let req_browser = serde_json::from_slice::<OpenBrowserReq>(&body)
+            .ok()
+            .and_then(|r| r.browser_id);
+        let target_browser = req_browser.unwrap_or_else(|| state.read_prefs().preferred_browser);
         let url = state.bridge_url();
-        let res = open_system_browser(&url);
+        let res = open_system_browser(&url, &target_browser);
         if res.is_ok() {
             minimize_main_window(&app);
         }
         let resp = match res {
-            Ok(_) => serde_json::json!({ "ok": true, "url": url }),
+            Ok(_) => serde_json::json!({ "ok": true, "url": url, "browser": target_browser }),
             Err(e) => serde_json::json!({ "ok": false, "error": e }),
         };
         let bytes = serde_json::to_vec(&resp).unwrap_or_default();

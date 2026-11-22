@@ -1,9 +1,10 @@
 /**
  * 桌面端 ⇄ 浏览器 双向桥接与本机文件实时同步引擎
  *
- * - 桌面端（Tauri WebView）：通过 Tauri IPC 获取本机 127.0.0.1 微服务地址，支持「在浏览器中打开」
- * - 浏览器（连接本机微服务）：通过同源 /__sct_api/* 与桌面端读写同一份本机文件，支持「返回桌面端」唤醒窗口
- * - 纯网页模式（无桌面端进程）：本地保存默认打开方式偏好，点击按钮在新标签页打开当前页面
+ * - 桌面端（Tauri WebView）：通过 Tauri 原生 IPC 直接读写本机同步文件并唤起指定浏览器，
+ *   不经过跨协议 fetch，兼容 macOS WKWebView 与 Windows WebView2。
+ * - 浏览器（连接本机 127.0.0.1 微服务）：通过同源 /__sct_api/* 与桌面端实时共享本机数据，
+ *   支持「返回桌面端」直接唤醒桌面窗口。
  */
 import { readonly, ref } from 'vue';
 import { exportBackup, replaceDataFromSync } from '@/db/db';
@@ -12,13 +13,23 @@ import type { BackupShape } from '@/db/db';
 export type OpenModePref = 'desktop' | 'browser';
 export type RuntimeMode = 'tauri-desktop' | 'tauri-browser' | 'web-standalone';
 
+export interface BrowserOption {
+  id: string;
+  name: string;
+}
+
 const OPEN_MODE_STORAGE_KEY = 'sct:default-open-mode';
+const PREFERRED_BROWSER_KEY = 'sct:preferred-browser';
+
+const DEFAULT_BROWSERS: BrowserOption[] = [{ id: 'system', name: '系统默认浏览器' }];
 
 interface BridgeInfoResponse {
   ok: boolean;
   port?: number;
   bridgeUrl?: string;
   defaultOpenMode?: OpenModePref;
+  preferredBrowser?: string;
+  browsers?: BrowserOption[];
   desktopAvailable?: boolean;
 }
 
@@ -30,6 +41,11 @@ interface SyncEnvelopeResponse {
 interface TauriInternalsLike {
   invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 }
+
+const LOCAL_POST_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Sct-Local': '1'
+};
 
 function getTauriInternals(): TauriInternalsLike | null {
   const win = window as unknown as { __TAURI_INTERNALS__?: TauriInternalsLike };
@@ -54,9 +70,27 @@ function writeLocalOpenMode(mode: OpenModePref) {
   }
 }
 
+function readLocalPreferredBrowser(): string {
+  try {
+    return localStorage.getItem(PREFERRED_BROWSER_KEY) || 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+function writeLocalPreferredBrowser(browserId: string) {
+  try {
+    localStorage.setItem(PREFERRED_BROWSER_KEY, browserId);
+  } catch {
+    /* ignore */
+  }
+}
+
 const runtimeMode = ref<RuntimeMode>('web-standalone');
 const bridgeUrl = ref('');
 const defaultOpenMode = ref<OpenModePref>(readLocalOpenMode());
+const preferredBrowser = ref<string>(readLocalPreferredBrowser());
+const installedBrowsers = ref<BrowserOption[]>([...DEFAULT_BROWSERS]);
 const syncing = ref(false);
 const switching = ref(false);
 
@@ -79,12 +113,33 @@ async function fetchJsonWithTimeout<T>(url: string, init?: RequestInit, timeoutM
   }
 }
 
-/** 从本机微服务拉取最新数据（若远端时间更新则静默覆盖本地 IndexedDB） */
+function applyBridgeInfo(info: BridgeInfoResponse) {
+  if (info.defaultOpenMode === 'browser' || info.defaultOpenMode === 'desktop') {
+    defaultOpenMode.value = info.defaultOpenMode;
+    writeLocalOpenMode(info.defaultOpenMode);
+  }
+  if (typeof info.preferredBrowser === 'string' && info.preferredBrowser) {
+    preferredBrowser.value = info.preferredBrowser;
+    writeLocalPreferredBrowser(info.preferredBrowser);
+  }
+  if (Array.isArray(info.browsers) && info.browsers.length > 0) {
+    installedBrowsers.value = info.browsers;
+  }
+}
+
+/** 从本机同步文件拉取最新数据（桌面端走原生 IPC，浏览器端走同源 HTTP） */
 export async function pullFromBridge(): Promise<boolean> {
-  if (!bridgeUrl.value || isApplyingRemote) return false;
+  const tauri = getTauriInternals();
+  if ((!tauri && !bridgeUrl.value) || isApplyingRemote) return false;
   syncing.value = true;
   try {
-    const env = await fetchJsonWithTimeout<SyncEnvelopeResponse>(`${bridgeUrl.value}/__sct_api/data`, undefined, 2500);
+    let env: SyncEnvelopeResponse | null = null;
+    if (tauri && runtimeMode.value === 'tauri-desktop') {
+      env = await tauri.invoke<SyncEnvelopeResponse>('pull_sync_data').catch(() => null);
+    } else if (bridgeUrl.value) {
+      env = await fetchJsonWithTimeout<SyncEnvelopeResponse>(`${bridgeUrl.value}/__sct_api/data`, undefined, 2500);
+    }
+
     if (!env || !env.payload || typeof env.updated_at !== 'number') {
       return false;
     }
@@ -95,7 +150,6 @@ export async function pullFromBridge(): Promise<boolean> {
         lastSyncedAt = env.updated_at;
         return true;
       } finally {
-        // 短暂延迟释放锁，避免 liveQuery 响应式回流立刻触发反向 push
         setTimeout(() => {
           isApplyingRemote = false;
         }, 450);
@@ -107,29 +161,36 @@ export async function pullFromBridge(): Promise<boolean> {
   }
 }
 
-const LOCAL_POST_HEADERS = {
-  'Content-Type': 'application/json',
-  'X-Sct-Local': '1'
-};
-
-/** 将当前 IndexedDB 快照推送至本机微服务持久化文件 */
+/** 将当前 IndexedDB 快照推送至本机持久化文件 */
 export async function pushToBridge(): Promise<boolean> {
-  if (!bridgeUrl.value || isApplyingRemote) return false;
+  const tauri = getTauriInternals();
+  if ((!tauri && !bridgeUrl.value) || isApplyingRemote) return false;
   syncing.value = true;
   try {
     const shape = await exportBackup();
-    const res = await fetchJsonWithTimeout<{ ok: boolean; updated_at?: number }>(
-      `${bridgeUrl.value}/__sct_api/data`,
-      {
-        method: 'POST',
-        headers: LOCAL_POST_HEADERS,
-        body: JSON.stringify(shape)
-      },
-      3000
-    );
-    if (res?.ok && typeof res.updated_at === 'number') {
-      lastSyncedAt = res.updated_at;
-      return true;
+    if (tauri && runtimeMode.value === 'tauri-desktop') {
+      const updatedAt = await tauri.invoke<number>('push_sync_data', { payload: shape }).catch(() => null);
+      if (typeof updatedAt === 'number') {
+        lastSyncedAt = updatedAt;
+        return true;
+      }
+      return false;
+    }
+
+    if (bridgeUrl.value) {
+      const res = await fetchJsonWithTimeout<{ ok: boolean; updated_at?: number }>(
+        `${bridgeUrl.value}/__sct_api/data`,
+        {
+          method: 'POST',
+          headers: LOCAL_POST_HEADERS,
+          body: JSON.stringify(shape)
+        },
+        3000
+      );
+      if (res?.ok && typeof res.updated_at === 'number') {
+        lastSyncedAt = res.updated_at;
+        return true;
+      }
     }
     return false;
   } finally {
@@ -139,7 +200,7 @@ export async function pushToBridge(): Promise<boolean> {
 
 /** 防抖推送（供 App 根组件监听业务数据变更后调用） */
 export function schedulePushToBridge() {
-  if (!bridgeUrl.value || isApplyingRemote) return;
+  if (runtimeMode.value === 'web-standalone' || isApplyingRemote) return;
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     pushTimer = null;
@@ -154,18 +215,15 @@ export async function initDesktopBridge(): Promise<void> {
 
   const tauri = getTauriInternals();
   if (tauri) {
+    runtimeMode.value = 'tauri-desktop';
     try {
       const info = await tauri.invoke<BridgeInfoResponse>('get_local_bridge_info');
-      if (info?.ok && info.bridgeUrl) {
-        runtimeMode.value = 'tauri-desktop';
-        bridgeUrl.value = info.bridgeUrl;
-        if (info.defaultOpenMode === 'browser' || info.defaultOpenMode === 'desktop') {
-          defaultOpenMode.value = info.defaultOpenMode;
-          writeLocalOpenMode(info.defaultOpenMode);
-        }
+      if (info?.ok) {
+        if (info.bridgeUrl) bridgeUrl.value = info.bridgeUrl;
+        applyBridgeInfo(info);
       }
     } catch {
-      runtimeMode.value = 'tauri-desktop';
+      /* 保留 tauri-desktop 模式 */
     }
   } else {
     const host = window.location.hostname;
@@ -178,17 +236,13 @@ export async function initDesktopBridge(): Promise<void> {
       if (info?.ok && info.desktopAvailable) {
         runtimeMode.value = 'tauri-browser';
         bridgeUrl.value = window.location.origin;
-        if (info.defaultOpenMode === 'browser' || info.defaultOpenMode === 'desktop') {
-          defaultOpenMode.value = info.defaultOpenMode;
-          writeLocalOpenMode(info.defaultOpenMode);
-        }
+        applyBridgeInfo(info);
       }
     }
   }
 
-  if (bridgeUrl.value) {
+  if (runtimeMode.value !== 'web-standalone') {
     const pulled = await pullFromBridge();
-    // 仅桌面端在首次启动且本机同步文件尚为空时主动种子推送，防止新开浏览器页因超时反向覆盖桌面端数据
     if (!pulled && runtimeMode.value === 'tauri-desktop') {
       await pushToBridge();
     }
@@ -211,33 +265,39 @@ export async function initDesktopBridge(): Promise<void> {
   }
 }
 
-/** 切换到系统浏览器打开（先同步数据再拉起） */
-export async function openInBrowserMode(): Promise<void> {
+/** 切换到指定（或默认）浏览器打开（先同步数据再拉起） */
+export async function openInBrowserMode(overrideBrowserId?: string): Promise<void> {
   if (switching.value) return;
   switching.value = true;
   try {
+    const targetBrowser = overrideBrowserId || preferredBrowser.value || 'system';
+    const browserLabel = installedBrowsers.value.find(b => b.id === targetBrowser)?.name ?? '系统默认浏览器';
     const tauri = getTauriInternals();
-    if (runtimeMode.value === 'tauri-desktop') {
-      await pushToBridge();
+
+    if (runtimeMode.value === 'tauri-desktop' || tauri) {
+      await pushToBridge().catch(() => false);
       if (tauri) {
-        await tauri.invoke('open_in_browser');
-        window.$message?.success('已同步本机数据并在系统默认浏览器中打开');
+        await tauri.invoke('open_in_browser', { browserId: targetBrowser });
+        window.$message?.success(`已同步本机数据并在「${browserLabel}」中打开`);
         return;
       }
       if (bridgeUrl.value) {
         await fetchJsonWithTimeout(
           `${bridgeUrl.value}/__sct_api/open-browser`,
-          { method: 'POST', headers: LOCAL_POST_HEADERS },
+          {
+            method: 'POST',
+            headers: LOCAL_POST_HEADERS,
+            body: JSON.stringify({ browserId: targetBrowser })
+          },
           2000
         );
-        window.$message?.success('已同步本机数据并在系统默认浏览器中打开');
+        window.$message?.success(`已同步本机数据并在「${browserLabel}」中打开`);
         return;
       }
     }
 
-    // 纯网页模式：在新标签页打开，并提示桌面端能力
     window.open(window.location.href, '_blank', 'noopener,noreferrer');
-    window.$message?.info('已在新浏览器标签页中打开（桌面端安装包支持与浏览器双向实时同步切换）');
+    window.$message?.info('已在新浏览器标签页中打开（桌面端安装包支持选择已安装浏览器并实时同步）');
   } catch (err) {
     window.$message?.error(`打开浏览器失败：${(err as Error).message}`);
   } finally {
@@ -250,7 +310,7 @@ export async function returnToDesktopMode(): Promise<void> {
   if (switching.value) return;
   switching.value = true;
   try {
-    await pushToBridge();
+    await pushToBridge().catch(() => false);
     if (bridgeUrl.value) {
       const res = await fetchJsonWithTimeout<{ ok: boolean }>(
         `${bridgeUrl.value}/__sct_api/focus-desktop`,
@@ -276,7 +336,7 @@ export async function setDefaultOpenMode(mode: OpenModePref): Promise<void> {
 
   const tauri = getTauriInternals();
   if (tauri) {
-    await tauri.invoke('set_default_open_mode', { mode: normalized }).catch(() => {});
+    await tauri.invoke('set_launch_prefs', { defaultOpenMode: normalized }).catch(() => {});
   } else if (bridgeUrl.value) {
     await fetchJsonWithTimeout(
       `${bridgeUrl.value}/__sct_api/prefs`,
@@ -290,16 +350,41 @@ export async function setDefaultOpenMode(mode: OpenModePref): Promise<void> {
   }
 }
 
+/** 保存默认用于打开的浏览器（系统默认 / Chrome / Safari / Edge 等） */
+export async function setPreferredBrowser(browserId: string): Promise<void> {
+  const clean = browserId.trim() || 'system';
+  preferredBrowser.value = clean;
+  writeLocalPreferredBrowser(clean);
+
+  const tauri = getTauriInternals();
+  if (tauri) {
+    await tauri.invoke('set_launch_prefs', { preferredBrowser: clean }).catch(() => {});
+  } else if (bridgeUrl.value) {
+    await fetchJsonWithTimeout(
+      `${bridgeUrl.value}/__sct_api/prefs`,
+      {
+        method: 'POST',
+        headers: LOCAL_POST_HEADERS,
+        body: JSON.stringify({ preferredBrowser: clean })
+      },
+      2000
+    );
+  }
+}
+
 export function useDesktopBridge() {
   return {
     runtimeMode: readonly(runtimeMode),
     bridgeUrl: readonly(bridgeUrl),
     defaultOpenMode: readonly(defaultOpenMode),
+    preferredBrowser: readonly(preferredBrowser),
+    installedBrowsers: readonly(installedBrowsers),
     syncing: readonly(syncing),
     switching: readonly(switching),
     openInBrowserMode,
     returnToDesktopMode,
     setDefaultOpenMode,
+    setPreferredBrowser,
     pushToBridge,
     pullFromBridge
   };
