@@ -121,12 +121,12 @@ function navToday() {
   calendarRef.value?.getApi()?.today();
 }
 
-// ---------------- 鼠标悬浮日程小弹窗（Hover Popover，带 0.5s 悬浮延迟 + Peel 撕纸删除） ----------------
+// ---------------- 鼠标悬浮日程小弹窗（Hover Popover，带 0.5s 悬浮延迟） ----------------
 const HOVER_OPEN_DELAY_MS = 500;
 
 const hoverCard = reactive<{
   visible: boolean;
-  peeling: boolean;
+  suppressTransition: boolean;
   event: Sct.CalEvent | null;
   sourceEl: HTMLElement | null;
   x: number;
@@ -134,7 +134,7 @@ const hoverCard = reactive<{
   placement: 'right' | 'left';
 }>({
   visible: false,
-  peeling: false,
+  suppressTransition: false,
   event: null,
   sourceEl: null,
   x: 0,
@@ -144,7 +144,7 @@ const hoverCard = reactive<{
 
 let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
 let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
-let peelFinishTimer: ReturnType<typeof setTimeout> | null = null;
+let tearFinishTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearHoverTimer() {
   if (hoverShowTimer) {
@@ -159,17 +159,17 @@ function clearHoverTimer() {
 
 const isDraggingEvent = ref(false);
 
-function dismissHoverPopover() {
-  if (hoverCard.peeling) return;
+function dismissHoverPopover(instant = false) {
   clearHoverTimer();
+  hoverCard.suppressTransition = instant;
   hoverCard.visible = false;
   hoverCard.sourceEl = null;
 }
 
 function openHoverPopoverNow(ev: Sct.CalEvent, targetEl: HTMLElement) {
-  if (isDraggingEvent.value || moveConfirm.visible || hoverCard.peeling) return;
+  if (isDraggingEvent.value || moveConfirm.visible || tearFx.active) return;
   const rect = targetEl.getBoundingClientRect();
-  const popWidth = 310;
+  const popWidth = 316;
   const popHeight = 250;
   const gap = 10;
 
@@ -185,6 +185,7 @@ function openHoverPopoverNow(ev: Sct.CalEvent, targetEl: HTMLElement) {
     y = Math.max(16, window.innerHeight - popHeight - 16);
   }
 
+  hoverCard.suppressTransition = false;
   hoverCard.event = ev;
   hoverCard.sourceEl = targetEl;
   hoverCard.x = Math.round(x);
@@ -194,7 +195,7 @@ function openHoverPopoverNow(ev: Sct.CalEvent, targetEl: HTMLElement) {
 }
 
 function scheduleShowHoverPopover(ev: Sct.CalEvent, targetEl: HTMLElement) {
-  if (isDraggingEvent.value || moveConfirm.visible || hoverCard.peeling) return;
+  if (isDraggingEvent.value || moveConfirm.visible || tearFx.active) return;
   clearHoverTimer();
   hoverShowTimer = setTimeout(() => {
     hoverShowTimer = null;
@@ -203,7 +204,6 @@ function scheduleShowHoverPopover(ev: Sct.CalEvent, targetEl: HTMLElement) {
 }
 
 function scheduleHideHoverPopover() {
-  if (hoverCard.peeling) return;
   if (hoverShowTimer) {
     clearTimeout(hoverShowTimer);
     hoverShowTimer = null;
@@ -213,15 +213,13 @@ function scheduleHideHoverPopover() {
     hoverHideTimer = null;
   }
   hoverHideTimer = setTimeout(() => {
-    if (!hoverCard.peeling) {
-      hoverCard.visible = false;
-      hoverCard.sourceEl = null;
-    }
+    hoverCard.suppressTransition = false;
+    hoverCard.visible = false;
+    hoverCard.sourceEl = null;
   }, 160);
 }
 
 function onPopoverMouseEnter() {
-  if (hoverCard.peeling) return;
   clearHoverTimer();
 }
 
@@ -229,7 +227,33 @@ function onPopoverMouseLeave() {
   scheduleHideHoverPopover();
 }
 
-// ---------------- Peel 撕纸删除 + 5 秒撤销提示条 ----------------
+// ---------------- 日程真实撕纸删除动效（仅作用于日程本体，详情悬浮窗即时消失） + 5 秒撤销 ----------------
+const tearFx = reactive<{
+  active: boolean;
+  key: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  title: string;
+  meta: string;
+  color: string;
+  soft: string;
+  isDone: boolean;
+}>({
+  active: false,
+  key: 0,
+  left: 0,
+  top: 0,
+  width: 0,
+  height: 0,
+  title: '',
+  meta: '',
+  color: '#A81C24',
+  soft: 'rgba(168, 28, 36, 0.12)',
+  isDone: false
+});
+
 const undoBar = reactive<{
   visible: boolean;
   snapshot: Sct.CalEvent | null;
@@ -255,24 +279,47 @@ function closeUndoBar() {
   undoBar.snapshot = null;
 }
 
-function triggerPeelDelete(ev: Sct.CalEvent) {
-  if (hoverCard.peeling) return;
-  clearHoverTimer();
-  hoverCard.peeling = true;
-
+function triggerPaperTearDelete(ev: Sct.CalEvent) {
+  if (tearFx.active) return;
   const targetEl = hoverCard.sourceEl;
-  targetEl?.classList.add('cal-event-peeling');
-  const snapshot: Sct.CalEvent = JSON.parse(JSON.stringify(ev));
+  // 详情悬浮窗立即无动画消失
+  dismissHoverPopover(true);
+  hoverCard.event = null;
 
-  peelFinishTimer = setTimeout(async () => {
-    peelFinishTimer = null;
+  const snapshot: Sct.CalEvent = JSON.parse(JSON.stringify(ev));
+  const palette = EVENT_CATEGORY_COLORS[ev.category] ?? {
+    color: '#A81C24',
+    soft: 'rgba(168, 28, 36, 0.12)'
+  };
+  const timeRange = ev.start_time && ev.start_time !== ev.end_time ? `${ev.start_time} - ${ev.end_time}` : '';
+  const metaText = `${timeRange}${ev.location ? ` · ${ev.location}` : ''}`;
+
+  const rect = targetEl?.getBoundingClientRect();
+  if (rect && rect.width > 4 && rect.height > 4) {
+    if (targetEl) {
+      targetEl.style.visibility = 'hidden';
+    }
+    tearFx.left = rect.left;
+    tearFx.top = rect.top;
+    tearFx.width = rect.width;
+    tearFx.height = rect.height;
+    tearFx.title = ev.title;
+    tearFx.meta = metaText;
+    tearFx.color = palette.color;
+    tearFx.soft = palette.soft;
+    tearFx.isDone = ev.status === '已完成';
+    tearFx.key += 1;
+    tearFx.active = true;
+  }
+
+  const finishDelete = async () => {
+    tearFinishTimer = null;
     try {
       await workStore.deleteEvent(snapshot.id);
-      targetEl?.classList.remove('cal-event-peeling');
-      hoverCard.visible = false;
-      hoverCard.peeling = false;
-      hoverCard.event = null;
-      hoverCard.sourceEl = null;
+      if (targetEl) {
+        targetEl.style.visibility = '';
+      }
+      tearFx.active = false;
       calendarRef.value?.getApi()?.refetchEvents();
 
       clearUndoTimer();
@@ -285,11 +332,21 @@ function triggerPeelDelete(ev: Sct.CalEvent) {
         undoTimer = null;
       }, 5000);
     } catch {
-      targetEl?.classList.remove('cal-event-peeling');
-      hoverCard.peeling = false;
+      if (targetEl) {
+        targetEl.style.visibility = '';
+      }
+      tearFx.active = false;
       window.$message?.error('删除日程失败');
     }
-  }, 460);
+  };
+
+  if (tearFx.active) {
+    tearFinishTimer = setTimeout(() => {
+      void finishDelete();
+    }, 620);
+  } else {
+    void finishDelete();
+  }
 }
 
 async function handleUndoDelete() {
@@ -304,9 +361,9 @@ async function handleUndoDelete() {
 onBeforeUnmount(() => {
   clearHoverTimer();
   clearUndoTimer();
-  if (peelFinishTimer) {
-    clearTimeout(peelFinishTimer);
-    peelFinishTimer = null;
+  if (tearFinishTimer) {
+    clearTimeout(tearFinishTimer);
+    tearFinishTimer = null;
   }
 });
 
@@ -397,7 +454,7 @@ const calendarOptions = ref<CalendarOptions>({
     openDetail(info.event.id, info.event.extendedProps?.event ?? null);
   },
   eventMouseEnter(info: EventHoveringArg) {
-    if (isDraggingEvent.value || moveConfirm.visible || hoverCard.peeling) return;
+    if (isDraggingEvent.value || moveConfirm.visible || tearFx.active) return;
     const ev = info.event.extendedProps?.event as Sct.CalEvent | undefined;
     if (!ev) return;
     scheduleShowHoverPopover(ev, info.el);
@@ -857,13 +914,12 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       </NCard>
     </div>
 
-    <!-- 鼠标悬浮日程详情小弹窗（复刻 Nuxt Calendar Floating Event Popover） -->
+    <!-- 鼠标悬浮日程详情小弹窗（删除时即时无动画消失） -->
     <Teleport to="body">
-      <Transition name="cal-pop">
+      <Transition :name="hoverCard.suppressTransition ? '' : 'cal-pop'">
         <div
           v-if="hoverCard.visible && hoverCard.event"
           class="nuxt-cal-popover"
-          :class="{ 'nuxt-cal-popover--peeling': hoverCard.peeling }"
           :style="{ left: `${hoverCard.x}px`, top: `${hoverCard.y}px` }"
           @mouseenter="onPopoverMouseEnter"
           @mouseleave="onPopoverMouseLeave"
@@ -972,7 +1028,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
                   quaternary
                   type="error"
                   :title="isEn ? 'Delete Event' : '删除此日程'"
-                  @click="triggerPeelDelete(hoverCard.event)"
+                  @click="triggerPaperTearDelete(hoverCard.event)"
                 >
                   <template #icon><SvgIcon icon="lucide:trash-2" /></template>
                 </NButton>
@@ -981,6 +1037,79 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           </div>
         </div>
       </Transition>
+    </Teleport>
+
+    <!-- 仅作用于被删日程本体的双片锯齿撕纸动效浮层 -->
+    <Teleport to="body">
+      <div
+        v-if="tearFx.active"
+        :key="tearFx.key"
+        class="cal-tear-stage"
+        :style="{
+          left: `${tearFx.left}px`,
+          top: `${tearFx.top}px`,
+          width: `${tearFx.width}px`,
+          height: `${tearFx.height}px`,
+          '--ev-color': tearFx.color,
+          '--ev-soft': tearFx.soft
+        }"
+      >
+        <svg class="pointer-events-none absolute size-0" aria-hidden="true">
+          <defs>
+            <clipPath id="sct-tear-left" clipPathUnits="objectBoundingBox">
+              <polygon
+                points="0,0 0.30,0 0.34,0.12 0.28,0.24 0.35,0.37 0.29,0.51 0.34,0.65 0.27,0.78 0.33,0.90 0.29,1 0,1"
+              />
+            </clipPath>
+            <clipPath id="sct-tear-right" clipPathUnits="objectBoundingBox">
+              <polygon
+                points="0.30,0 1,0 1,1 0.29,1 0.33,0.90 0.27,0.78 0.34,0.65 0.29,0.51 0.35,0.37 0.28,0.24 0.34,0.12"
+              />
+            </clipPath>
+          </defs>
+        </svg>
+
+        <!-- 左残片（留在原位轻微回弹并淡出） -->
+        <div class="cal-tear-half cal-tear-half--left">
+          <div class="cal-tear-card" :class="{ 'is-done': tearFx.isDone }">
+            <span class="cal-tear-card__pill" />
+            <div class="cal-tear-card__body">
+              <div class="cal-tear-card__title">{{ tearFx.title }}</div>
+              <div v-if="tearFx.meta" class="cal-tear-card__meta">{{ tearFx.meta }}</div>
+            </div>
+          </div>
+          <svg class="cal-tear-seam" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <polyline
+              points="30,0 34,12 28,24 35,37 29,51 34,65 27,78 33,90 29,100"
+              fill="none"
+              stroke="rgba(255,255,255,0.92)"
+              stroke-width="2.6"
+              vector-effect="non-scaling-stroke"
+            />
+          </svg>
+        </div>
+
+        <!-- 右撕裂纸片（沿锯齿撕开、翻卷并飘落消失） -->
+        <div class="cal-tear-half cal-tear-half--right">
+          <div class="cal-tear-card" :class="{ 'is-done': tearFx.isDone }">
+            <span class="cal-tear-card__pill" />
+            <div class="cal-tear-card__body">
+              <div class="cal-tear-card__title">{{ tearFx.title }}</div>
+              <div v-if="tearFx.meta" class="cal-tear-card__meta">{{ tearFx.meta }}</div>
+            </div>
+          </div>
+          <div class="cal-tear-curl-sheen" />
+          <svg class="cal-tear-seam" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <polyline
+              points="30,0 34,12 28,24 35,37 29,51 34,65 27,78 33,90 29,100"
+              fill="none"
+              stroke="rgba(255,255,255,0.96)"
+              stroke-width="3"
+              vector-effect="non-scaling-stroke"
+            />
+          </svg>
+        </div>
+      </div>
     </Teleport>
 
     <!-- 5 秒撤销删除浮动条 -->
@@ -1205,13 +1334,12 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 }
 
-/* 悬浮小弹窗（Nuxt UI Popover 风格 + Peel 掀纸撕掉动效） */
+/* 悬浮小弹窗（Nuxt UI Popover 风格） */
 .nuxt-cal-popover {
   position: fixed;
   z-index: 3200;
   width: 316px;
   padding: 12px 14px;
-  overflow: hidden;
   background: var(--sct-container);
   border: 1px solid var(--sct-border);
   border-radius: 14px;
@@ -1219,90 +1347,165 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
     0 12px 32px -4px rgba(15, 23, 42, 0.14),
     0 4px 12px -2px rgba(15, 23, 42, 0.06);
   backdrop-filter: blur(10px);
-  transform-origin: right center;
-  will-change: transform, opacity, clip-path;
 }
 
-.nuxt-cal-popover::after {
-  content: '';
+/* 日程真实双片撕纸删除动效（仅作用于日程本体） */
+.cal-tear-stage {
+  position: fixed;
+  z-index: 3250;
+  pointer-events: none;
+  perspective: 720px;
+}
+
+.cal-tear-half {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+}
+
+.cal-tear-half--left {
+  clip-path: url(#sct-tear-left);
+  transform-origin: left center;
+  animation: cal-tear-left-stub 610ms cubic-bezier(0.22, 0.68, 0.25, 1) forwards;
+}
+
+.cal-tear-half--right {
+  clip-path: url(#sct-tear-right);
+  transform-origin: 32% 18%;
+  filter: drop-shadow(-3px 6px 8px rgba(15, 23, 42, 0.18));
+  animation: cal-tear-right-sheet 610ms cubic-bezier(0.22, 0.68, 0.25, 1) forwards;
+}
+
+.cal-tear-card {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 4px 7px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--ev-soft, rgba(168, 28, 36, 0.12));
+  border: 1px solid color-mix(in srgb, var(--ev-color, #a81c24) 24%, transparent);
+  overflow: hidden;
+}
+
+.cal-tear-card.is-done {
+  opacity: 0.72;
+}
+
+.cal-tear-card.is-done .cal-tear-card__title {
+  text-decoration: line-through;
+}
+
+.cal-tear-card__pill {
+  width: 3.5px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--ev-color, #a81c24);
+}
+
+.cal-tear-card__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.cal-tear-card__title {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ev-color, #a81c24);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-tear-card__meta {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--sct-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-tear-seam {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.cal-tear-curl-sheen {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0;
   background: linear-gradient(
     102deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.78) 42%,
-    rgba(15, 23, 42, 0.16) 52%,
-    rgba(255, 255, 255, 0) 64%
+    transparent 24%,
+    rgba(255, 255, 255, 0.72) 33%,
+    rgba(15, 23, 42, 0.12) 41%,
+    transparent 52%
   );
-  transform: translateX(-110%);
+  opacity: 0;
+  animation: cal-tear-sheen 600ms ease-out forwards;
 }
 
-.nuxt-cal-popover--peeling {
-  pointer-events: none;
-  animation: cal-peel-card 460ms cubic-bezier(0.32, 0.04, 0.24, 1) forwards;
-}
-
-.nuxt-cal-popover--peeling::after {
-  opacity: 1;
-  animation: cal-peel-sheen 440ms cubic-bezier(0.32, 0.04, 0.24, 1) forwards;
-}
-
-@keyframes cal-peel-card {
+@keyframes cal-tear-left-stub {
   0% {
-    clip-path: inset(0 0 0 0 round 14px);
-    transform: perspective(900px) translate3d(0, 0, 0) rotateY(0deg) rotateZ(0deg) scale(1);
+    transform: translate3d(0, 0, 0) rotateZ(0deg);
     opacity: 1;
   }
-  26% {
-    clip-path: inset(0 0 0 4% round 14px);
-    transform: perspective(900px) translate3d(12px, -5px, 0) rotateY(15deg) rotateZ(2.2deg) scale(1.015);
-    box-shadow: -18px 18px 34px rgba(15, 23, 42, 0.22);
-    opacity: 0.98;
+  20% {
+    transform: translate3d(-3px, 1px, 0) rotateZ(-2.5deg);
+    opacity: 1;
   }
-  70% {
-    clip-path: inset(0 0 0 58% round 14px);
-    transform: perspective(900px) translate3d(68px, -16px, 0) rotateY(44deg) rotateZ(7.5deg) scale(0.92);
-    box-shadow: -22px 20px 30px rgba(15, 23, 42, 0.16);
-    opacity: 0.72;
+  58% {
+    transform: translate3d(-8px, 6px, 0) rotateZ(-5.5deg);
+    opacity: 0.78;
   }
   100% {
-    clip-path: inset(0 0 0 100% round 14px);
-    transform: perspective(900px) translate3d(132px, -28px, 0) rotateY(68deg) rotateZ(13deg) scale(0.82);
+    transform: translate3d(-14px, 22px, 0) rotateZ(-11deg);
     opacity: 0;
   }
 }
 
-@keyframes cal-peel-sheen {
+@keyframes cal-tear-right-sheet {
   0% {
-    transform: translateX(-85%);
-  }
-  100% {
-    transform: translateX(115%);
-  }
-}
-
-:deep(.cal-event-peeling) {
-  pointer-events: none !important;
-  transform-origin: right center;
-  animation: cal-event-peel-strip 440ms cubic-bezier(0.32, 0.04, 0.24, 1) forwards;
-}
-
-@keyframes cal-event-peel-strip {
-  0% {
-    clip-path: inset(0 0 0 0);
-    transform: perspective(600px) translateX(0) rotateY(0deg) rotateZ(0deg);
+    transform: translate3d(0, 0, 0) rotateZ(0deg) rotateY(0deg);
     opacity: 1;
   }
-  35% {
-    clip-path: inset(0 0 0 22%);
-    transform: perspective(600px) translateX(10px) translateY(-3px) rotateY(22deg) rotateZ(3deg);
-    opacity: 0.9;
+  18% {
+    transform: translate3d(6px, -4px, 0) rotateZ(4.5deg) rotateY(-8deg);
+    opacity: 1;
+  }
+  52% {
+    transform: translate3d(20px, -11px, 0) rotateZ(14deg) rotateY(-22deg) scale(1.01);
+    opacity: 0.96;
   }
   100% {
-    clip-path: inset(0 0 0 100%);
-    transform: perspective(600px) translateX(46px) translateY(-10px) rotateY(64deg) rotateZ(10deg);
+    transform: translate3d(46px, 42px, 0) rotateZ(30deg) rotateY(-34deg) scale(0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes cal-tear-sheen {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.55;
+  }
+  100% {
     opacity: 0;
   }
 }

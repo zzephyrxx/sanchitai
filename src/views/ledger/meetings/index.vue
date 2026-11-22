@@ -33,19 +33,87 @@ const MEETING_KIND_STYLES: Record<string, { color: string; bg: string }> = {
   民主评议: { color: '#3f9d63', bg: 'var(--sct-ok-soft)' }
 };
 
-// ---------------- 学期范围 ----------------
+// ---------------- 学年 / 年度筛选范围 ----------------
 const today = dayjs();
-const semester = computed(() => {
+const currentAcademicStartYear = today.month() >= 8 ? today.year() : today.year() - 1;
+const defaultSemester = computed(() => {
   const y = today.year();
-  const m = today.month(); // 0-based
+  const m = today.month();
   if (m >= 7) return { label: `${y}-${y + 1}学年 秋季学期`, start: `${y}-09-01`, end: `${y + 1}-01-31` };
   if (m <= 0) return { label: `${y - 1}-${y}学年 秋季学期`, start: `${y - 1}-09-01`, end: `${y}-01-31` };
   return { label: `${y}-${y + 1}学年 春季学期`, start: `${y}-03-01`, end: `${y}-07-31` };
 });
 
-/** 学期内会议事件（含重复投影，按发生日期） */
+const periodMode = ref<'academic' | 'calendar'>('academic');
+const selectedAcademicYear = ref<number>(currentAcademicStartYear);
+const selectedTerm = ref<'all' | 'fall' | 'spring'>('all');
+const selectedCalendarYear = ref<number>(today.year());
+
+const academicYearOptions = computed(() => {
+  const years = new Set<number>([currentAcademicStartYear - 1, currentAcademicStartYear, currentAcademicStartYear + 1]);
+  workStore.calEvents.forEach(ev => {
+    if (!MEETING_KINDS.includes(ev.kind ?? '') || !ev.date) return;
+    const d = dayjs(ev.date);
+    if (!d.isValid()) return;
+    years.add(d.month() >= 8 ? d.year() : d.year() - 1);
+  });
+  return [...years].sort((a, b) => b - a).map(y => ({ label: `${y}-${y + 1}学年`, value: y }));
+});
+
+const termOptions = computed(() => [
+  { label: bi('全学年', 'Full Academic Year'), value: 'all' },
+  { label: bi('秋季学期（9–1月）', 'Fall (Sep–Jan)'), value: 'fall' },
+  { label: bi('春季学期（2–8月）', 'Spring (Feb–Aug)'), value: 'spring' }
+]);
+
+const calendarYearOptions = computed(() => {
+  const years = new Set<number>([today.year() - 1, today.year(), today.year() + 1]);
+  workStore.calEvents.forEach(ev => {
+    if (!MEETING_KINDS.includes(ev.kind ?? '') || !ev.date) return;
+    const y = Number(ev.date.slice(0, 4));
+    if (Number.isFinite(y) && y > 2000) years.add(y);
+  });
+  return [...years].sort((a, b) => b - a).map(y => ({ label: `${y}年度`, value: y }));
+});
+
+const activePeriod = computed(() => {
+  if (periodMode.value === 'calendar') {
+    const y = selectedCalendarYear.value;
+    return {
+      label: `${y}年度`,
+      shortScope: bi('本年度', 'this year'),
+      start: `${y}-01-01`,
+      end: `${y}-12-31`
+    };
+  }
+  const y = selectedAcademicYear.value;
+  if (selectedTerm.value === 'fall') {
+    return {
+      label: `${y}-${y + 1}学年 秋季学期`,
+      shortScope: bi('本学期', 'this term'),
+      start: `${y}-09-01`,
+      end: `${y + 1}-01-31`
+    };
+  }
+  if (selectedTerm.value === 'spring') {
+    return {
+      label: `${y}-${y + 1}学年 春季学期`,
+      shortScope: bi('本学期', 'this term'),
+      start: `${y + 1}-02-01`,
+      end: `${y + 1}-08-31`
+    };
+  }
+  return {
+    label: `${y}-${y + 1}学年`,
+    shortScope: bi('本学年', 'this academic year'),
+    start: `${y}-09-01`,
+    end: `${y + 1}-08-31`
+  };
+});
+
+/** 所选学年/年度内的会议事件（含重复投影，按发生日期） */
 const meetingEvents = computed(() => {
-  const list = workStore.eventsInRange(semester.value.start, semester.value.end);
+  const list = workStore.eventsInRange(activePeriod.value.start, activePeriod.value.end);
   return list
     .filter(ev => MEETING_KINDS.includes(ev.kind ?? '') && ev.status !== '已取消')
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -91,9 +159,9 @@ const monthMeetingCount = computed(() => {
 // ---------------- 学期排期生成（A3/A10） ----------------
 const genShow = ref(false);
 const genParams = reactive<GenParams>({
-  semesterLabel: semester.value.label,
-  start: semester.value.start,
-  end: semester.value.end,
+  semesterLabel: defaultSemester.value.label,
+  start: defaultSemester.value.start,
+  end: defaultSemester.value.end,
   committeeNth: 2,
   committeeWeekday: 3,
   partyDayNth: 3,
@@ -151,12 +219,12 @@ async function exportSchedule() {
   const header = ['序号', '日期', '周次', '事项', '类型', '地点', '主责人', '协助人', '备注'];
   const lines: string[] = [header.join(',')];
   meetingEvents.value.forEach((ev, i) => {
-    const weekOfSemester = Math.floor(dayjs(ev.date).diff(dayjs(semester.value.start), 'day') / 7) + 1;
+    const weekOfPeriod = Math.floor(dayjs(ev.date).diff(dayjs(activePeriod.value.start), 'day') / 7) + 1;
     lines.push(
       [
         String(i + 1),
         ev.date,
-        `第${weekOfSemester}周`,
+        `第${weekOfPeriod}周`,
         ev.title,
         ev.kind ?? '',
         ev.location ?? '',
@@ -174,7 +242,7 @@ async function exportSchedule() {
     );
   });
   const res = await saveFileWithPicker(new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' }), {
-    suggestedName: `三会一课学期安排表_${semester.value.label}.csv`,
+    suggestedName: `三会一课安排表_${activePeriod.value.label}.csv`,
     types: [{ description: 'CSV 表格文件', mime: 'text/csv', extensions: ['.csv'] }]
   });
   if (res.status === 'saved') {
@@ -275,12 +343,12 @@ const MEETING_COL_ORDER = ['date', 'kind', 'title', 'location', 'owner', 'helper
 const meetingColumnMap = computed(() => ({
   date: {
     key: 'date',
-    defaultWidth: 118,
-    minWidth: 88,
+    defaultWidth: 142,
+    minWidth: 112,
     titleContent: () => colHeader('lucide:calendar', bi('日期', 'Date')),
     sorter: (a: MeetingRow, b: MeetingRow) => a.date.localeCompare(b.date),
     render: (r: MeetingRow) =>
-      `${dayjs(r.date).format('MM-DD')} ${bi(WEEKDAY_CN[dayjs(r.date).day()], WEEKDAY_EN[dayjs(r.date).day()])}`
+      `${dayjs(r.date).format('YYYY-MM-DD')} ${bi(WEEKDAY_CN[dayjs(r.date).day()], WEEKDAY_EN[dayjs(r.date).day()])}`
   },
   kind: {
     key: 'kind',
@@ -402,9 +470,11 @@ function handleResetMeetingLayout() {
   <div class="min-h-500px">
     <NCard :bordered="false">
       <template #header>
-        <div class="flex items-center gap-12px">
+        <div class="flex flex-wrap items-center gap-12px">
           <span class="text-16px font-bold">{{ bi('三会一课', 'Meetings & Lectures') }}</span>
-          <span class="text-12px text-gray-400">{{ semester.label }}</span>
+          <span class="text-12px text-gray-400">
+            {{ activePeriod.label }}（{{ activePeriod.start }} ~ {{ activePeriod.end }}）
+          </span>
           <NTag v-if="monthMeetingCount > 3" type="warning" size="small">
             {{
               bi(
@@ -422,7 +492,7 @@ function handleResetMeetingLayout() {
         <div class="flex items-center gap-8px">
           <NButton size="small" secondary @click="exportSchedule">
             <template #icon><SvgIcon icon="lucide:download" /></template>
-            {{ bi('导出学期安排表', 'Export Semester Schedule') }}
+            {{ bi('导出安排表', 'Export Schedule') }}
           </NButton>
           <NButton type="primary" size="small" @click="openGen">
             <template #icon><SvgIcon icon="lucide:calendar-plus" /></template>
@@ -430,6 +500,50 @@ function handleResetMeetingLayout() {
           </NButton>
         </div>
       </template>
+
+      <!-- 学年 / 年度筛选条 -->
+      <div
+        class="mb-14px flex flex-wrap items-center justify-between gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-8px"
+      >
+        <div class="flex flex-wrap items-center gap-8px">
+          <span class="inline-flex items-center gap-5px text-12px font-semibold text-gray-500">
+            <SvgIcon icon="lucide:calendar-range" class="text-14px text-[#A81C24]" />
+            <span>{{ bi('统计周期', 'Period') }}</span>
+          </span>
+          <NRadioGroup v-model:value="periodMode" size="small" @update:value="pagination.page = 1">
+            <NRadioButton value="academic">{{ bi('按学年', 'Academic Year') }}</NRadioButton>
+            <NRadioButton value="calendar">{{ bi('按年度', 'Calendar Year') }}</NRadioButton>
+          </NRadioGroup>
+
+          <template v-if="periodMode === 'academic'">
+            <NSelect
+              v-model:value="selectedAcademicYear"
+              size="small"
+              class="w-136px"
+              :options="academicYearOptions"
+              @update:value="pagination.page = 1"
+            />
+            <NSelect
+              v-model:value="selectedTerm"
+              size="small"
+              class="w-156px"
+              :options="termOptions"
+              @update:value="pagination.page = 1"
+            />
+          </template>
+          <NSelect
+            v-else
+            v-model:value="selectedCalendarYear"
+            size="small"
+            class="w-124px"
+            :options="calendarYearOptions"
+            @update:value="pagination.page = 1"
+          />
+        </div>
+        <span class="text-12px text-gray-500">
+          {{ bi(`当前范围共 ${meetingEvents.length} 场会议`, `${meetingEvents.length} meetings in selected period`) }}
+        </span>
+      </div>
 
       <!-- 频次达标概览 -->
       <div class="mb-14px flex flex-wrap gap-10px">
@@ -440,9 +554,7 @@ function handleResetMeetingLayout() {
         >
           <span class="inline-block size-10px rounded-full" :style="{ background: s.color }" />
           <span class="text-13px font-bold">{{ s.label }}</span>
-          <span class="text-12px text-gray-500">
-            {{ bi(`本学期 ${s.done} 次`, `${s.done} this semester`) }} · {{ s.target }}
-          </span>
+          <span class="text-12px text-gray-500">{{ `${activePeriod.shortScope} ${s.done} 次` }} · {{ s.target }}</span>
         </div>
       </div>
 
