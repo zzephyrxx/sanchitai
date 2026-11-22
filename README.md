@@ -104,7 +104,7 @@
 
 前往 [**Releases**](https://github.com/zzephyrxx/sanchitai/releases) 页面下载最新版本：
 
-- **macOS（Apple Silicon）**：`三尺台_0.2.5_aarch64.dmg`，拖入「应用程序」即可使用
+- **macOS（Apple Silicon）**：`sanchitai_0.2.5_aarch64.dmg`，拖入「应用程序」即可使用
 - **源码包**：`sanchitai-v0.2.5-src.zip`（自行编译请参考下方「本地开发」与「桌面端构建」）
 
 > 💡 也可以直接在浏览器中使用：部署 `pnpm build` 产物至任意静态服务器，即得离线 PWA。
