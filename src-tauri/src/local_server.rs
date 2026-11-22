@@ -11,9 +11,9 @@ use tauri::{AppHandle, Manager};
 
 const DEFAULT_PORT: u16 = 19527;
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
-const MAX_HEADERS: usize = 64;
-const MAX_HEADER_LINE_BYTES: usize = 8192;
-const MAX_CONCURRENT_CONNS: usize = 32;
+const MAX_HEADERS: usize = 128;
+const MAX_HEADER_LINE_BYTES: usize = 65536;
+const MAX_CONCURRENT_CONNS: usize = 128;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserOption {
@@ -27,6 +27,8 @@ pub struct LaunchPrefs {
     pub default_open_mode: String,
     #[serde(rename = "preferredBrowser", default = "default_browser_str")]
     pub preferred_browser: String,
+    #[serde(rename = "closeBehavior", default = "default_close_behavior_str")]
+    pub close_behavior: String,
 }
 
 fn default_open_mode_str() -> String {
@@ -37,11 +39,16 @@ fn default_browser_str() -> String {
     "system".to_string()
 }
 
+fn default_close_behavior_str() -> String {
+    "ask".to_string()
+}
+
 impl Default for LaunchPrefs {
     fn default() -> Self {
         Self {
             default_open_mode: default_open_mode_str(),
             preferred_browser: default_browser_str(),
+            close_behavior: default_close_behavior_str(),
         }
     }
 }
@@ -52,6 +59,8 @@ pub struct PrefsPatch {
     pub default_open_mode: Option<String>,
     #[serde(rename = "preferredBrowser")]
     pub preferred_browser: Option<String>,
+    #[serde(rename = "closeBehavior")]
+    pub close_behavior: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -96,6 +105,13 @@ fn sanitize_browser_id(id: &str) -> String {
     }
 }
 
+fn sanitize_close_behavior(val: &str) -> String {
+    match val.trim().to_ascii_lowercase().as_str() {
+        "minimize" | "exit" | "ask" => val.trim().to_ascii_lowercase(),
+        _ => "ask".to_string(),
+    }
+}
+
 /// 探测本机已安装的常见浏览器（始终包含「系统默认浏览器」作为首项）
 pub fn detect_installed_browsers() -> Vec<BrowserOption> {
     let mut list = vec![BrowserOption {
@@ -105,6 +121,7 @@ pub fn detect_installed_browsers() -> Vec<BrowserOption> {
 
     #[cfg(target_os = "macos")]
     {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
         let candidates: &[(&str, &str, &[&str])] = &[
             ("chrome", "Google Chrome", &["/Applications/Google Chrome.app"]),
             ("edge", "Microsoft Edge", &["/Applications/Microsoft Edge.app"]),
@@ -121,7 +138,14 @@ pub fn detect_installed_browsers() -> Vec<BrowserOption> {
             ("brave", "Brave", &["/Applications/Brave Browser.app"]),
         ];
         for (id, name, paths) in candidates {
-            if paths.iter().any(|p| Path::new(p).exists()) {
+            let exists_sys = paths.iter().any(|p| Path::new(p).exists());
+            let exists_user = home.as_ref().is_some_and(|h| {
+                paths.iter().any(|p| {
+                    p.strip_prefix("/Applications/")
+                        .is_some_and(|rel| h.join("Applications").join(rel).exists())
+                })
+            });
+            if exists_sys || exists_user {
                 list.push(BrowserOption {
                     id: (*id).to_string(),
                     name: (*name).to_string(),
@@ -221,6 +245,7 @@ impl LocalServerState {
                     p.default_open_mode = "desktop".to_string();
                 }
                 p.preferred_browser = sanitize_browser_id(&p.preferred_browser);
+                p.close_behavior = sanitize_close_behavior(&p.close_behavior);
                 p
             })
             .unwrap_or_default()
@@ -242,6 +267,9 @@ impl LocalServerState {
         }
         if let Some(browser) = patch.preferred_browser {
             prefs.preferred_browser = sanitize_browser_id(&browser);
+        }
+        if let Some(close_b) = patch.close_behavior {
+            prefs.close_behavior = sanitize_close_behavior(&close_b);
         }
 
         let content = serde_json::to_vec_pretty(&prefs).map_err(|e| e.to_string())?;
@@ -284,6 +312,7 @@ impl LocalServerState {
             "bridgeUrl": self.bridge_url(),
             "defaultOpenMode": prefs.default_open_mode,
             "preferredBrowser": prefs.preferred_browser,
+            "closeBehavior": prefs.close_behavior,
             "browsers": browsers,
             "desktopAvailable": true
         })
@@ -294,27 +323,43 @@ pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
     if !url.starts_with("http://127.0.0.1:") {
         return Err("only loopback URLs are allowed".to_string());
     }
+    let normalized_url = if url.ends_with('/') {
+        url.to_string()
+    } else {
+        format!("{url}/")
+    };
     let browser = sanitize_browser_id(browser_id);
 
     #[cfg(target_os = "macos")]
     {
-        let app_name = match browser.as_str() {
-            "chrome" => Some("Google Chrome"),
-            "edge" => Some("Microsoft Edge"),
-            "safari" => Some("Safari"),
-            "arc" => Some("Arc"),
-            "firefox" => Some("Firefox"),
-            "brave" => Some("Brave Browser"),
+        // macOS 优先通过 Bundle ID (-b) 打开，比应用名 (-a) 更可靠，失败再尝试路径与系统默认
+        let target_meta: Option<(&str, &str)> = match browser.as_str() {
+            "chrome" => Some(("com.google.Chrome", "/Applications/Google Chrome.app")),
+            "edge" => Some(("com.microsoft.edgemac", "/Applications/Microsoft Edge.app")),
+            "safari" => Some(("com.apple.Safari", "/Applications/Safari.app")),
+            "arc" => Some(("company.thebrowser.Browser", "/Applications/Arc.app")),
+            "firefox" => Some(("org.mozilla.firefox", "/Applications/Firefox.app")),
+            "brave" => Some(("com.brave.Browser", "/Applications/Brave Browser.app")),
             _ => None,
         };
-        if let Some(app) = app_name {
-            let status = Command::new("open").args(["-a", app, url]).status();
-            if status.is_ok_and(|s| s.success()) {
+        if let Some((bundle_id, app_path)) = target_meta {
+            let by_bundle = Command::new("/usr/bin/open")
+                .args(["-b", bundle_id, &normalized_url])
+                .status();
+            if by_bundle.is_ok_and(|s| s.success()) {
                 return Ok(());
             }
+            if Path::new(app_path).exists() {
+                let by_path = Command::new("/usr/bin/open")
+                    .args(["-a", app_path, &normalized_url])
+                    .status();
+                if by_path.is_ok_and(|s| s.success()) {
+                    return Ok(());
+                }
+            }
         }
-        Command::new("open")
-            .arg(url)
+        Command::new("/usr/bin/open")
+            .arg(&normalized_url)
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -324,13 +369,13 @@ pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
     {
         if browser != "system" {
             if let Some(exe) = find_windows_browser_exe(&browser) {
-                if Command::new(exe).arg(url).spawn().is_ok() {
+                if Command::new(exe).arg(&normalized_url).spawn().is_ok() {
                     return Ok(());
                 }
             }
         }
         Command::new("cmd")
-            .args(["/C", "start", "", url])
+            .args(["/C", "start", "", &normalized_url])
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -346,12 +391,12 @@ pub fn open_system_browser(url: &str, browser_id: &str) -> Result<(), String> {
             _ => None,
         };
         if let Some(b) = bin {
-            if Command::new(b).arg(url).spawn().is_ok() {
+            if Command::new(b).arg(&normalized_url).spawn().is_ok() {
                 return Ok(());
             }
         }
         Command::new("xdg-open")
-            .arg(url)
+            .arg(&normalized_url)
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -369,6 +414,20 @@ pub fn focus_main_window(app: &AppHandle) {
 pub fn minimize_main_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.minimize();
+    }
+}
+
+/// 关闭窗口但保留后台运行：macOS 隐藏到程序坞（点程序坞图标恢复），Windows 最小化到任务栏
+pub fn hide_or_minimize_main_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = win.hide();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = win.minimize();
+        }
     }
 }
 
@@ -390,6 +449,7 @@ fn write_http_response(
     content_type: &str,
     body: &[u8],
     cors_origin: Option<&str>,
+    head_only: bool,
 ) {
     let mut header = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n",
@@ -398,13 +458,15 @@ fn write_http_response(
     if let Some(origin) = cors_origin {
         if is_allowed_origin(origin) {
             header.push_str(&format!(
-                "Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, X-Sct-Local\r\nVary: Origin\r\n"
+                "Access-Control-Allow-Origin: {origin}\r\nAccess-Control-Allow-Methods: GET, HEAD, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, X-Sct-Local\r\nVary: Origin\r\n"
             ));
         }
     }
     header.push_str("\r\n");
     let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(body);
+    if !head_only {
+        let _ = stream.write_all(body);
+    }
     let _ = stream.flush();
 }
 
@@ -415,6 +477,15 @@ impl Drop for ConnGuard {
     }
 }
 
+fn read_header_line_lossy<R: BufRead>(reader: &mut R) -> Option<String> {
+    let mut buf = Vec::with_capacity(256);
+    let n = reader.read_until(b'\n', &mut buf).ok()?;
+    if n == 0 || n > MAX_HEADER_LINE_BYTES {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
 fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState) {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let mut reader = match stream.try_clone() {
@@ -422,11 +493,10 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
         Err(_) => return,
     };
 
-    let mut request_line = String::new();
-    let req_bytes = reader.read_line(&mut request_line).unwrap_or(0);
-    if req_bytes == 0 || req_bytes > MAX_HEADER_LINE_BYTES {
-        return;
-    }
+    let request_line = match read_header_line_lossy(&mut reader) {
+        Some(l) => l,
+        None => return,
+    };
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
         return;
@@ -441,11 +511,10 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
     let mut has_local_header = false;
 
     for _ in 0..MAX_HEADERS {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).unwrap_or(0);
-        if n == 0 || n > MAX_HEADER_LINE_BYTES {
-            return;
-        }
+        let line = match read_header_line_lossy(&mut reader) {
+            Some(l) => l,
+            None => return,
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             break;
@@ -465,7 +534,7 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
 
     if let Some(ref h) = host {
         if !is_allowed_host(h, state.port) {
-            write_http_response(&mut stream, "403 Forbidden", "text/plain", b"Forbidden Host", None);
+            write_http_response(&mut stream, "403 Forbidden", "text/plain", b"Forbidden Host", None, false);
             return;
         }
     }
@@ -473,7 +542,7 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
     let cors = origin.as_deref();
 
     if method == "OPTIONS" {
-        write_http_response(&mut stream, "204 No Content", "text/plain", b"", cors);
+        write_http_response(&mut stream, "204 No Content", "text/plain", b"", cors, false);
         return;
     }
 
@@ -486,6 +555,7 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
                 "application/json; charset=utf-8",
                 br#"{"ok":false,"error":"forbidden origin or missing local header"}"#,
                 cors,
+                false,
             );
             return;
         }
@@ -500,6 +570,7 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
                 "application/json; charset=utf-8",
                 br#"{"ok":false,"error":"payload too large"}"#,
                 cors,
+                false,
             );
             return;
         }
@@ -513,14 +584,14 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
     if path_only == "/__sct_api/info" && method == "GET" {
         let resp = state.build_info_json();
         let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
         return;
     }
 
     if path_only == "/__sct_api/data" && method == "GET" {
         let env = state.read_sync_data();
         let bytes = serde_json::to_vec(&env).unwrap_or_default();
-        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
         return;
     }
 
@@ -530,18 +601,18 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
                 Ok(updated_at) => {
                     let resp = serde_json::json!({ "ok": true, "updated_at": updated_at });
                     let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-                    write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
+                    write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
                 }
                 Err(e) => {
                     let resp = serde_json::json!({ "ok": false, "error": e });
                     let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-                    write_http_response(&mut stream, "500 Internal Server Error", "application/json; charset=utf-8", &bytes, cors);
+                    write_http_response(&mut stream, "500 Internal Server Error", "application/json; charset=utf-8", &bytes, cors, false);
                 }
             },
             Err(e) => {
                 let resp = serde_json::json!({ "ok": false, "error": e.to_string() });
                 let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-                write_http_response(&mut stream, "400 Bad Request", "application/json; charset=utf-8", &bytes, cors);
+                write_http_response(&mut stream, "400 Bad Request", "application/json; charset=utf-8", &bytes, cors, false);
             }
         }
         return;
@@ -554,21 +625,22 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
                     let resp = serde_json::json!({
                         "ok": true,
                         "defaultOpenMode": saved.default_open_mode,
-                        "preferredBrowser": saved.preferred_browser
+                        "preferredBrowser": saved.preferred_browser,
+                        "closeBehavior": saved.close_behavior
                     });
                     let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-                    write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
+                    write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
                 }
                 Err(e) => {
                     let resp = serde_json::json!({ "ok": false, "error": e });
                     let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-                    write_http_response(&mut stream, "500 Internal Server Error", "application/json; charset=utf-8", &bytes, cors);
+                    write_http_response(&mut stream, "500 Internal Server Error", "application/json; charset=utf-8", &bytes, cors, false);
                 }
             },
             Err(e) => {
                 let resp = serde_json::json!({ "ok": false, "error": e.to_string() });
                 let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-                write_http_response(&mut stream, "400 Bad Request", "application/json; charset=utf-8", &bytes, cors);
+                write_http_response(&mut stream, "400 Bad Request", "application/json; charset=utf-8", &bytes, cors, false);
             }
         }
         return;
@@ -589,7 +661,7 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
             Err(e) => serde_json::json!({ "ok": false, "error": e }),
         };
         let bytes = serde_json::to_vec(&resp).unwrap_or_default();
-        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors);
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
         return;
     }
 
@@ -601,19 +673,21 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
             "application/json; charset=utf-8",
             br#"{"ok":true}"#,
             cors,
+            false,
         );
         return;
     }
 
     // ---------------- Static Embedded Frontend Assets ----------------
-    if method != "GET" {
-        write_http_response(&mut stream, "405 Method Not Allowed", "text/plain", b"Method Not Allowed", cors);
+    if method != "GET" && method != "HEAD" {
+        write_http_response(&mut stream, "405 Method Not Allowed", "text/plain", b"Method Not Allowed", cors, false);
         return;
     }
+    let head_only = method == "HEAD";
 
     let rel = path_only.trim_start_matches('/');
     if rel.contains("..") {
-        write_http_response(&mut stream, "400 Bad Request", "text/plain", b"Invalid Path", cors);
+        write_http_response(&mut stream, "400 Bad Request", "text/plain", b"Invalid Path", cors, head_only);
         return;
     }
 
@@ -624,10 +698,10 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
         .or_else(|| resolver.get("index.html".to_string()));
 
     if let Some(a) = asset {
-        write_http_response(&mut stream, "200 OK", &a.mime_type, &a.bytes, cors);
+        write_http_response(&mut stream, "200 OK", &a.mime_type, &a.bytes, cors, head_only);
     } else {
         let fallback = b"<!doctype html><html><meta charset='utf-8'><body><h3>SanChiTai Local Bridge Ready</h3><p>Dev mode: please open http://localhost:9527/</p></body></html>";
-        write_http_response(&mut stream, "200 OK", "text/html; charset=utf-8", fallback, cors);
+        write_http_response(&mut stream, "200 OK", "text/html; charset=utf-8", fallback, cors, head_only);
     }
 }
 
@@ -657,7 +731,7 @@ pub fn start_local_server(app: AppHandle) -> Result<LocalServerState, String> {
     std::thread::spawn(move || {
         for mut stream in listener.incoming().flatten() {
             if active_conns.load(Ordering::Relaxed) >= MAX_CONCURRENT_CONNS {
-                write_http_response(&mut stream, "503 Service Unavailable", "text/plain", b"Busy", None);
+                write_http_response(&mut stream, "503 Service Unavailable", "text/plain", b"Busy", None, false);
                 continue;
             }
             active_conns.fetch_add(1, Ordering::Relaxed);

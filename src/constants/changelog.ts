@@ -59,11 +59,11 @@ export const LATEST_CHANGELOG: ChangelogSection[] = [
     titleZh: '切换与数据安全',
     titleEn: 'Bridge & Data Safety',
     itemsZh: [
-      '新增桌面端 ⇄ 浏览器一键切换与本机同步，支持设置默认打开方式',
+      '支持桌面端 ⇄ 指定浏览器双向同步切换，及关闭窗口行为控制（后台常驻 / 直接退出）',
       '导出改为路径选择弹窗；清空/重置加文字确认；快照支持删除'
     ],
     itemsEn: [
-      'Desktop ⇄ Browser switch with local sync & default open mode setting',
+      'Desktop ⇄ preferred browser sync switching & window close behavior control',
       'Save-as file picker for exports, text-typed reset guard & snapshot delete'
     ]
   }

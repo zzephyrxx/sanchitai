@@ -11,7 +11,11 @@ import { exportBackup, replaceDataFromSync } from '@/db/db';
 import type { BackupShape } from '@/db/db';
 
 export type OpenModePref = 'desktop' | 'browser';
+export type CloseBehaviorPref = 'ask' | 'minimize' | 'exit';
 export type RuntimeMode = 'tauri-desktop' | 'tauri-browser' | 'web-standalone';
+
+export const isMacPlatform =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent || navigator.platform || '');
 
 export interface BrowserOption {
   id: string;
@@ -20,6 +24,7 @@ export interface BrowserOption {
 
 const OPEN_MODE_STORAGE_KEY = 'sct:default-open-mode';
 const PREFERRED_BROWSER_KEY = 'sct:preferred-browser';
+const CLOSE_BEHAVIOR_KEY = 'sct:close-behavior';
 
 const DEFAULT_BROWSERS: BrowserOption[] = [{ id: 'system', name: '系统默认浏览器' }];
 
@@ -29,6 +34,7 @@ interface BridgeInfoResponse {
   bridgeUrl?: string;
   defaultOpenMode?: OpenModePref;
   preferredBrowser?: string;
+  closeBehavior?: CloseBehaviorPref;
   browsers?: BrowserOption[];
   desktopAvailable?: boolean;
 }
@@ -86,10 +92,29 @@ function writeLocalPreferredBrowser(browserId: string) {
   }
 }
 
+function readLocalCloseBehavior(): CloseBehaviorPref {
+  try {
+    const val = localStorage.getItem(CLOSE_BEHAVIOR_KEY);
+    if (val === 'minimize' || val === 'exit' || val === 'ask') return val;
+    return 'ask';
+  } catch {
+    return 'ask';
+  }
+}
+
+function writeLocalCloseBehavior(behavior: CloseBehaviorPref) {
+  try {
+    localStorage.setItem(CLOSE_BEHAVIOR_KEY, behavior);
+  } catch {
+    /* ignore */
+  }
+}
+
 const runtimeMode = ref<RuntimeMode>('web-standalone');
 const bridgeUrl = ref('');
 const defaultOpenMode = ref<OpenModePref>(readLocalOpenMode());
 const preferredBrowser = ref<string>(readLocalPreferredBrowser());
+const closeBehavior = ref<CloseBehaviorPref>(readLocalCloseBehavior());
 const installedBrowsers = ref<BrowserOption[]>([...DEFAULT_BROWSERS]);
 const syncing = ref(false);
 const switching = ref(false);
@@ -121,6 +146,10 @@ function applyBridgeInfo(info: BridgeInfoResponse) {
   if (typeof info.preferredBrowser === 'string' && info.preferredBrowser) {
     preferredBrowser.value = info.preferredBrowser;
     writeLocalPreferredBrowser(info.preferredBrowser);
+  }
+  if (info.closeBehavior === 'ask' || info.closeBehavior === 'minimize' || info.closeBehavior === 'exit') {
+    closeBehavior.value = info.closeBehavior;
+    writeLocalCloseBehavior(info.closeBehavior);
   }
   if (Array.isArray(info.browsers) && info.browsers.length > 0) {
     installedBrowsers.value = info.browsers;
@@ -372,12 +401,50 @@ export async function setPreferredBrowser(browserId: string): Promise<void> {
   }
 }
 
+/** 保存关闭窗口时的默认行为（每次询问 / 隐藏至程序坞或任务栏 / 直接退出） */
+export async function setCloseBehavior(behavior: CloseBehaviorPref): Promise<void> {
+  const normalized: CloseBehaviorPref =
+    behavior === 'minimize' || behavior === 'exit' || behavior === 'ask' ? behavior : 'ask';
+  closeBehavior.value = normalized;
+  writeLocalCloseBehavior(normalized);
+
+  const tauri = getTauriInternals();
+  if (tauri) {
+    await tauri.invoke('set_launch_prefs', { closeBehavior: normalized }).catch(() => {});
+  } else if (bridgeUrl.value) {
+    await fetchJsonWithTimeout(
+      `${bridgeUrl.value}/__sct_api/prefs`,
+      {
+        method: 'POST',
+        headers: LOCAL_POST_HEADERS,
+        body: JSON.stringify({ closeBehavior: normalized })
+      },
+      2000
+    );
+  }
+}
+
+/** 响应首次关闭弹窗的选择：同步数据后收起窗口或退出软件 */
+export async function applyCloseAction(action: 'minimize' | 'exit', remember: boolean): Promise<void> {
+  const normalized: 'minimize' | 'exit' = action === 'exit' ? 'exit' : 'minimize';
+  if (remember) {
+    closeBehavior.value = normalized;
+    writeLocalCloseBehavior(normalized);
+  }
+  await pushToBridge().catch(() => false);
+  const tauri = getTauriInternals();
+  if (tauri) {
+    await tauri.invoke('apply_close_action', { action: normalized, remember }).catch(() => {});
+  }
+}
+
 export function useDesktopBridge() {
   return {
     runtimeMode: readonly(runtimeMode),
     bridgeUrl: readonly(bridgeUrl),
     defaultOpenMode: readonly(defaultOpenMode),
     preferredBrowser: readonly(preferredBrowser),
+    closeBehavior: readonly(closeBehavior),
     installedBrowsers: readonly(installedBrowsers),
     syncing: readonly(syncing),
     switching: readonly(switching),
@@ -385,6 +452,8 @@ export function useDesktopBridge() {
     returnToDesktopMode,
     setDefaultOpenMode,
     setPreferredBrowser,
+    setCloseBehavior,
+    applyCloseAction,
     pushToBridge,
     pullFromBridge
   };

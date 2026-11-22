@@ -8,6 +8,7 @@ import { useAppStore } from './store/modules/app';
 import { useThemeStore } from './store/modules/theme';
 import { useWorkDataStore } from './store/modules/work-data';
 import AppLockOverlay from './components/custom/app-lock-overlay.vue';
+import CloseConfirmModal from './components/custom/close-confirm-modal.vue';
 
 defineOptions({
   name: 'App'
@@ -75,6 +76,8 @@ const watermarkProps = computed<WatermarkProps>(() => {
       <NWatermark v-if="themeStore.watermark.visible" v-bind="watermarkProps" />
       <!-- 三尺台：应用锁锁屏（设置中启用后生效） -->
       <AppLockOverlay />
+      <!-- 三尺台：桌面端首次关闭窗口行为确认弹窗 -->
+      <CloseConfirmModal />
     </AppProvider>
   </NConfigProvider>
 </template>

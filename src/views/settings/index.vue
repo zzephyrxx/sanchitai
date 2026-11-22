@@ -2,8 +2,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '@/constants/changelog';
-import { useDesktopBridge } from '@/utils/desktop-bridge';
-import type { OpenModePref } from '@/utils/desktop-bridge';
+import { isMacPlatform, useDesktopBridge } from '@/utils/desktop-bridge';
+import type { CloseBehaviorPref, OpenModePref } from '@/utils/desktop-bridge';
 import { buildHandoverHtml } from '@/utils/handover';
 import { saveFileWithPicker } from '@/utils/save-file';
 import { useAppLockStore, LOCK_QUESTIONS } from '@/store/modules/applock';
@@ -54,6 +54,31 @@ async function handlePreferredBrowserChange(browserId: string) {
   await desktopBridge.setPreferredBrowser(browserId);
   const label = desktopBridge.installedBrowsers.value.find(b => b.id === browserId)?.name ?? '系统默认浏览器';
   window.$message?.success(`已将默认浏览器设为「${label}」`);
+}
+
+const closeMinimizeLabel = computed(() =>
+  isMacPlatform ? bi('收起至程序坞', 'Hide to Dock') : bi('最小化到任务栏', 'Minimize to Taskbar')
+);
+
+async function handleCloseBehaviorChange(behavior: CloseBehaviorPref) {
+  await desktopBridge.setCloseBehavior(behavior);
+  const labelMap: Record<CloseBehaviorPref, string> = {
+    ask: '每次点击关闭时询问',
+    minimize: isMacPlatform ? '仅关闭窗口（收起至程序坞）' : '仅关闭窗口（最小化到任务栏）',
+    exit: '直接退出软件'
+  };
+  window.$message?.success(`关闭窗口行为已设为「${labelMap[behavior]}」`);
+}
+
+async function copyBridgeUrl() {
+  const url = desktopBridge.bridgeUrl.value;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(`${url}/`);
+    window.$message?.success(`已复制本机访问地址：${url}/`);
+  } catch {
+    window.$message?.info(`本机访问地址：${url}/`);
+  }
 }
 
 // ---------------- 支部名称设置 ----------------
@@ -439,14 +464,14 @@ onMounted(listSnapshots);
         </NSpace>
       </NCard>
 
-      <!-- 默认打开方式 -->
-      <NCard :bordered="false" :title="bi('默认打开方式', 'Default Open Mode')">
+      <!-- 窗口与打开方式 -->
+      <NCard :bordered="false" :title="bi('窗口与打开方式', 'Window & Launch Mode')">
         <NSpace vertical size="medium">
           <div class="text-13px leading-relaxed text-gray-500">
             {{
               bi(
-                '桌面安装包内置仅本机 127.0.0.1 同步服务：选择「桌面端」启动时弹出独立窗口；选择「浏览器」启动时自动在系统默认浏览器打开，且桌面端与浏览器始终读写同一份本机数据。',
-                'Desktop app includes a loopback-only 127.0.0.1 bridge: choose Desktop or Browser as default launch mode with real-time local data sync.'
+                '桌面安装包内置仅本机 127.0.0.1 同步服务：可自定义默认打开方式、指定浏览器及点击关闭按钮时的行为，桌面端与浏览器始终读写同一份本机数据。',
+                'Desktop app includes a loopback-only 127.0.0.1 bridge: customize default launch mode, preferred browser, and window close behavior with real-time local sync.'
               )
             }}
           </div>
@@ -482,13 +507,31 @@ onMounted(listSnapshots);
               />
             </div>
           </div>
+          <div class="flex flex-wrap items-center justify-between gap-10px">
+            <span class="text-13px font-medium">{{ bi('关闭窗口行为', 'Close Button Action') }}</span>
+            <NRadioGroup
+              :value="desktopBridge.closeBehavior.value"
+              size="small"
+              @update:value="v => handleCloseBehaviorChange(v as CloseBehaviorPref)"
+            >
+              <NRadioButton value="ask">{{ bi('每次询问', 'Ask') }}</NRadioButton>
+              <NRadioButton value="minimize">{{ closeMinimizeLabel }}</NRadioButton>
+              <NRadioButton value="exit">{{ bi('直接退出软件', 'Quit App') }}</NRadioButton>
+            </NRadioGroup>
+          </div>
           <div
             class="flex flex-wrap items-center justify-between gap-8px rounded-8px bg-[var(--sct-soft)] px-10px py-7px text-12px text-gray-500"
           >
-            <span>
-              {{ bi('当前运行环境：', 'Current Runtime: ') }}
-              <strong>{{ runtimeStatusLabel }}</strong>
-            </span>
+            <div class="flex flex-wrap items-center gap-6px">
+              <span>
+                {{ bi('当前运行环境：', 'Current Runtime: ') }}
+                <strong>{{ runtimeStatusLabel }}</strong>
+              </span>
+              <NButton v-if="desktopBridge.bridgeUrl.value" size="tiny" text type="primary" @click="copyBridgeUrl">
+                <template #icon><SvgIcon icon="lucide:copy" class="text-12px" /></template>
+                {{ desktopBridge.bridgeUrl.value }}/
+              </NButton>
+            </div>
             <NButton
               v-if="desktopBridge.runtimeMode.value === 'tauri-browser'"
               size="tiny"
