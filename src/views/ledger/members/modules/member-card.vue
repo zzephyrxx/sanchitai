@@ -12,7 +12,9 @@ import { useWorkDataStore } from '@/store/modules/work-data';
 
 defineOptions({ name: 'MemberCard' });
 
-const props = defineProps<{ show: boolean; memberId: string | null }>();
+const props = withDefaults(defineProps<{ show: boolean; memberId: string | null; editable?: boolean }>(), {
+  editable: true
+});
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'edit', member: Sct.Member): void }>();
 
 const router = useRouter();
@@ -101,6 +103,7 @@ const dormText = computed(() => {
           </div>
           <div class="flex shrink-0 items-center gap-6px">
             <NButton
+              v-if="props.editable"
               size="tiny"
               secondary
               @click="
@@ -139,7 +142,7 @@ const dormText = computed(() => {
           </NDescriptionsItem>
           <NDescriptionsItem v-if="dormText" label="宿舍">{{ dormText }}</NDescriptionsItem>
           <NDescriptionsItem label="导师姓名">{{ member.advisor || '—' }}</NDescriptionsItem>
-          <NDescriptionsItem v-if="member.group" label="研究方向组">{{ member.group }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.group" label="党小组">{{ member.group }}</NDescriptionsItem>
           <NDescriptionsItem v-if="member.phone" label="联系电话">{{ member.phone }}</NDescriptionsItem>
           <NDescriptionsItem v-if="member.id_card" label="身份证号">
             <div class="flex items-center justify-between gap-8px">

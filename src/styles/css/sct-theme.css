@@ -561,3 +561,19 @@ html.dark .sct-pill--grade-4 {
   background: rgba(148, 163, 184, 0.2);
   color: #cbd5e1;
 }
+
+/* 电子纸 KONTUR 主题下新组件直角与无弥散阴影兼容（党员积分筛选按钮 / 组织架构节点与党小组卡） */
+html[data-preset='crm-frosted-glass'] .points-kpi-btn,
+html[data-preset='crm-frosted-glass'] .points-kpi-btn__cue,
+html[data-preset='crm-frosted-glass'] .mm-node,
+html[data-preset='crm-frosted-glass'] .mm-add-youth-btn,
+html[data-preset='crm-frosted-glass'] .mm-group-card,
+html[data-preset='crm-frosted-glass'] .mm-member-chip {
+  border-radius: 0px !important;
+  box-shadow: none !important;
+}
+
+html[data-preset='crm-frosted-glass'] .points-kpi-btn:hover {
+  transform: none;
+  box-shadow: 2px 2px 0 var(--sct-border) !important;
+}

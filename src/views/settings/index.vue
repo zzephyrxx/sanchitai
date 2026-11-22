@@ -272,27 +272,36 @@ async function handleFileChange(e: Event) {
   }
 }
 
-// ---------------- 快照 ----------------
+// ---------------- 快照（自动 5 份 + 手动 5 份独立环形） ----------------
 interface SnapItem {
   key: string;
+  kind: 'auto' | 'manual';
   ts: string;
   counts: string;
 }
-const snapshots = ref<SnapItem[]>([]);
+const autoSnapshots = ref<SnapItem[]>([]);
+const manualSnapshots = ref<SnapItem[]>([]);
 
-async function listSnapshots() {
-  const ring = await listBackupRing();
-  snapshots.value = ring.map(r => ({
+function toSnapItem(r: Awaited<ReturnType<typeof listBackupRing>>[number]): SnapItem {
+  const ptsCount = r.shape.point_records?.length ?? 0;
+  return {
     key: r.key,
+    kind: r.kind,
     ts: r.ts,
-    counts: `人员 ${r.shape.members?.length ?? 0} · 事项 ${r.shape.cal_events?.length ?? 0} · 党费 ${r.shape.fee_records?.length ?? 0}`
-  }));
+    counts: `人员 ${r.shape.members?.length ?? 0} · 事项 ${r.shape.cal_events?.length ?? 0} · 党费 ${r.shape.fee_records?.length ?? 0}${ptsCount ? ` · 积分 ${ptsCount}` : ''}`
+  };
 }
 
-async function createSnapshot() {
-  await pushBackupRing();
+async function listSnapshots() {
+  const [autoRing, manualRing] = await Promise.all([listBackupRing('auto'), listBackupRing('manual')]);
+  autoSnapshots.value = autoRing.map(toSnapItem);
+  manualSnapshots.value = manualRing.map(toSnapItem);
+}
+
+async function createManualSnapshot() {
+  await pushBackupRing('manual');
   await listSnapshots();
-  window.$message?.success('快照已创建（环形保留最近 5 份）');
+  window.$message?.success('手动快照已创建（环形保留最近 5 份）');
 }
 
 async function restoreSnapshot(key: string) {
@@ -301,7 +310,7 @@ async function restoreSnapshot(key: string) {
   if (!target) return;
   await importBackup(target.shape);
   await listSnapshots();
-  window.$message?.success('已恢复所选快照');
+  window.$message?.success('已恢复所选快照（恢复前已自动快照当前数据）');
 }
 
 const deleteSnapModalShow = ref(false);
@@ -370,112 +379,294 @@ onMounted(listSnapshots);
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-14px lg:grid-cols-2">
-    <!-- 备份与恢复 -->
-    <NCard :bordered="false" :title="bi('备份与恢复', 'Backup & Restore')">
-      <NSpace vertical size="large">
-        <div class="text-13px leading-relaxed text-gray-500">
-          {{
-            bi(
-              '数据 100% 存于本机浏览器（IndexedDB）。换机/重装前请导出备份文件；导入备份会先自动快照当前数据，可随时回退。',
-              'Data is 100% stored locally in browser IndexedDB. Export a JSON backup before migrating; importing automatically creates a snapshot first.'
-            )
-          }}
-        </div>
-        <div class="flex gap-8px">
-          <NButton type="primary" @click="handleExport">
-            <template #icon><SvgIcon icon="lucide:download" /></template>
-            {{ bi('一键备份（导出 JSON）', 'One-Click Backup (Export JSON)') }}
-          </NButton>
-          <NButton :loading="restoring" secondary @click="pickFile">
-            <template #icon><SvgIcon icon="lucide:upload" /></template>
-            {{ bi('从备份恢复…', 'Restore from Backup…') }}
-          </NButton>
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".json,application/json"
-            class="hidden"
-            @change="handleFileChange"
-          />
-        </div>
-
-        <NDivider title-placement="left" style="font-size: 13px">
-          {{ bi('自动快照（环形 5 份）', 'Auto Snapshots (Ring of 5)') }}
-        </NDivider>
-        <div class="flex items-center gap-8px">
-          <NButton size="small" secondary @click="createSnapshot">
-            <template #icon><SvgIcon icon="lucide:camera" /></template>
-            {{ bi('创建快照', 'Create Snapshot') }}
-          </NButton>
-          <NButton size="small" secondary @click="listSnapshots">
+  <div class="grid grid-cols-1 items-start gap-14px xl:grid-cols-12">
+    <!-- 左栏（7/12 宽）：备份与恢复（内含自动/手动快照双栏） + 下方「一键交接 / 演示数据」双列并排 -->
+    <div class="flex flex-col gap-14px xl:col-span-7">
+      <!-- 备份与恢复 -->
+      <NCard :bordered="false">
+        <template #header>
+          <div class="flex items-center gap-8px">
+            <SvgIcon icon="lucide:hard-drive-download" class="text-17px text-[#A81C24]" />
+            <span class="font-bold">{{ bi('备份与恢复', 'Backup & Restore') }}</span>
+          </div>
+        </template>
+        <template #header-extra>
+          <NButton size="tiny" secondary @click="listSnapshots">
             <template #icon><SvgIcon icon="lucide:refresh-cw" /></template>
-            {{ bi('刷新', 'Refresh') }}
+            {{ bi('刷新快照', 'Refresh') }}
           </NButton>
-        </div>
-        <div v-if="!snapshots.length" class="text-12px text-gray-400">{{ bi('暂无快照', 'No snapshots yet') }}</div>
-        <div
-          v-for="s in snapshots"
-          :key="s.key"
-          class="flex items-center justify-between gap-8px rounded-8px bg-[var(--sct-soft)] px-10px py-8px"
-        >
-          <div class="min-w-0">
-            <div class="text-13px font-bold">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
-            <div class="text-11px text-gray-500">{{ s.counts }}</div>
-          </div>
-          <div class="flex shrink-0 items-center gap-6px">
-            <NButton size="tiny" secondary type="primary" @click="restoreSnapshot(s.key)">
-              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-              {{ bi('恢复此快照', 'Restore') }}
-            </NButton>
-            <NButton size="tiny" secondary type="error" @click="openDeleteSnapshotConfirm(s)">
-              <template #icon><SvgIcon icon="lucide:trash-2" /></template>
-              {{ bi('删除', 'Delete') }}
-            </NButton>
-          </div>
-        </div>
-      </NSpace>
-    </NCard>
+        </template>
 
-    <div class="flex flex-col gap-14px">
-      <!-- 支部基本信息 -->
-      <NCard :bordered="false" :title="bi('支部基本信息', 'Party Branch Profile')">
         <NSpace vertical size="medium">
           <div class="text-13px leading-relaxed text-gray-500">
             {{
               bi(
-                '设置本工作台所属党支部名称。修改后将实时显示在顶栏右上角，并同步应用到交接文档、签到表及政治生日贺卡落款。',
-                'Set the current Party Branch name. Displayed in the top header and synced to handover docs, sign-in sheets, and birthday cards.'
+                '数据 100% 存于本机（IndexedDB + 桌面同步文件）。换机/重装前请导出 JSON；导入或恢复前会自动保存「自动快照」，日常里程碑可随时保存「手动快照」，互不挤占。',
+                'Data is 100% stored locally. Export JSON before migrating; auto & manual snapshots each keep 5 ring slots independently.'
               )
             }}
           </div>
-          <div class="flex items-center gap-8px">
-            <NInput
-              v-model:value="branchNameInput"
-              :placeholder="bi('请输入党支部全称，如：计算机学院第一研究生党支部', 'Enter full Party Branch name…')"
-              maxlength="40"
-              @keyup.enter="saveBranchNameSetting"
-            />
-            <NButton type="primary" @click="saveBranchNameSetting">
-              <template #icon><SvgIcon icon="lucide:check" /></template>
-              {{ bi('保存名称', 'Save Name') }}
+          <div class="flex flex-wrap items-center gap-8px">
+            <NButton type="primary" size="small" @click="handleExport">
+              <template #icon><SvgIcon icon="lucide:download" /></template>
+              {{ bi('一键备份（导出 JSON）', 'Export JSON Backup') }}
             </NButton>
+            <NButton :loading="restoring" size="small" secondary @click="pickFile">
+              <template #icon><SvgIcon icon="lucide:upload" /></template>
+              {{ bi('从备份恢复…', 'Restore Backup…') }}
+            </NButton>
+            <NButton size="small" secondary type="primary" @click="createManualSnapshot">
+              <template #icon><SvgIcon icon="lucide:camera" /></template>
+              {{ bi('创建手动快照', 'Save Manual Snapshot') }}
+            </NButton>
+            <input
+              ref="fileInput"
+              type="file"
+              accept=".json,application/json"
+              class="hidden"
+              @change="handleFileChange"
+            />
+          </div>
+
+          <!-- 自动快照（5 份）｜ 手动快照（5 份）左右双栏 -->
+          <div class="grid grid-cols-1 gap-12px pt-2px md:grid-cols-2">
+            <!-- 左：自动快照 -->
+            <div class="rounded-10px border border-[var(--sct-border)] p-10px">
+              <div
+                class="mb-8px flex items-center justify-between gap-6px border-b border-dashed border-[var(--sct-border)] pb-6px"
+              >
+                <span class="flex items-center gap-5px text-12px font-bold text-[var(--sct-ink)]">
+                  <SvgIcon icon="lucide:history" class="text-14px text-[#2563eb]" />
+                  <span>{{ bi('自动快照（保留 5 份）', 'Auto Snapshots (5)') }}</span>
+                </span>
+                <NTag size="tiny" :bordered="false" round>{{ autoSnapshots.length }} / 5</NTag>
+              </div>
+              <div v-if="!autoSnapshots.length" class="py-12px text-center text-12px text-gray-400">
+                {{ bi('暂无自动快照（导入/恢复前自动生成）', 'No auto snapshots yet') }}
+              </div>
+              <div v-else class="flex flex-col gap-6px">
+                <div
+                  v-for="s in autoSnapshots"
+                  :key="s.key"
+                  class="flex items-center justify-between gap-6px rounded-8px bg-[var(--sct-soft)] px-9px py-7px"
+                >
+                  <div class="min-w-0">
+                    <div class="text-12px font-bold font-mono">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
+                    <div class="truncate text-11px text-gray-500">{{ s.counts }}</div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-4px">
+                    <NButton size="tiny" secondary type="primary" @click="restoreSnapshot(s.key)">
+                      {{ bi('恢复', 'Restore') }}
+                    </NButton>
+                    <NButton size="tiny" quaternary type="error" @click="openDeleteSnapshotConfirm(s)">
+                      <template #icon><SvgIcon icon="lucide:trash-2" class="text-12px" /></template>
+                    </NButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右：手动快照 -->
+            <div class="rounded-10px border border-[var(--sct-border)] p-10px">
+              <div
+                class="mb-8px flex items-center justify-between gap-6px border-b border-dashed border-[var(--sct-border)] pb-6px"
+              >
+                <span class="flex items-center gap-5px text-12px font-bold text-[var(--sct-ink)]">
+                  <SvgIcon icon="lucide:bookmark-check" class="text-14px text-[#16a34a]" />
+                  <span>{{ bi('手动快照（保留 5 份）', 'Manual Snapshots (5)') }}</span>
+                </span>
+                <NTag size="tiny" :bordered="false" round>{{ manualSnapshots.length }} / 5</NTag>
+              </div>
+              <div v-if="!manualSnapshots.length" class="py-12px text-center text-12px text-gray-400">
+                {{ bi('暂无手动快照（点上方「创建手动快照」保存）', 'No manual snapshots yet') }}
+              </div>
+              <div v-else class="flex flex-col gap-6px">
+                <div
+                  v-for="s in manualSnapshots"
+                  :key="s.key"
+                  class="flex items-center justify-between gap-6px rounded-8px bg-[var(--sct-soft)] px-9px py-7px"
+                >
+                  <div class="min-w-0">
+                    <div class="text-12px font-bold font-mono">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
+                    <div class="truncate text-11px text-gray-500">{{ s.counts }}</div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-4px">
+                    <NButton size="tiny" secondary type="primary" @click="restoreSnapshot(s.key)">
+                      {{ bi('恢复', 'Restore') }}
+                    </NButton>
+                    <NButton size="tiny" quaternary type="error" @click="openDeleteSnapshotConfirm(s)">
+                      <template #icon><SvgIcon icon="lucide:trash-2" class="text-12px" /></template>
+                    </NButton>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </NSpace>
       </NCard>
 
+      <!-- 左栏下方：一键交接 + 演示数据 并排双列，充分利用左侧空间 -->
+      <div class="grid grid-cols-1 gap-14px md:grid-cols-2">
+        <!-- 一键交接 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex items-center gap-8px">
+              <SvgIcon icon="lucide:package-check" class="text-17px text-[#A81C24]" />
+              <span class="font-bold">{{ bi('一键交接', 'One-Click Handover') }}</span>
+            </div>
+          </template>
+          <NSpace vertical size="medium">
+            <div class="text-12px leading-relaxed text-gray-500">
+              {{
+                bi(
+                  '离任交接两件套：①「交接数据包」全量台账 JSON，接任人导入即接续；②「交接文档」可打印汇总（任期大事记/待办/发展节点/党费欠缴）。',
+                  'Term handover kit: Full Ledger JSON Package + Printable HTML Handover Summary.'
+                )
+              }}
+            </div>
+            <div class="flex flex-wrap gap-8px">
+              <NButton type="primary" size="small" :loading="handoverBusy" @click="exportHandoverData">
+                <template #icon><SvgIcon icon="lucide:package" /></template>
+                {{ bi('导出数据包', 'Export Data') }}
+              </NButton>
+              <NButton size="small" secondary :loading="handoverBusy" @click="exportHandoverDoc">
+                <template #icon><SvgIcon icon="lucide:printer" /></template>
+                {{ bi('生成交接文档', 'Handover Doc') }}
+              </NButton>
+            </div>
+          </NSpace>
+        </NCard>
+
+        <!-- 演示数据 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex items-center gap-8px">
+              <SvgIcon icon="lucide:database-backup" class="text-17px text-[#d97706]" />
+              <span class="font-bold">{{ bi('演示数据', 'Demo Seed Data') }}</span>
+            </div>
+          </template>
+          <NSpace vertical size="medium">
+            <div class="text-12px leading-relaxed text-gray-500">
+              {{
+                bi(
+                  '内置脱敏演示数据集（22 名成员、台历、党费、谈话与积分样例）。清空或重置均需手动输入确认口令，防止误删。',
+                  'Built-in desensitized demo dataset (22 members, calendar, dues, talks & points). Reset/Clear requires typed phrase confirmation.'
+                )
+              }}
+            </div>
+            <div class="flex flex-wrap gap-8px">
+              <NButton size="small" secondary :loading="resetting" @click="openDangerConfirm('reset')">
+                <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+                {{ bi('重置为演示种子', 'Reset Demo') }}
+              </NButton>
+              <NButton size="small" type="error" ghost @click="openDangerConfirm('clear')">
+                <template #icon><SvgIcon icon="lucide:trash-2" /></template>
+                {{ bi('清空业务数据', 'Clear All') }}
+              </NButton>
+            </div>
+          </NSpace>
+        </NCard>
+      </div>
+    </div>
+
+    <!-- 右栏（5/12 宽）：上方「支部信息 + 应用锁」双列 + 中间「窗口与打开方式」 + 底部「关于三尺台」 -->
+    <div class="flex flex-col gap-14px xl:col-span-5">
+      <div class="grid grid-cols-1 gap-14px md:grid-cols-2">
+        <!-- 支部基本信息 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex items-center gap-8px">
+              <SvgIcon icon="lucide:landmark" class="text-17px text-[#A81C24]" />
+              <span class="font-bold">{{ bi('支部基本信息', 'Branch Profile') }}</span>
+            </div>
+          </template>
+          <NSpace vertical size="medium">
+            <div class="text-12px leading-relaxed text-gray-500">
+              {{
+                bi(
+                  '实时同步至顶栏徽章、成员编号前缀、签到表、交接文档与政治生日贺卡落款。',
+                  'Synced to header badge, member code prefix, sign-in sheets, handover & birthday cards.'
+                )
+              }}
+            </div>
+            <div class="flex flex-col gap-6px">
+              <NInput
+                v-model:value="branchNameInput"
+                size="small"
+                :placeholder="bi('党支部全称…', 'Branch name…')"
+                maxlength="40"
+                @keyup.enter="saveBranchNameSetting"
+              />
+              <div class="flex justify-end">
+                <NButton type="primary" size="tiny" @click="saveBranchNameSetting">
+                  <template #icon><SvgIcon icon="lucide:check" /></template>
+                  {{ bi('保存名称', 'Save Name') }}
+                </NButton>
+              </div>
+            </div>
+          </NSpace>
+        </NCard>
+
+        <!-- 应用锁 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex items-center gap-8px">
+              <SvgIcon icon="lucide:shield-check" class="text-17px text-[#2563eb]" />
+              <span class="font-bold">{{ bi('应用锁', 'App Lock') }}</span>
+            </div>
+          </template>
+          <template #header-extra>
+            <NSwitch :value="appLock.enabled" size="small" @update:value="toggleLock" />
+          </template>
+          <NSpace vertical size="small">
+            <div class="text-12px leading-relaxed text-gray-500">
+              {{
+                bi(
+                  '启动或闲置时锁定隐私画面，支持密保问题找回；密码仅在本机存哈希。',
+                  'Locks workspace on startup/idle with security question recovery. Local hash only.'
+                )
+              }}
+            </div>
+            <template v-if="appLock.enabled">
+              <NSelect
+                :value="appLock.idleMinutes"
+                :options="IDLE_OPTIONS"
+                size="small"
+                @update:value="v => appLock.setIdleMinutes(v)"
+              />
+              <div class="flex flex-wrap gap-6px">
+                <NButton size="tiny" secondary @click="lockPwdShow = true">
+                  <template #icon><SvgIcon icon="lucide:key-round" /></template>
+                  {{ bi('改密码', 'Password') }}
+                </NButton>
+                <NButton size="tiny" type="primary" @click="appLock.lock()">
+                  <template #icon><SvgIcon icon="lucide:lock" /></template>
+                  {{ bi('立即锁定', 'Lock') }}
+                </NButton>
+              </div>
+            </template>
+          </NSpace>
+        </NCard>
+      </div>
+
       <!-- 窗口与打开方式 -->
-      <NCard :bordered="false" :title="bi('窗口与打开方式', 'Window & Launch Mode')">
+      <NCard :bordered="false">
+        <template #header>
+          <div class="flex items-center gap-8px">
+            <SvgIcon icon="lucide:app-window" class="text-17px text-[#A81C24]" />
+            <span class="font-bold">{{ bi('窗口与打开方式', 'Window & Launch Mode') }}</span>
+          </div>
+        </template>
         <NSpace vertical size="medium">
-          <div class="text-13px leading-relaxed text-gray-500">
+          <div class="text-12px leading-relaxed text-gray-500">
             {{
               bi(
-                '桌面安装包内置仅本机 127.0.0.1 同步服务：可自定义默认打开方式、指定浏览器及点击关闭按钮时的行为，桌面端与浏览器始终读写同一份本机数据。',
-                'Desktop app includes a loopback-only 127.0.0.1 bridge: customize default launch mode, preferred browser, and window close behavior with real-time local sync.'
+                '桌面安装包内置本机 127.0.0.1 同步服务：可自定义默认打开方式、指定浏览器及关闭窗口行为，桌面端与浏览器实时共享同一份数据。',
+                'Built-in 127.0.0.1 loopback bridge: customize launch mode, preferred browser, and window close action with real-time local sync.'
               )
             }}
           </div>
-          <div class="flex flex-wrap items-center justify-between gap-10px">
+          <div class="flex flex-wrap items-center justify-between gap-8px">
             <span class="text-13px font-medium">{{ bi('启动时默认使用', 'Launch Mode') }}</span>
             <NRadioGroup
               :value="desktopBridge.defaultOpenMode.value"
@@ -496,9 +687,9 @@ onMounted(listSnapshots);
               </NRadioButton>
             </NRadioGroup>
           </div>
-          <div class="flex flex-wrap items-center justify-between gap-10px">
+          <div class="flex flex-wrap items-center justify-between gap-8px">
             <span class="text-13px font-medium">{{ bi('指定打开浏览器', 'Preferred Browser') }}</span>
-            <div class="w-210px">
+            <div class="w-196px">
               <NSelect
                 :value="desktopBridge.preferredBrowser.value"
                 :options="browserSelectOptions"
@@ -507,8 +698,8 @@ onMounted(listSnapshots);
               />
             </div>
           </div>
-          <div class="flex flex-wrap items-center justify-between gap-10px">
-            <span class="text-13px font-medium">{{ bi('关闭窗口行为', 'Close Button Action') }}</span>
+          <div class="flex flex-wrap items-center justify-between gap-8px">
+            <span class="text-13px font-medium">{{ bi('关闭窗口行为', 'Close Action') }}</span>
             <NRadioGroup
               :value="desktopBridge.closeBehavior.value"
               size="small"
@@ -516,7 +707,7 @@ onMounted(listSnapshots);
             >
               <NRadioButton value="ask">{{ bi('每次询问', 'Ask') }}</NRadioButton>
               <NRadioButton value="minimize">{{ closeMinimizeLabel }}</NRadioButton>
-              <NRadioButton value="exit">{{ bi('直接退出软件', 'Quit App') }}</NRadioButton>
+              <NRadioButton value="exit">{{ bi('直接退出', 'Quit') }}</NRadioButton>
             </NRadioGroup>
           </div>
           <div
@@ -524,7 +715,7 @@ onMounted(listSnapshots);
           >
             <div class="flex flex-wrap items-center gap-6px">
               <span>
-                {{ bi('当前运行环境：', 'Current Runtime: ') }}
+                {{ bi('运行环境：', 'Runtime: ') }}
                 <strong>{{ runtimeStatusLabel }}</strong>
               </span>
               <NButton v-if="desktopBridge.bridgeUrl.value" size="tiny" text type="primary" @click="copyBridgeUrl">
@@ -540,128 +731,43 @@ onMounted(listSnapshots);
               @click="desktopBridge.returnToDesktopMode()"
             >
               <template #icon><SvgIcon icon="lucide:monitor" /></template>
-              {{ bi('返回桌面端', 'Return to Desktop') }}
+              {{ bi('返回桌面端', 'Desktop') }}
             </NButton>
             <NButton v-else size="tiny" secondary @click="desktopBridge.openInBrowserMode()">
               <template #icon><SvgIcon icon="lucide:external-link" /></template>
-              {{ bi('在浏览器中打开', 'Open in Browser') }}
+              {{ bi('浏览器打开', 'Open Browser') }}
             </NButton>
           </div>
         </NSpace>
       </NCard>
 
-      <!-- 一键交接 -->
-      <NCard :bordered="false" :title="bi('一键交接', 'One-Click Handover')">
-        <NSpace vertical size="large">
-          <div class="text-13px leading-relaxed text-gray-500">
+      <!-- 关于三尺台 -->
+      <NCard :bordered="false">
+        <template #header>
+          <div class="flex items-center gap-8px">
+            <SvgIcon icon="lucide:info" class="text-17px text-[#A81C24]" />
+            <span class="font-bold">{{ bi('关于三尺台', 'About 三尺台') }}</span>
+          </div>
+        </template>
+        <NSpace vertical size="small">
+          <div class="text-12px leading-relaxed text-gray-600 dark:text-gray-300">
             {{
               bi(
-                '离任交接两件套：①「交接数据包」= 全量台账 JSON，接任人导入即接续；②「交接文档」= 自动生成的可打印文档（任期大事记 / 待办 / 发展节点 / 党费欠缴 / 台账摘要 / 交接说明）。',
-                'Term handover kit: 1) Full Ledger JSON Data Package; 2) Printable HTML Handover Document (events, pending milestones, dues summary & notes).'
-              )
-            }}
-          </div>
-          <div class="flex gap-8px">
-            <NButton type="primary" size="small" :loading="handoverBusy" @click="exportHandoverData">
-              <template #icon><SvgIcon icon="lucide:package" /></template>
-              {{ bi('导出交接数据包', 'Export Handover Data') }}
-            </NButton>
-            <NButton size="small" secondary :loading="handoverBusy" @click="exportHandoverDoc">
-              <template #icon><SvgIcon icon="lucide:printer" /></template>
-              {{ bi('生成交接文档', 'Generate Handover Doc') }}
-            </NButton>
-          </div>
-        </NSpace>
-      </NCard>
-
-      <!-- 应用锁 -->
-      <NCard :bordered="false" :title="bi('应用锁', 'App Lock')">
-        <NSpace vertical size="large">
-          <div class="text-13px leading-relaxed text-gray-500">
-            {{
-              bi(
-                '启用后，启动工作台需输入密码；页眉可随时手动锁定，支持闲置自动锁定与密保答案找回。密码仅在本机存哈希，用于隐私遮挡。',
-                'When enabled, requires password on startup or manual lock from header, with idle auto-lock and security question recovery.'
-              )
-            }}
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-13px">{{ bi('启用应用锁', 'Enable App Lock') }}</span>
-            <NSwitch :value="appLock.enabled" @update:value="toggleLock" />
-          </div>
-          <template v-if="appLock.enabled">
-            <div class="flex items-center justify-between">
-              <span class="text-13px">{{ bi('闲置自动锁定', 'Idle Auto-Lock') }}</span>
-              <NSelect
-                :value="appLock.idleMinutes"
-                :options="IDLE_OPTIONS"
-                size="small"
-                class="w-220px"
-                @update:value="v => appLock.setIdleMinutes(v)"
-              />
-            </div>
-            <div class="flex gap-8px">
-              <NButton size="small" secondary @click="lockPwdShow = true">
-                <template #icon><SvgIcon icon="lucide:key-round" /></template>
-                {{ bi('修改密码', 'Change Password') }}
-              </NButton>
-              <NButton size="small" type="primary" @click="appLock.lock()">
-                <template #icon><SvgIcon icon="lucide:lock" /></template>
-                {{ bi('立即锁定', 'Lock Now') }}
-              </NButton>
-            </div>
-            <div class="text-12px text-gray-400">
-              {{ bi('找回问题：', 'Recovery Question: ') }}{{ appLock.question }}
-            </div>
-          </template>
-        </NSpace>
-      </NCard>
-
-      <!-- 演示数据 -->
-      <NCard :bordered="false" :title="bi('演示数据', 'Demo Seed Data')">
-        <NSpace vertical size="large">
-          <div class="text-13px leading-relaxed text-gray-500">
-            {{
-              bi(
-                '内置一套虚构演示数据（22 名成员、一学期台历节奏、党费/谈话/模板样例，全部化名脱敏）。可用于体验与截图演示。',
-                'Built-in desensitized demo dataset (22 members, full semester schedule, dues, talks & templates) for testing and evaluation.'
-              )
-            }}
-          </div>
-          <div class="flex gap-8px">
-            <NButton size="small" secondary :loading="resetting" @click="openDangerConfirm('reset')">
-              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-              {{ bi('重置为演示种子', 'Reset to Demo Seed') }}
-            </NButton>
-            <NButton size="small" type="error" ghost @click="openDangerConfirm('clear')">
-              <template #icon><SvgIcon icon="lucide:trash-2" /></template>
-              {{ bi('清空业务数据', 'Clear All Data') }}
-            </NButton>
-          </div>
-        </NSpace>
-      </NCard>
-
-      <!-- 关于 -->
-      <NCard :bordered="false" :title="bi('关于三尺台', 'About 三尺台')">
-        <NSpace vertical size="large">
-          <div class="text-13px leading-relaxed text-gray-600">
-            {{
-              bi(
-                '学工工作平台（v0.2.4）——党支部书记个人离线工作台。主视图台历，配套三会一课排期、党员发展、党费收缴、谈心谈话、知识库与政策文件库。数据纯本地，无账号、无网络请求。',
-                'Student & Party Affairs Workbench (v0.2.4) — Offline-first personal workspace for Party Branch Secretaries. Calendar-driven with full ledger, knowledge base, and policy archives.'
+                '学工工作平台——党支部书记个人离线工作台。主视图台历，配套人员档案、三会一课、党员发展、党费收缴、谈心谈话、党员积分与政策知识库。数据纯本地，无账号、无云端上传。',
+                'Student & Party Affairs Workbench — Offline-first workspace for Party Branch Secretaries. Purely local with zero cloud uploads.'
               )
             }}
           </div>
           <NDescriptions :column="1" size="small" label-placement="left" bordered>
             <NDescriptionsItem :label="bi('版本', 'Version')">{{ APP_VERSION }}</NDescriptionsItem>
-            <NDescriptionsItem :label="bi('第三方开源组件', 'Open Source Stack')">
-              Vue 3 · Naive UI · FullCalendar · ECharts · Dexie · Tauri（MIT / Apache-2.0）
+            <NDescriptionsItem :label="bi('开源技术栈', 'Open Source Stack')">
+              Vue 3 · Naive UI · FullCalendar · ECharts · Dexie · Tauri
             </NDescriptionsItem>
-            <NDescriptionsItem :label="bi('隐私声明', 'Privacy Notice')">
+            <NDescriptionsItem :label="bi('隐私保护', 'Privacy Notice')">
               {{
                 bi(
-                  '默认不采集身份证号；手机号为选填敏感字段；导出报表不含敏感列',
-                  'No ID numbers collected; all data stored locally in IndexedDB; exports exclude sensitive columns'
+                  '全部数据纯本地存储；身份证号默认自动隐藏并脱敏展示，常规报表不含敏感列',
+                  '100% local storage; ID numbers auto-hidden & masked by default'
                 )
               }}
             </NDescriptionsItem>

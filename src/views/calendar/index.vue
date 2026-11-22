@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
-import FullCalendar from '@fullcalendar/vue3';
-import dayGridPlugin from '@fullcalendar/daygrid';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import interactionPlugin from '@fullcalendar/interaction';
 import type {
   CalendarOptions,
   DayHeaderContentArg,
@@ -14,15 +10,19 @@ import type {
   EventDropArg,
   EventHoveringArg
 } from '@fullcalendar/core';
-import type { DateClickArg, EventResizeDoneArg } from '@fullcalendar/interaction';
 import zhCnLocale from '@fullcalendar/core/locales/zh-cn';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import type { DateClickArg, EventResizeDoneArg } from '@fullcalendar/interaction';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import FullCalendar from '@fullcalendar/vue3';
+import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
 import { $t } from '@/locales';
 import { useAppStore } from '@/store/modules/app';
 import { useWorkDataStore } from '@/store/modules/work-data';
-import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
 import EmptyFancy from '@/components/custom/empty-fancy.vue';
-import EventEditModal from './modules/event-edit-modal.vue';
 import EventDetailDrawer from './modules/event-detail-drawer.vue';
+import EventEditModal from './modules/event-edit-modal.vue';
 
 defineOptions({ name: 'CalendarPage' });
 
@@ -278,8 +278,7 @@ const calendarOptions = ref<CalendarOptions>({
     };
     const isDone = ev?.status === '已完成';
     const isCancelled = ev?.status === '已取消';
-    const timeRange =
-      ev?.start_time && ev.start_time !== ev.end_time ? `${ev.start_time} - ${ev.end_time}` : '';
+    const timeRange = ev?.start_time && ev.start_time !== ev.end_time ? `${ev.start_time} - ${ev.end_time}` : '';
     const title = ev?.title ?? arg.event.title;
     const loc = ev?.location ? ` · ${ev.location}` : '';
 
@@ -289,11 +288,7 @@ const calendarOptions = ref<CalendarOptions>({
           <span class="nuxt-cal-ev__pill"></span>
           <div class="nuxt-cal-ev__body">
             <div class="nuxt-cal-ev__title">${escapeHtml(title)}</div>
-            ${
-              timeRange || loc
-                ? `<div class="nuxt-cal-ev__meta">${escapeHtml(timeRange)}${escapeHtml(loc)}</div>`
-                : ''
-            }
+            ${timeRange || loc ? `<div class="nuxt-cal-ev__meta">${escapeHtml(timeRange)}${escapeHtml(loc)}</div>` : ''}
           </div>
         </div>
       `
@@ -325,11 +320,7 @@ const calendarOptions = ref<CalendarOptions>({
 });
 
 function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 async function handleMove(info: EventDropArg | EventResizeDoneArg) {
@@ -464,13 +455,15 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
               style="background: var(--sct-soft); border: 1px solid var(--sct-border); color: var(--sct-muted)"
             >
               <span class="inline-block size-6px rounded-full bg-[#A81C24]" />
-              {{ $t('sct.calendar.today') }} <b style="color: var(--sct-ink)">{{ todayEvents.length }}</b>
+              {{ $t('sct.calendar.today') }}
+              <b style="color: var(--sct-ink)">{{ todayEvents.length }}</b>
             </span>
             <span
               class="inline-flex items-center gap-4px rounded-full px-9px py-2px text-11px font-medium"
               style="background: var(--sct-soft); border: 1px solid var(--sct-border); color: var(--sct-muted)"
             >
-              {{ $t('sct.calendar.thisWeek') }} <b style="color: var(--sct-ink)">{{ weekEvents.length }}</b>
+              {{ $t('sct.calendar.thisWeek') }}
+              <b style="color: var(--sct-ink)">{{ weekEvents.length }}</b>
             </span>
           </div>
         </div>
@@ -504,11 +497,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
             >
               <SvgIcon icon="lucide:chevron-left" class="text-15px" />
             </button>
-            <button
-              type="button"
-              class="cal-nav-btn cal-nav-btn--today"
-              @click="navToday"
-            >
+            <button type="button" class="cal-nav-btn cal-nav-btn--today" @click="navToday">
               {{ $t('sct.calendar.today') }}
             </button>
             <button
@@ -587,7 +576,10 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           </div>
         </template>
         <template #header-extra>
-          <NTag size="tiny" :bordered="false" round>{{ todayEvents.length }} {{ $t('sct.common.items') }}</NTag>
+          <div class="flex items-center gap-4px">
+            <span v-if="todayEvents.length > 6" class="text-11px text-gray-400">可滚动</span>
+            <NTag size="tiny" :bordered="false" round>{{ todayEvents.length }} {{ $t('sct.common.items') }}</NTag>
+          </div>
         </template>
         <EmptyFancy
           v-if="!todayEvents.length"
@@ -596,7 +588,11 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           :sub="$t('sct.calendar.todayEmptySub')"
           compact
         />
-        <div v-else class="flex flex-col gap-8px">
+        <div
+          v-else
+          class="cal-today-list flex flex-col gap-8px"
+          :class="{ 'max-h-436px overflow-y-auto pr-4px': todayEvents.length > 6 }"
+        >
           <div
             v-for="ev in todayEvents"
             :key="ev.id"
@@ -740,11 +736,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
                     {{ hoverCard.event.kind }}
                   </span>
                 </div>
-                <NTag
-                  size="tiny"
-                  :bordered="false"
-                  :type="eventStatusTagType(hoverCard.event.status)"
-                >
+                <NTag size="tiny" :bordered="false" :type="eventStatusTagType(hoverCard.event.status)">
                   {{ tStatus(hoverCard.event.status) }}
                 </NTag>
               </div>
@@ -821,11 +813,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       :preset="editModalPreset"
       @saved="detailShow = false"
     />
-    <EventDetailDrawer
-      v-model:show="detailShow"
-      :event="detailEvent"
-      @edit="openEditEvent($event)"
-    />
+    <EventDetailDrawer v-model:show="detailShow" :event="detailEvent" @edit="openEditEvent($event)" />
   </div>
 </template>
 
@@ -901,7 +889,9 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   color: var(--sct-ink) !important;
   font-size: 12px;
   font-weight: 600;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .cal-nav-btn--icon {
@@ -957,7 +947,9 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 
 .cal-pop-enter-active,
 .cal-pop-leave-active {
-  transition: opacity 130ms ease, transform 130ms ease;
+  transition:
+    opacity 130ms ease,
+    transform 130ms ease;
 }
 .cal-pop-enter-from,
 .cal-pop-leave-to {
@@ -1075,7 +1067,10 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   border: 1px solid color-mix(in srgb, var(--ev-color, #a81c24) 22%, transparent);
   color: var(--sct-ink);
   overflow: hidden;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    border-color 0.12s ease;
 }
 
 :deep(.nuxt-cal-ev:hover) {

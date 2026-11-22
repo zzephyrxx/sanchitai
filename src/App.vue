@@ -32,7 +32,9 @@ watch(
     workStore.attendance,
     workStore.pointRecords,
     workStore.pointVetoes,
-    workStore.pointRules
+    workStore.pointRules,
+    workStore.partyGroupNames,
+    workStore.youthCommitteeSlots
   ],
   () => {
     schedulePushToBridge();

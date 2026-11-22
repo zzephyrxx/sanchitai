@@ -70,6 +70,14 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     () => db.meta.get('point-rules'),
     undefined
   );
+  const partyGroupsRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('party-groups'),
+    undefined
+  );
+  const youthSlotsRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('youth-committee-slots'),
+    undefined
+  );
   const branchNameRow = useDexieLive<{ key: string; value: unknown } | undefined>(
     () => db.meta.get('branch-name'),
     undefined
@@ -81,6 +89,23 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       return val as Sct.PointRuleItem[];
     }
     return DEFAULT_POINT_RULES;
+  });
+
+  const partyGroupNames = computed<string[]>(() => {
+    const saved = Array.isArray(partyGroupsRow.value?.value)
+      ? (partyGroupsRow.value.value as string[]).map(s => String(s).trim()).filter(Boolean)
+      : [];
+    const fromMembers = members.value.map(m => (m.group ?? '').trim()).filter(Boolean);
+    const merged = Array.from(new Set([...saved, ...fromMembers]));
+    return merged.length > 0 ? merged : ['第一党小组', '第二党小组'];
+  });
+
+  const youthCommitteeSlots = computed<Sct.YouthCommitteeSlot[]>(() => {
+    const val = youthSlotsRow.value?.value;
+    if (Array.isArray(val)) {
+      return val as Sct.YouthCommitteeSlot[];
+    }
+    return [];
   });
 
   const branchName = computed(() => {
@@ -391,13 +416,27 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   }
 
   async function deleteMember(id: string) {
-    await db.transaction('rw', [db.members, db.devStages, db.feeRecords, db.pointRecords, db.pointVetoes], async () => {
-      await db.members.delete(id);
-      await db.devStages.delete(id);
-      await db.feeRecords.where('member_id').equals(id).delete();
-      await db.pointRecords.where('member_id').equals(id).delete();
-      await db.pointVetoes.where('member_id').equals(id).delete();
-    });
+    await db.transaction(
+      'rw',
+      [db.members, db.devStages, db.feeRecords, db.pointRecords, db.pointVetoes, db.meta],
+      async () => {
+        await db.members.delete(id);
+        await db.devStages.delete(id);
+        await db.feeRecords.where('member_id').equals(id).delete();
+        await db.pointRecords.where('member_id').equals(id).delete();
+        await db.pointVetoes.where('member_id').equals(id).delete();
+        const youthRow = await db.meta.get('youth-committee-slots');
+        if (Array.isArray(youthRow?.value)) {
+          const slots = youthRow.value as Sct.YouthCommitteeSlot[];
+          if (slots.some(s => s.member_id === id)) {
+            await db.meta.put({
+              key: 'youth-committee-slots',
+              value: slots.map(s => (s.member_id === id ? { ...s, member_id: null } : s))
+            });
+          }
+        }
+      }
+    );
   }
 
   /** 批量导入成员（导入前自动创建本地快照；支持跳过 / 合并更新 / 追加） */
@@ -855,6 +894,135 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await guardWrite(db.meta.delete('point-rules'), '重置积分考核标准');
   }
 
+  // ---------------- 党小组管理（双向互通） ----------------
+  async function addPartyGroup(name: string) {
+    const clean = name.trim();
+    if (!clean) {
+      window.$message?.warning('请输入党小组名称');
+      return;
+    }
+    const next = Array.from(new Set([...partyGroupNames.value, clean]));
+    await guardWrite(db.meta.put({ key: 'party-groups', value: plain(next) }), '新增党小组');
+  }
+
+  async function renamePartyGroup(oldName: string, newName: string) {
+    const from = oldName.trim();
+    const to = newName.trim();
+    if (!to || from === to) return;
+    await guardWrite(
+      db.transaction('rw', [db.members, db.meta], async () => {
+        const currentList = [...partyGroupNames.value];
+        const nextList = Array.from(new Set(currentList.map(g => (g === from ? to : g))));
+        if (!nextList.includes(to)) nextList.push(to);
+        await db.meta.put({ key: 'party-groups', value: plain(nextList) });
+
+        const affected = await db.members.filter(m => (m.group ?? '').trim() === from).toArray();
+        if (affected.length) {
+          await db.members.bulkPut(plain(affected.map(m => ({ ...m, group: to }))));
+        }
+      }),
+      '重命名党小组'
+    );
+  }
+
+  async function deletePartyGroup(name: string) {
+    const target = name.trim();
+    if (!target) return;
+    await guardWrite(
+      db.transaction('rw', [db.members, db.meta], async () => {
+        const nextList = partyGroupNames.value.filter(g => g !== target);
+        await db.meta.put({ key: 'party-groups', value: plain(nextList) });
+        const affected = await db.members.filter(m => (m.group ?? '').trim() === target).toArray();
+        if (affected.length) {
+          await db.members.bulkPut(plain(affected.map(m => ({ ...m, group: '' }))));
+        }
+      }),
+      '删除党小组'
+    );
+  }
+
+  // ---------------- 自定义青年委员槽位（支持 0..N 个，仅限正式党员） ----------------
+  async function saveYouthSlots(slots: Sct.YouthCommitteeSlot[]) {
+    await guardWrite(db.meta.put({ key: 'youth-committee-slots', value: plain(slots) }), '青年委员配置');
+  }
+
+  async function addYouthCommitteeSlot(title = '青年委员', duty = '联系青年团员 · 组织文体实践与推优入党') {
+    const cleanTitle = title.trim() || '青年委员';
+    const nextSlot: Sct.YouthCommitteeSlot = {
+      id: `youth-${nanoid(6)}`,
+      title: cleanTitle,
+      duty: duty.trim() || '联系青年团员 · 组织文体实践与推优入党',
+      member_id: null
+    };
+    await saveYouthSlots([...youthCommitteeSlots.value, nextSlot]);
+    return nextSlot.id;
+  }
+
+  async function updateYouthCommitteeSlot(slotId: string, patch: { title?: string; duty?: string }) {
+    const existing = youthCommitteeSlots.value.find(s => s.id === slotId);
+    if (!existing) return;
+    const nextTitle = patch.title !== undefined ? patch.title.trim() || '青年委员' : existing.title;
+    const nextDuty = patch.duty !== undefined ? patch.duty.trim() : existing.duty;
+    const nextSlots = youthCommitteeSlots.value.map(s =>
+      s.id === slotId ? { ...s, title: nextTitle, duty: nextDuty } : s
+    );
+    await guardWrite(
+      db.transaction('rw', [db.members, db.meta], async () => {
+        await db.meta.put({ key: 'youth-committee-slots', value: plain(nextSlots) });
+        if (existing.member_id && nextTitle !== existing.title) {
+          await db.members.update(existing.member_id, { role: nextTitle });
+        }
+      }),
+      '更新青年委员岗位'
+    );
+  }
+
+  async function assignYouthCommitteeMember(slotId: string, memberId: string | null) {
+    const targetSlot = youthCommitteeSlots.value.find(s => s.id === slotId);
+    if (!targetSlot) return;
+    if (memberId) {
+      const m = memberOf(memberId);
+      if (m && m.type !== '正式党员') {
+        window.$message?.warning('仅正式党员具有被选举权，预备党员等不能担任支委职务');
+        return;
+      }
+    }
+    await guardWrite(
+      db.transaction('rw', [db.members, db.meta], async () => {
+        // 清理原占据该槽位成员的职务
+        if (targetSlot.member_id && targetSlot.member_id !== memberId) {
+          await db.members.update(targetSlot.member_id, { role: '' });
+        }
+        // 如果该成员此前担任其他青年委员槽位，先从旧槽位移除
+        const nextSlots = youthCommitteeSlots.value.map(s => {
+          if (s.id === slotId) return { ...s, member_id: memberId };
+          if (memberId && s.member_id === memberId) return { ...s, member_id: null };
+          return s;
+        });
+        await db.meta.put({ key: 'youth-committee-slots', value: plain(nextSlots) });
+        if (memberId) {
+          await db.members.update(memberId, { role: targetSlot.title });
+        }
+      }),
+      '指派青年委员'
+    );
+  }
+
+  async function removeYouthCommitteeSlot(slotId: string) {
+    const targetSlot = youthCommitteeSlots.value.find(s => s.id === slotId);
+    if (!targetSlot) return;
+    await guardWrite(
+      db.transaction('rw', [db.members, db.meta], async () => {
+        if (targetSlot.member_id) {
+          await db.members.update(targetSlot.member_id, { role: '' });
+        }
+        const nextSlots = youthCommitteeSlots.value.filter(s => s.id !== slotId);
+        await db.meta.put({ key: 'youth-committee-slots', value: plain(nextSlots) });
+      }),
+      '移除青年委员岗位'
+    );
+  }
+
   return {
     members,
     seatMaps,
@@ -868,6 +1036,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     pointRecords,
     pointVetoes,
     pointRules,
+    partyGroupNames,
+    youthCommitteeSlots,
     branchName,
     setBranchName,
     memberMonthlyFee,
@@ -888,6 +1058,13 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     setPointVeto,
     savePointRules,
     resetPointRules,
+    addPartyGroup,
+    renamePartyGroup,
+    deletePartyGroup,
+    addYouthCommitteeSlot,
+    updateYouthCommitteeSlot,
+    assignYouthCommitteeMember,
+    removeYouthCommitteeSlot,
     memberById,
     memberName,
     memberOf,

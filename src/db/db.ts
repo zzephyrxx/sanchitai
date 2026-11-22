@@ -136,6 +136,28 @@ class SanchitaiDB extends Dexie {
       pointRecords: 'id, member_id, year, date, category, status, identity',
       pointVetoes: 'id, member_id, year, identity'
     });
+
+    // v7：全系统「研究方向组」迁移为「第 X 党小组」（仅迁移旧演示组名，保留用户自定义名称）
+    this.version(7)
+      .stores({})
+      .upgrade(async tx => {
+        const legacyMap: Record<string, string> = {
+          视算一组: '第一党小组',
+          视算二组: '第二党小组',
+          博士组: '第三党小组',
+          软件组: '第四党小组',
+          综合方向组: ''
+        };
+        await tx
+          .table('members')
+          .toCollection()
+          .modify((m: Sct.Member) => {
+            const g = (m.group ?? '').trim();
+            if (g in legacyMap) {
+              m.group = legacyMap[g];
+            }
+          });
+      });
   }
 }
 
@@ -170,6 +192,17 @@ export interface BackupShape {
   point_records?: Sct.PointRecord[];
   point_vetoes?: Sct.PointVeto[];
   point_rules?: Sct.PointRuleItem[];
+  party_groups?: string[];
+  youth_committee_slots?: Sct.YouthCommitteeSlot[];
+}
+
+export type SnapshotKind = 'auto' | 'manual';
+
+export interface BackupSnapshotEntry {
+  key: string;
+  kind: SnapshotKind;
+  ts: string;
+  shape: BackupShape;
 }
 
 const BACKUP_RING_SIZE = 5;
@@ -189,7 +222,9 @@ export async function exportBackup(): Promise<BackupShape> {
     point_records,
     point_vetoes,
     branchName,
-    pointRules
+    pointRules,
+    partyGroups,
+    youthSlots
   ] = await Promise.all([
     db.members.toArray(),
     db.seatMaps.toArray(),
@@ -203,10 +238,12 @@ export async function exportBackup(): Promise<BackupShape> {
     db.pointRecords.toArray(),
     db.pointVetoes.toArray(),
     getMeta<string>('branch-name'),
-    getMeta<Sct.PointRuleItem[]>('point-rules')
+    getMeta<Sct.PointRuleItem[]>('point-rules'),
+    getMeta<string[]>('party-groups'),
+    getMeta<Sct.YouthCommitteeSlot[]>('youth-committee-slots')
   ]);
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     exported_at: new Date().toISOString(),
     branch_name: branchName || '智感硕博党支部',
     members,
@@ -220,33 +257,43 @@ export async function exportBackup(): Promise<BackupShape> {
     attendance,
     point_records,
     point_vetoes,
-    point_rules: pointRules
+    point_rules: pointRules,
+    party_groups: partyGroups,
+    youth_committee_slots: youthSlots
   };
 }
 
-/** 写入环形快照（保留最近 BACKUP_RING_SIZE 份） */
-export async function pushBackupRing(): Promise<void> {
-  const ring = (await getMeta<number>('backup_ring_cursor')) ?? 0;
+/** 写入环形快照（自动与手动各独立保留最近 5 份） */
+export async function pushBackupRing(kind: SnapshotKind = 'auto'): Promise<void> {
+  const cursorKey = kind === 'manual' ? 'backup_ring_cursor_manual' : 'backup_ring_cursor_auto';
+  const ring = (await getMeta<number>(cursorKey)) ?? 0;
   const snapshot = await exportBackup();
-  await setMeta(`backup-${ring}`, snapshot);
-  await setMeta('backup_ring_cursor', (ring + 1) % BACKUP_RING_SIZE);
+  await setMeta(`backup-${kind}-${ring}`, snapshot);
+  await setMeta(cursorKey, (ring + 1) % BACKUP_RING_SIZE);
 }
 
-/** 读取全部环形快照（按新→旧） */
-export async function listBackupRing(): Promise<Array<{ key: string; ts: string; shape: BackupShape }>> {
+/** 读取环形快照（按新→旧；可按 auto/manual 筛选，自动快照向下兼容旧版 backup-0..4） */
+export async function listBackupRing(kind?: SnapshotKind): Promise<BackupSnapshotEntry[]> {
   const rows = await db.meta.filter(r => r.key.startsWith('backup-')).toArray();
+  const legacyRe = /^backup-\d+$/;
   return rows
-    .filter(r => r.key !== 'backup_ring_cursor' && r.value)
+    .filter(r => !r.key.includes('cursor') && r.value)
     .map(r => {
       const shape = r.value as BackupShape;
-      return { key: r.key, ts: shape.exported_at, shape };
+      const entryKind: SnapshotKind = r.key.startsWith('backup-manual-')
+        ? 'manual'
+        : r.key.startsWith('backup-auto-') || legacyRe.test(r.key)
+          ? 'auto'
+          : 'auto';
+      return { key: r.key, kind: entryKind, ts: shape.exported_at, shape };
     })
+    .filter(entry => (!kind ? true : entry.kind === kind))
     .sort((a, b) => b.ts.localeCompare(a.ts));
 }
 
 /** 删除指定本地快照 */
 export async function deleteBackupSnapshot(key: string): Promise<void> {
-  if (!key.startsWith('backup-') || key === 'backup_ring_cursor') return;
+  if (!key.startsWith('backup-') || key.includes('cursor')) return;
   await db.meta.delete(key);
 }
 
@@ -349,6 +396,12 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
   }
   if (Array.isArray(shape.point_rules)) {
     await setMeta('point-rules', shape.point_rules);
+  }
+  if (Array.isArray(shape.party_groups)) {
+    await setMeta('party-groups', shape.party_groups);
+  }
+  if (Array.isArray(shape.youth_committee_slots)) {
+    await setMeta('youth-committee-slots', shape.youth_committee_slots);
   }
 }
 

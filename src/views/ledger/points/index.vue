@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue';
+import { computed, h, reactive, ref, watch } from 'vue';
 import { NButton, NTag } from 'naive-ui';
 import dayjs from 'dayjs';
 import { POINT_PASS_LINE } from '@/constants/party-points';
@@ -82,9 +82,27 @@ const kpiStats = computed(() => {
   };
 });
 
-// ---------------- 筛选与搜索 ----------------
+// ---------------- 筛选、搜索与分页 ----------------
 const filterMode = ref<'all' | 'warning' | 'pending' | 'pass'>('all');
 const searchKeyword = ref('');
+
+const pagination = reactive({
+  page: 1,
+  pageSize: 20,
+  showSizePicker: true,
+  pageSizes: [15, 20, 50],
+  onChange: (page: number) => {
+    pagination.page = page;
+  },
+  onUpdatePageSize: (pageSize: number) => {
+    pagination.pageSize = pageSize;
+    pagination.page = 1;
+  }
+});
+
+watch([filterMode, searchKeyword, selectedYear], () => {
+  pagination.page = 1;
+});
 
 const filteredSummaries = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase();
@@ -162,15 +180,15 @@ const DEFAULT_POINT_COLS = [
 
 const columnMap = computed(() => ({
   idx: {
-    defaultWidth: 50,
-    minWidth: 44,
+    defaultWidth: 46,
+    minWidth: 42,
     align: 'center' as const,
     titleContent: () => thLabel('lucide:hash', bi('序号', '#')),
     render: (_row: MemberYearPointSummary, index: number) => h('span', { class: 'text-gray-400 font-mono' }, index + 1)
   },
   name: {
-    defaultWidth: 112,
-    minWidth: 96,
+    defaultWidth: 102,
+    minWidth: 88,
     titleContent: () => thLabel('lucide:user', bi('党员姓名', 'Member')),
     render: (row: MemberYearPointSummary) =>
       h('div', { class: 'flex items-center gap-6px' }, [
@@ -182,8 +200,8 @@ const columnMap = computed(() => ({
       ])
   },
   type: {
-    defaultWidth: 84,
-    minWidth: 76,
+    defaultWidth: 80,
+    minWidth: 72,
     align: 'center' as const,
     titleContent: () => thLabel('lucide:badge-check', bi('身份', 'Status')),
     render: (row: MemberYearPointSummary) =>
@@ -198,8 +216,8 @@ const columnMap = computed(() => ({
       )
   },
   baseScore: {
-    defaultWidth: 92,
-    minWidth: 82,
+    defaultWidth: 88,
+    minWidth: 78,
     align: 'center' as const,
     sorter: (a: MemberYearPointSummary, b: MemberYearPointSummary) => a.baseScore - b.baseScore,
     titleContent: () => thLabel('lucide:shield', bi('基础分(60)', 'Base')),
@@ -219,8 +237,8 @@ const columnMap = computed(() => ({
       ])
   },
   dutyScore: {
-    defaultWidth: 136,
-    minWidth: 112,
+    defaultWidth: 124,
+    minWidth: 108,
     align: 'center' as const,
     sorter: (a: MemberYearPointSummary, b: MemberYearPointSummary) => a.dutyScore - b.dutyScore,
     titleContent: () => thLabel('lucide:sparkles', bi('履职分(≤40)', 'Duty')),
@@ -235,8 +253,8 @@ const columnMap = computed(() => ({
       ])
   },
   bonusScore: {
-    defaultWidth: 76,
-    minWidth: 68,
+    defaultWidth: 72,
+    minWidth: 64,
     align: 'center' as const,
     sorter: (a: MemberYearPointSummary, b: MemberYearPointSummary) => a.bonusScore - b.bonusScore,
     titleContent: () => thLabel('lucide:star', bi('附加分', 'Bonus')),
@@ -248,8 +266,8 @@ const columnMap = computed(() => ({
       )
   },
   penaltyDeduction: {
-    defaultWidth: 76,
-    minWidth: 68,
+    defaultWidth: 72,
+    minWidth: 64,
     align: 'center' as const,
     sorter: (a: MemberYearPointSummary, b: MemberYearPointSummary) => a.penaltyDeduction - b.penaltyDeduction,
     titleContent: () => thLabel('lucide:alert-triangle', bi('减扣分', 'Penalty')),
@@ -264,8 +282,8 @@ const columnMap = computed(() => ({
       )
   },
   totalScore: {
-    defaultWidth: 92,
-    minWidth: 82,
+    defaultWidth: 86,
+    minWidth: 76,
     align: 'center' as const,
     sorter: (a: MemberYearPointSummary, b: MemberYearPointSummary) => a.totalScore - b.totalScore,
     titleContent: () => thLabel('lucide:award', bi('年度总分', 'Total')),
@@ -280,8 +298,8 @@ const columnMap = computed(() => ({
       )
   },
   status: {
-    defaultWidth: 112,
-    minWidth: 96,
+    defaultWidth: 102,
+    minWidth: 90,
     align: 'center' as const,
     titleContent: () => thLabel('lucide:clipboard-check', bi('评定 / 待核实', 'Review')),
     render: (row: MemberYearPointSummary) =>
@@ -297,8 +315,8 @@ const columnMap = computed(() => ({
       ])
   },
   op: {
-    defaultWidth: 102,
-    minWidth: 94,
+    defaultWidth: 96,
+    minWidth: 90,
     align: 'center' as const,
     resizable: false,
     reorderable: false,
@@ -325,7 +343,7 @@ const { columns, scrollX, hasCustomLayout, resetLayout } = useTableColumnLayout<
   defaultOrder: DEFAULT_POINT_COLS,
   pinnedEndKeys: ['op'],
   columnMap,
-  minTableWidth: 860
+  minTableWidth: 820
 });
 
 function rowProps(row: MemberYearPointSummary) {
@@ -371,46 +389,60 @@ function rowProps(row: MemberYearPointSummary) {
         </div>
       </template>
 
-      <!-- 顶部统计指标 -->
-      <div class="mb-14px flex flex-wrap gap-10px">
-        <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
-          {{ bi('考核党员', 'Members') }}
-          <b class="text-[#A81C24]">{{ kpiStats.total }}</b>
-          <span class="ml-4px text-12px text-gray-500">
+      <!-- 顶部统计指标（前两项为静态汇总，后两项为可点击快捷筛选按钮，视觉清晰区分） -->
+      <div class="mb-14px flex flex-wrap items-center gap-10px">
+        <div class="flex items-center gap-4px rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
+          <SvgIcon icon="lucide:users" class="text-14px text-gray-400" />
+          <span>{{ bi('考核党员', 'Members') }}</span>
+          <b class="text-[#A81C24] font-mono">{{ kpiStats.total }}</b>
+          <span class="ml-2px text-12px text-gray-500">
             （正式 {{ kpiStats.formalCount }} · 预备 {{ kpiStats.probationCount }}）
           </span>
         </div>
-        <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
-          {{ bi('支部平均分', 'Average') }}
+        <div class="flex items-center gap-4px rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
+          <SvgIcon icon="lucide:trending-up" class="text-14px text-gray-400" />
+          <span>{{ bi('支部平均分', 'Average') }}</span>
           <b class="font-mono text-[#2563eb]">{{ formatScore(kpiStats.avg) }}</b>
-          <span class="ml-6px text-12px text-gray-500">最高 {{ formatScore(kpiStats.max) }} 分</span>
+          <span class="ml-4px text-12px text-gray-500">最高 {{ formatScore(kpiStats.max) }} 分</span>
         </div>
-        <div
-          role="button"
-          tabindex="0"
-          class="cursor-pointer rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px transition hover:opacity-85"
-          :class="filterMode === 'warning' ? 'ring-1 ring-[#dc2626]' : ''"
+
+        <button
+          type="button"
+          class="points-kpi-btn points-kpi-btn--warn"
+          :class="{ 'is-active': filterMode === 'warning' }"
+          :title="bi('点击筛选 <60 分或一票否决预警党员', 'Click to filter warning members')"
           @click="filterMode = filterMode === 'warning' ? 'all' : 'warning'"
         >
-          {{ bi('<60分 / 否决预警', 'Warnings') }}
-          <b class="ml-4px font-mono" :style="{ color: kpiStats.warningCount > 0 ? '#dc2626' : '#16a34a' }">
+          <SvgIcon icon="lucide:alert-circle" class="text-14px" style="color: #dc2626" />
+          <span>{{ bi('<60分 / 否决预警', 'Warnings') }}</span>
+          <b class="font-mono" :style="{ color: kpiStats.warningCount > 0 ? '#dc2626' : '#16a34a' }">
             {{ kpiStats.warningCount }}
           </b>
-          {{ bi('人', '') }}
-        </div>
-        <div
-          role="button"
-          tabindex="0"
-          class="cursor-pointer rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px transition hover:opacity-85"
-          :class="filterMode === 'pending' ? 'ring-1 ring-[#d97706]' : ''"
+          <span>{{ bi('人', '') }}</span>
+          <span class="points-kpi-btn__cue">
+            <SvgIcon :icon="filterMode === 'warning' ? 'lucide:check' : 'lucide:list-filter'" class="text-11px" />
+            <span>{{ filterMode === 'warning' ? bi('已筛选', 'Active') : bi('筛选', 'Filter') }}</span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="points-kpi-btn points-kpi-btn--pending"
+          :class="{ 'is-active': filterMode === 'pending' }"
+          :title="bi('点击筛选存在待核实申报条目的党员', 'Click to filter pending review members')"
           @click="filterMode = filterMode === 'pending' ? 'all' : 'pending'"
         >
-          {{ bi('待核实申报', 'Pending Review') }}
-          <b class="ml-4px font-mono" :style="{ color: kpiStats.pendingItems > 0 ? '#d97706' : 'var(--sct-muted)' }">
+          <SvgIcon icon="lucide:clock" class="text-14px" style="color: #d97706" />
+          <span>{{ bi('待核实申报', 'Pending Review') }}</span>
+          <b class="font-mono" :style="{ color: kpiStats.pendingItems > 0 ? '#d97706' : 'var(--sct-ink)' }">
             {{ kpiStats.pendingItems }}
           </b>
-          <span class="ml-2px text-12px text-gray-500">条（{{ kpiStats.pendingMembers }} 人）</span>
-        </div>
+          <span class="text-12px text-gray-500">条（{{ kpiStats.pendingMembers }} 人）</span>
+          <span class="points-kpi-btn__cue">
+            <SvgIcon :icon="filterMode === 'pending' ? 'lucide:check' : 'lucide:list-filter'" class="text-11px" />
+            <span>{{ filterMode === 'pending' ? bi('已筛选', 'Active') : bi('筛选', 'Filter') }}</span>
+          </span>
+        </button>
       </div>
 
       <!-- 单行筛选与搜索栏 -->
@@ -454,7 +486,7 @@ function rowProps(row: MemberYearPointSummary) {
         :row-key="(r: MemberYearPointSummary) => r.member.id"
         :row-props="rowProps"
         :scroll-x="scrollX"
-        :pagination="{ pageSize: 20, showSizePicker: true, pageSizes: [15, 20, 50] }"
+        :pagination="pagination"
         size="small"
         striped
       />
@@ -468,4 +500,68 @@ function rowProps(row: MemberYearPointSummary) {
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.points-kpi-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  font-size: 13px;
+  color: var(--sct-ink);
+  background: var(--sct-container);
+  border: 1px solid var(--sct-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.points-kpi-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.07);
+}
+
+.points-kpi-btn--warn:hover {
+  border-color: rgba(220, 38, 38, 0.55);
+}
+
+.points-kpi-btn--pending:hover {
+  border-color: rgba(217, 119, 6, 0.55);
+}
+
+.points-kpi-btn--warn.is-active {
+  background: var(--sct-err-soft);
+  border-color: #dc2626;
+}
+
+.points-kpi-btn--pending.is-active {
+  background: var(--sct-warn-soft);
+  border-color: #d97706;
+}
+
+.points-kpi-btn__cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--sct-muted);
+  background: var(--sct-soft);
+  border-radius: 999px;
+}
+
+.points-kpi-btn--warn.is-active .points-kpi-btn__cue {
+  color: #dc2626;
+  background: var(--sct-container);
+}
+
+.points-kpi-btn--pending.is-active .points-kpi-btn__cue {
+  color: #d97706;
+  background: var(--sct-container);
+}
+</style>

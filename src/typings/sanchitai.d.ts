@@ -252,6 +252,14 @@ declare namespace Sct {
     identity?: string;
   }
 
+  /** 自定义青年委员槽位（支持 0..N 个，仅限正式党员担任） */
+  interface YouthCommitteeSlot {
+    id: string;
+    title: string;
+    duty?: string;
+    member_id?: string | null;
+  }
+
   interface IdentityOption {
     id: string;
     name: string;

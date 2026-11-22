@@ -91,7 +91,7 @@ export const IMPORT_FIELD_LIST: ImportFieldMeta[] = [
   { key: 'advisor', label: '导师姓名', hint: '指导教师姓名' },
   { key: 'code', label: '支部编号', hint: '留空自动按「支部缩写+3位数字」生成' },
   { key: 'role', label: '党内职务 / 角色', hint: '如党支部书记、组织委员等' },
-  { key: 'group', label: '研究方向组 / 党小组', hint: '实验室组别或党小组' },
+  { key: 'group', label: '党小组', hint: '如：第一党小组、第二党小组' },
   { key: 'fee_category', label: '党费类别', hint: '学生党员 / 在职党员' },
   { key: 'fee_monthly', label: '月应缴党费（元）', hint: '数字，学生默认 0.2 元/月' },
   { key: 'note', label: '备注', hint: '补充说明' }

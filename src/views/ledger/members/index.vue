@@ -344,7 +344,7 @@ const COLUMN_PICKER_META: Array<{ key: ToggleableColumnKey; labelZh: string; lab
   { key: 'full_date', labelZh: '转正时间', labelEn: 'Full Date' },
   { key: 'advisor', labelZh: '导师姓名', labelEn: 'Advisor' },
   { key: 'role', labelZh: '党内职务', labelEn: 'Role' },
-  { key: 'group', labelZh: '研究方向组', labelEn: 'Group' }
+  { key: 'group', labelZh: '党小组', labelEn: 'Party Group' }
 ];
 
 const DEFAULT_VISIBLE_COLS: ToggleableColumnKey[] = [
@@ -760,7 +760,7 @@ const allColumnMap = computed(() => ({
     key: 'group',
     defaultWidth: 112,
     minWidth: 80,
-    titleContent: () => colHeader('lucide:network', bi('研究方向组', 'Group')),
+    titleContent: () => colHeader('lucide:network', bi('党小组', 'Party Group')),
     sorter: (a: MemberRow, b: MemberRow) => (a.group ?? '').localeCompare(b.group ?? ''),
     render: (row: MemberRow) => row.group || '—'
   },
@@ -1596,10 +1596,17 @@ async function removeMember(id: string) {
             <template #label>
               <span class="sct-field-label">
                 <SvgIcon icon="lucide:network" class="sct-field-icon" />
-                <span>研究方向</span>
+                <span>党小组</span>
               </span>
             </template>
-            <NInput v-model:value="addForm.group" placeholder="选填，用于分组筛选" />
+            <NSelect
+              v-model:value="addForm.group"
+              :options="workStore.partyGroupNames.map(g => ({ label: g, value: g }))"
+              filterable
+              tag
+              clearable
+              placeholder="选择或输入，如：第一党小组"
+            />
           </NFormItem>
           <NFormItem>
             <template #label>

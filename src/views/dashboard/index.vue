@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import dayjs from 'dayjs';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useTransition } from '@vueuse/core';
 import VChart from 'vue-echarts';
-import { useWorkDataStore } from '@/store/modules/work-data';
-import { useThemeStore } from '@/store/modules/theme';
-import { useSctI18n } from '@/hooks/common/sct-i18n';
-import { setupEcharts } from '@/plugins/echarts';
-import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
+import dayjs from 'dayjs';
 import { DEV_STAGE_ORDER } from '@/constants/dev-nodes';
+import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
+import { setupEcharts } from '@/plugins/echarts';
+import { useThemeStore } from '@/store/modules/theme';
+import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSctI18n } from '@/hooks/common/sct-i18n';
 import EmptyFancy from '@/components/custom/empty-fancy.vue';
 
 defineOptions({ name: 'DashboardPage' });
@@ -23,16 +23,25 @@ const themeStore = useThemeStore();
 const inkColor = computed(() => (themeStore.darkMode ? '#d9d6d0' : '#2B2926'));
 const heatBase = computed(() => (themeStore.darkMode ? '217, 214, 208' : '43, 41, 38'));
 
-// ---------------- count-up 动数 ----------------
-function useCountUp(source: () => number, duration = 800) {
-  const target = ref(source());
+// ---------------- 进入动画与 count-up 动数 ----------------
+const entered = ref(false);
+onMounted(() => {
+  requestAnimationFrame(() => {
+    entered.value = true;
+  });
+});
+
+function useCountUp(source: () => number, duration = 850) {
+  const target = ref(0);
   const shown = useTransition(target, { duration, transition: [0.22, 1, 0.36, 1] });
   watch(
-    source,
-    v => {
-      target.value = v;
+    [entered, source],
+    ([isReady, val]) => {
+      if (isReady) {
+        target.value = val;
+      }
     },
-    { immediate: false }
+    { immediate: true }
   );
   return computed(() => Math.round(shown.value));
 }
@@ -40,12 +49,14 @@ function useCountUp(source: () => number, duration = 800) {
 const memberCount = computed(() => workStore.members.length);
 const eventCount = computed(() => workStore.calEvents.length);
 const talkCount = computed(() => workStore.talks.length);
-const owedCount = computed(() => new Set(workStore.feeRecords.filter(f => f.status === '欠缴').map(f => f.member_id)).size);
+const owedCount = computed(
+  () => new Set(workStore.feeRecords.filter(f => f.status === '欠缴').map(f => f.member_id)).size
+);
 
-const memberNum = useCountUp(() => memberCount.value);
-const eventNum = useCountUp(() => eventCount.value);
-const talkNum = useCountUp(() => talkCount.value);
-const owedNum = useCountUp(() => owedCount.value, 500);
+const memberNum = useCountUp(() => memberCount.value, 850);
+const eventNum = useCountUp(() => eventCount.value, 900);
+const talkNum = useCountUp(() => talkCount.value, 850);
+const owedNum = useCountUp(() => owedCount.value, 650);
 
 // ---------------- 可定制组件系统（编辑模式/拖拽排序/增删/持久化） ----------------
 interface WidgetDef {
@@ -63,7 +74,16 @@ const WIDGET_DEFS = computed<WidgetDef[]>(() => [
   { id: 'categoryBars', title: bi('类别分布', 'Category Breakdown') },
   { id: 'weekOverview', title: bi('本周速览', 'Weekly Snapshot') }
 ]);
-const DEFAULT_ORDER = ['stats', 'reminders', 'feeRing', 'heatmap', 'feeTrend', 'stageBars', 'categoryBars', 'weekOverview'];
+const DEFAULT_ORDER = [
+  'stats',
+  'reminders',
+  'feeRing',
+  'heatmap',
+  'feeTrend',
+  'stageBars',
+  'categoryBars',
+  'weekOverview'
+];
 const WIDGET_STORE_KEY = 'sct-dash-widgets';
 
 function loadWidgetOrder(): string[] {
@@ -199,6 +219,11 @@ const monthRate = computed(() => {
   return { pct: Math.round((paid / rows.length) * 100), paid, due: rows.length, hasData: true };
 });
 
+const animatedFeePct = useCountUp(() => monthRate.value.pct, 980);
+const animatedFeeDue = useCountUp(() => monthRate.value.due, 800);
+const animatedFeePaid = useCountUp(() => monthRate.value.paid, 850);
+const animatedFeeUnpaid = useCountUp(() => Math.max(0, monthRate.value.due - monthRate.value.paid), 700);
+
 // ---------------- 近 12 周日程热力 ----------------
 const heat = computed(() => {
   const weeks: Array<Array<{ date: string; count: number }>> = [];
@@ -210,7 +235,9 @@ const heat = computed(() => {
       const iso = date.format('YYYY-MM-DD');
       col.push({
         date: iso,
-        count: date.isAfter(dayjs()) ? -1 : workStore.eventsInRange(iso, iso).filter(ev => ev.status !== '已取消').length
+        count: date.isAfter(dayjs())
+          ? -1
+          : workStore.eventsInRange(iso, iso).filter(ev => ev.status !== '已取消').length
       });
     }
     weeks.push(col);
@@ -321,7 +348,9 @@ const weekCategoryCount = computed(() => {
           <template #icon><SvgIcon icon="lucide:plus" /></template>
           {{ d.title }}
         </NButton>
-        <span v-if="hiddenWidgets.length === 0" class="text-gray-400">{{ bi('全部组件已添加', 'All widgets added') }}</span>
+        <span v-if="hiddenWidgets.length === 0" class="text-gray-400">
+          {{ bi('全部组件已添加', 'All widgets added') }}
+        </span>
       </div>
       <div class="flex gap-8px">
         <NButton size="tiny" secondary @click="resetWidgets">
@@ -344,17 +373,23 @@ const weekCategoryCount = computed(() => {
     <!-- 组件自适应栅格：stats 与 reminders 占满整行；本月党费及以下卡片按屏幕宽度自适应每行 1~3 个 -->
     <div class="grid grid-cols-1 gap-14px md:grid-cols-2 xl:grid-cols-3">
       <div
-        v-for="w in activeWidgets"
+        v-for="(w, wIdx) in activeWidgets"
         :key="w.id"
+        class="dash-widget-item"
         :class="[
           w.fullRow ? 'col-span-full' : 'flex flex-col',
           {
             'opacity-50': dragWidgetId === w.id,
-            'outline outline-1 outline-dashed outline-gray-300 rounded-14px p-8px': widgetsEditable
+            'dash-widget-item--editing outline outline-1 outline-dashed outline-gray-300 rounded-14px p-8px':
+              widgetsEditable,
+            'dash-widget-item--wide': widgetsEditable && w.fullRow,
+            'dash-widget-item--alt': widgetsEditable && wIdx % 2 === 1
           }
         ]"
+        :style="widgetsEditable ? { animationDelay: `${(wIdx % 4) * -0.11}s` } : undefined"
         :draggable="widgetsEditable"
         @dragstart="dragWidgetId = w.id"
+        @dragend="dragWidgetId = null"
         @dragover.prevent
         @drop="onWidgetDrop(w.id)"
       >
@@ -386,12 +421,15 @@ const weekCategoryCount = computed(() => {
                   {{ memberNum }}
                 </div>
                 <div class="mt-10px text-12px text-gray-400">
-                  {{ bi('正式', 'Full') }} {{ memberCount && workStore.members.filter(m => m.type === '正式党员').length }} ·
+                  {{ bi('正式', 'Full') }}
+                  {{ memberCount && workStore.members.filter(m => m.type === '正式党员').length }} ·
                   {{ bi('预备', 'Probationary') }}
                   {{ workStore.members.filter(m => m.type === '预备党员').length }}
                 </div>
               </div>
-              <div class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95">
+              <div
+                class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95"
+              >
                 <IconFluentEmojiCardIndexDividers />
               </div>
             </div>
@@ -413,7 +451,9 @@ const weekCategoryCount = computed(() => {
                   }}
                 </div>
               </div>
-              <div class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95">
+              <div
+                class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95"
+              >
                 <IconFluentEmojiCalendar />
               </div>
             </div>
@@ -435,7 +475,9 @@ const weekCategoryCount = computed(() => {
                   }}
                 </div>
               </div>
-              <div class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95">
+              <div
+                class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95"
+              >
                 <IconFluentEmojiSpiralNotepad />
               </div>
             </div>
@@ -459,7 +501,9 @@ const weekCategoryCount = computed(() => {
                   }}
                 </div>
               </div>
-              <div class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95">
+              <div
+                class="size-54px flex items-center justify-center rounded-14px bg-[var(--sct-soft)] text-34px opacity-95"
+              >
                 <IconFluentEmojiAlarmClock />
               </div>
             </div>
@@ -475,7 +519,12 @@ const weekCategoryCount = computed(() => {
         >
           <template #header-extra>
             <span class="text-12px text-gray-400">
-              {{ bi('自动汇总自党员发展 / 党费收缴 / 谈话 / 台历', 'Aggregated from Development / Dues / Talks / Calendar') }}
+              {{
+                bi(
+                  '自动汇总自党员发展 / 党费收缴 / 谈话 / 台历',
+                  'Aggregated from Development / Dues / Talks / Calendar'
+                )
+              }}
             </span>
           </template>
           <div class="grid grid-cols-1 gap-12px lg:grid-cols-3">
@@ -484,7 +533,9 @@ const weekCategoryCount = computed(() => {
                 <span class="inline-block h-12px w-3.5px rounded-full bg-[#d43030]" />
                 <span>{{ bi('逾期', 'Overdue') }}（{{ overdueItems.length }}）</span>
               </div>
-              <div v-if="!overdueItems.length" class="text-12px text-gray-400">{{ bi('无逾期节点', 'No overdue milestones') }}</div>
+              <div v-if="!overdueItems.length" class="text-12px text-gray-400">
+                {{ bi('无逾期节点', 'No overdue milestones') }}
+              </div>
               <div
                 v-for="(it, i) in overdueItems"
                 :key="i"
@@ -497,7 +548,11 @@ const weekCategoryCount = computed(() => {
             <div class="rounded-14px border border-[var(--sct-border)] bg-[var(--sct-soft)] p-14px">
               <div class="mb-8px flex items-center gap-6px text-13px font-bold" style="color: #d97706">
                 <span class="inline-block h-12px w-3.5px rounded-full bg-[#d97706]" />
-                <span>{{ bi('欠缴与未覆盖', 'Unpaid Dues & Uncovered Talks') }}（{{ owedItems.length + uncoveredTalks.count }}）</span>
+                <span>
+                  {{ bi('欠缴与未覆盖', 'Unpaid Dues & Uncovered Talks') }}（{{
+                    owedItems.length + uncoveredTalks.count
+                  }}）
+                </span>
               </div>
               <div
                 v-for="(it, i) in owedItems"
@@ -508,7 +563,9 @@ const weekCategoryCount = computed(() => {
                 {{ it.text }}
               </div>
               <div class="text-12px leading-relaxed" style="color: var(--sct-muted)">
-                {{ bi(`今年未谈心谈话 ${uncoveredTalks.count} 人`, `Uncovered talks this year: ${uncoveredTalks.count}`) }}{{
+                {{
+                  bi(`今年未谈心谈话 ${uncoveredTalks.count} 人`, `Uncovered talks this year: ${uncoveredTalks.count}`)
+                }}{{
                   uncoveredTalks.count
                     ? `：${uncoveredTalks.names.slice(0, 6).join('、')}${uncoveredTalks.count > 6 ? bi(' 等', ' etc.') : ''}`
                     : ''
@@ -518,7 +575,11 @@ const weekCategoryCount = computed(() => {
             <div class="rounded-14px border border-[var(--sct-border)] bg-[var(--sct-soft)] p-14px">
               <div class="mb-8px flex items-center gap-6px text-13px font-bold" style="color: #2080f0">
                 <span class="inline-block h-12px w-3.5px rounded-full bg-[#2080f0]" />
-                <span>{{ bi(`今日与近 7 天（${weekItems.length}，含发展节点）`, `Today & Next 7 Days (${weekItems.length})`) }}</span>
+                <span>
+                  {{
+                    bi(`今日与近 7 天（${weekItems.length}，含发展节点）`, `Today & Next 7 Days (${weekItems.length})`)
+                  }}
+                </span>
               </div>
               <div v-if="!weekItems.length" class="text-12px text-gray-400">
                 {{ bi('未来一周无节点与会议', 'No milestones or meetings in the next 7 days') }}
@@ -546,29 +607,38 @@ const weekCategoryCount = computed(() => {
           <div class="flex items-center justify-around py-12px">
             <div
               class="relative size-136px rounded-full"
-              :style="{ background: `conic-gradient(var(--sct-ink) ${monthRate.pct}%, var(--sct-soft) 0)` }"
+              :style="{ background: `conic-gradient(var(--sct-ink) ${animatedFeePct}%, var(--sct-soft) 0)` }"
             >
               <div
                 class="absolute inset-14px flex flex-col items-center justify-center rounded-full"
                 style="background: var(--sct-container)"
               >
-                <div class="text-26px font-black" style="color: var(--sct-ink)">
-                  {{ monthRate.pct }}<span class="text-13px">%</span>
+                <div class="text-26px font-black font-mono" style="color: var(--sct-ink)">
+                  {{ animatedFeePct }}
+                  <span class="text-13px">%</span>
                 </div>
                 <div class="text-11px text-gray-400">{{ bi('缴纳率', 'Collection') }}</div>
               </div>
             </div>
             <div class="text-13px leading-7 text-gray-500">
               <div>
-                {{ bi('应缴', 'Due') }} <b class="text-[var(--sct-ink)]">{{ monthRate.due }}</b> {{ bi('人', '') }}
+                {{ bi('应缴', 'Due') }}
+                <b class="font-mono text-[var(--sct-ink)]">{{ animatedFeeDue }}</b>
+                {{ bi('人', '') }}
               </div>
               <div>
-                {{ bi('已缴', 'Paid') }} <b style="color: #3f9d63">{{ monthRate.paid }}</b> {{ bi('人', '') }}
+                {{ bi('已缴', 'Paid') }}
+                <b class="font-mono" style="color: #3f9d63">{{ animatedFeePaid }}</b>
+                {{ bi('人', '') }}
               </div>
               <div>
-                {{ bi('欠缴', 'Unpaid') }} <b style="color: #d43030">{{ monthRate.due - monthRate.paid }}</b> {{ bi('人', '') }}
+                {{ bi('欠缴', 'Unpaid') }}
+                <b class="font-mono" style="color: #d43030">{{ animatedFeeUnpaid }}</b>
+                {{ bi('人', '') }}
               </div>
-              <div v-if="!monthRate.hasData" class="text-11px text-gray-300">{{ bi('本月名单未生成', 'List not generated') }}</div>
+              <div v-if="!monthRate.hasData" class="text-11px text-gray-300">
+                {{ bi('本月名单未生成', 'List not generated') }}
+              </div>
             </div>
           </div>
         </NCard>
@@ -582,10 +652,14 @@ const weekCategoryCount = computed(() => {
           <div class="flex justify-center gap-4px overflow-x-auto py-8px">
             <div v-for="(week, wi) in heat.weeks" :key="wi" class="flex flex-col gap-4px">
               <div
-                v-for="cell in week"
+                v-for="(cell, di) in week"
                 :key="cell.date"
-                class="size-16px rounded-4px"
-                :style="{ background: heatColor(cell.count) }"
+                class="dash-heat-cell size-16px rounded-4px"
+                :class="{ 'dash-heat-cell--in': entered }"
+                :style="{
+                  background: heatColor(cell.count),
+                  transitionDelay: `${wi * 28 + di * 14}ms`
+                }"
                 :title="`${cell.date}：${cell.count < 0 ? bi('未到来', 'Upcoming') : `${cell.count} ${bi('项安排', 'events')}`}`"
               />
             </div>
@@ -624,8 +698,8 @@ const weekCategoryCount = computed(() => {
               <span class="w-84px truncate text-right text-12px text-gray-500">{{ tMemberType(row.stage) }}</span>
               <div class="h-16px flex-1 overflow-hidden rounded-6px" style="background: var(--sct-soft)">
                 <div
-                  class="h-full rounded-6px transition-all-500"
-                  :style="{ width: row.width, background: 'var(--sct-ink)' }"
+                  class="dash-bar-fill h-full rounded-6px"
+                  :style="{ width: entered ? row.width : '0%', background: 'var(--sct-ink)' }"
                 />
               </div>
               <span class="w-24px text-13px font-bold" style="color: var(--sct-ink)">{{ row.count }}</span>
@@ -644,8 +718,8 @@ const weekCategoryCount = computed(() => {
               <span class="w-76px truncate text-right text-12px text-gray-500">{{ tCategory(row.cat) }}</span>
               <div class="h-14px flex-1 overflow-hidden rounded-6px" style="background: var(--sct-soft)">
                 <div
-                  class="h-full rounded-6px transition-all-500"
-                  :style="{ width: row.width, background: row.color }"
+                  class="dash-bar-fill h-full rounded-6px"
+                  :style="{ width: entered ? row.width : '0%', background: row.color }"
                 />
               </div>
               <span class="w-22px text-13px font-bold text-gray-600">{{ row.count }}</span>
@@ -683,3 +757,81 @@ const weekCategoryCount = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+@keyframes sct-widget-jiggle {
+  0% {
+    transform: rotate(-0.55deg);
+  }
+  50% {
+    transform: rotate(0.55deg);
+  }
+  100% {
+    transform: rotate(-0.55deg);
+  }
+}
+
+@keyframes sct-widget-jiggle-wide {
+  0% {
+    transform: rotate(-0.18deg);
+  }
+  50% {
+    transform: rotate(0.18deg);
+  }
+  100% {
+    transform: rotate(-0.18deg);
+  }
+}
+
+.dash-widget-item--editing {
+  transform-origin: center center;
+  animation: sct-widget-jiggle 0.34s ease-in-out infinite;
+  cursor: grab;
+}
+
+.dash-widget-item--editing.dash-widget-item--alt {
+  animation-direction: reverse;
+  animation-duration: 0.38s;
+}
+
+.dash-widget-item--editing.dash-widget-item--wide {
+  animation-name: sct-widget-jiggle-wide;
+  animation-duration: 0.42s;
+}
+
+.dash-widget-item--editing:hover,
+.dash-widget-item--editing:active {
+  animation-play-state: paused;
+}
+
+.dash-heat-cell {
+  opacity: 0;
+  transform: scale(0.42);
+  transition:
+    opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dash-heat-cell--in {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.dash-bar-fill {
+  transition: width 0.78s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-widget-item--editing {
+    animation: none;
+  }
+  .dash-heat-cell {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .dash-bar-fill {
+    transition: none;
+  }
+}
+</style>
