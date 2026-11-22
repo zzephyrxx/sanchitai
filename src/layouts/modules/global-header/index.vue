@@ -6,10 +6,11 @@ import { useThemeStore } from '@/store/modules/theme';
 import GlobalBreadcrumb from '../global-breadcrumb/index.vue';
 import GlobalLogo from '../global-logo/index.vue';
 import GlobalSearch from '../global-search/index.vue';
-import ThemeButton from './components/theme-button.vue';
+import BranchBadge from './components/branch-badge.vue';
 import IdentityBadge from './components/identity-badge.vue';
 import LockButton from './components/lock-button.vue';
-import BranchBadge from './components/branch-badge.vue';
+import OpenModeButton from './components/open-mode-button.vue';
+import ThemeButton from './components/theme-button.vue';
 
 defineOptions({
   name: 'GlobalHeader'
@@ -40,6 +41,7 @@ const { isFullscreen, toggle } = useFullscreen();
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
     </div>
     <div class="h-full flex-y-center flex-shrink-0 justify-end gap-6px">
+      <OpenModeButton />
       <BranchBadge />
       <IdentityBadge />
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />

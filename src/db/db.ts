@@ -266,9 +266,8 @@ export async function syncMemberPartyStatuses(): Promise<number> {
   return updates.filter(u => u.typeChanged).length;
 }
 
-/** 导入备份：先自动快照当前库，再整体替换 */
-export async function importBackup(shape: BackupShape): Promise<void> {
-  await pushBackupRing();
+/** 静默替换业务数据（供桌面端 ⇄ 浏览器本机微服务实时同步使用，不写入环形快照） */
+export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
   const today = dayjs().format('YYYY-MM-DD');
   const normalizedMembers = (shape.members ?? []).map(m => normalizeMemberRecord(m, today));
   await db.transaction(
@@ -312,6 +311,12 @@ export async function importBackup(shape: BackupShape): Promise<void> {
   if (shape.branch_name && typeof shape.branch_name === 'string') {
     await setMeta('branch-name', shape.branch_name.trim());
   }
+}
+
+/** 导入备份：先自动快照当前库，再整体替换 */
+export async function importBackup(shape: BackupShape): Promise<void> {
+  await pushBackupRing();
+  await replaceDataFromSync(shape);
 }
 
 /** 清空全部业务数据（保留 meta 备份与种子标记） */

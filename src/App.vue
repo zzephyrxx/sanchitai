@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { NConfigProvider, darkTheme } from 'naive-ui';
 import type { WatermarkProps } from 'naive-ui';
+import { schedulePushToBridge } from './utils/desktop-bridge';
 import { naiveDateLocales, naiveLocales } from './locales/naive';
 import { useAppStore } from './store/modules/app';
 import { useThemeStore } from './store/modules/theme';
+import { useWorkDataStore } from './store/modules/work-data';
 import AppLockOverlay from './components/custom/app-lock-overlay.vue';
 
 defineOptions({
@@ -13,6 +15,25 @@ defineOptions({
 
 const appStore = useAppStore();
 const themeStore = useThemeStore();
+const workStore = useWorkDataStore();
+
+// 当桌面端本机桥接启用时，业务数据发生变更后防抖推送至本机磁盘同步文件
+watch(
+  () => [
+    workStore.branchName,
+    workStore.members,
+    workStore.seatMaps,
+    workStore.calEvents,
+    workStore.devStages,
+    workStore.feeRecords,
+    workStore.talks,
+    workStore.docsList,
+    workStore.attendance
+  ],
+  () => {
+    schedulePushToBridge();
+  }
+);
 
 const naiveDarkTheme = computed(() => (themeStore.darkMode ? darkTheme : undefined));
 

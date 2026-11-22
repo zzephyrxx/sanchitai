@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { FEE_STANDARD, MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 import { saveFileWithPicker } from '@/utils/save-file';
@@ -32,6 +32,147 @@ const months = computed(() => {
   for (let i = 5; i >= 0; i -= 1) arr.push(dayjs().subtract(i, 'month').format('YYYY-MM'));
   return arr;
 });
+
+// ---------------- 党费表列顺序与列宽记忆 + 重置 ----------------
+const FEE_LAYOUT_KEY = 'sct:table-layout:fees:v1';
+const defaultFeeColOrder = computed(() => ['name', 'standard', ...months.value]);
+
+function loadFeeLayout(): { order: string[]; widths: Record<string, number> } {
+  try {
+    const raw = localStorage.getItem(FEE_LAYOUT_KEY);
+    if (!raw) return { order: [], widths: {} };
+    const parsed = JSON.parse(raw) as { order?: string[]; widths?: Record<string, number> };
+    return {
+      order: Array.isArray(parsed.order) ? parsed.order : [],
+      widths: parsed.widths && typeof parsed.widths === 'object' ? parsed.widths : {}
+    };
+  } catch {
+    return { order: [], widths: {} };
+  }
+}
+
+const savedFeeLayout = loadFeeLayout();
+const feeColOrder = ref<string[]>(savedFeeLayout.order);
+const feeColWidths = ref<Record<string, number>>(savedFeeLayout.widths);
+const feeDraggingCol = ref<string | null>(null);
+const feeDragOverCol = ref<string | null>(null);
+const feeResizingCol = ref<string | null>(null);
+
+const orderedFeeCols = computed(() => {
+  const defaults = defaultFeeColOrder.value;
+  const valid = new Set(defaults);
+  const kept = feeColOrder.value.filter(k => valid.has(k));
+  const missing = defaults.filter(k => !kept.includes(k));
+  return [...kept, ...missing];
+});
+
+const hasCustomFeeLayout = computed(() => {
+  if (Object.keys(feeColWidths.value).length > 0) return true;
+  return orderedFeeCols.value.some((k, idx) => k !== defaultFeeColOrder.value[idx]);
+});
+
+watch(
+  [feeColOrder, feeColWidths],
+  () => {
+    try {
+      localStorage.setItem(FEE_LAYOUT_KEY, JSON.stringify({ order: orderedFeeCols.value, widths: feeColWidths.value }));
+    } catch {
+      /* ignore */
+    }
+  },
+  { deep: true }
+);
+
+function resetFeeLayout() {
+  feeColOrder.value = [];
+  feeColWidths.value = {};
+  try {
+    localStorage.removeItem(FEE_LAYOUT_KEY);
+  } catch {
+    /* ignore */
+  }
+  window.$message?.success('党费收缴表列宽与列顺序已重置');
+}
+
+function defaultFeeColWidth(colKey: string): number {
+  if (colKey === 'name') return 148;
+  if (colKey === 'standard') return 166;
+  return 112;
+}
+
+function feeColStyle(colKey: string) {
+  const w = feeColWidths.value[colKey] ?? defaultFeeColWidth(colKey);
+  return { width: `${w}px`, minWidth: `${w}px` };
+}
+
+let feeResizeCleanup: (() => void) | null = null;
+function startFeeColResize(e: MouseEvent, colKey: string) {
+  e.stopPropagation();
+  e.preventDefault();
+  if (feeResizeCleanup) feeResizeCleanup();
+
+  const thEl = (e.currentTarget as HTMLElement | null)?.closest('th');
+  const measured = thEl ? Math.round(thEl.getBoundingClientRect().width) : defaultFeeColWidth(colKey);
+  const startW = Math.max(72, feeColWidths.value[colKey] ?? measured);
+  const startX = e.clientX;
+  feeResizingCol.value = colKey;
+  feeColWidths.value = { ...feeColWidths.value, [colKey]: startW };
+
+  const prevCursor = document.body.style.cursor;
+  const prevSelect = document.body.style.userSelect;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  const onMove = (ev: MouseEvent) => {
+    const nextW = Math.max(72, Math.min(480, Math.round(startW + (ev.clientX - startX))));
+    feeColWidths.value = { ...feeColWidths.value, [colKey]: nextW };
+  };
+  const onUp = () => cleanup();
+  const cleanup = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    document.body.style.cursor = prevCursor;
+    document.body.style.userSelect = prevSelect;
+    feeResizingCol.value = null;
+    feeResizeCleanup = null;
+  };
+  feeResizeCleanup = cleanup;
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+onUnmounted(() => {
+  if (feeResizeCleanup) feeResizeCleanup();
+});
+
+function onFeeColDragStart(e: DragEvent, colKey: string) {
+  if (feeResizingCol.value) {
+    e.preventDefault();
+    return;
+  }
+  feeDraggingCol.value = colKey;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', colKey);
+  }
+}
+
+function onFeeColDrop(e: DragEvent, targetKey: string) {
+  e.preventDefault();
+  const fromKey = feeDraggingCol.value || e.dataTransfer?.getData('text/plain') || '';
+  if (fromKey && fromKey !== targetKey) {
+    const next = [...orderedFeeCols.value];
+    const fromIdx = next.indexOf(fromKey);
+    const toIdx = next.indexOf(targetKey);
+    if (fromIdx >= 0 && toIdx >= 0) {
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      feeColOrder.value = next;
+    }
+  }
+  feeDraggingCol.value = null;
+  feeDragOverCol.value = null;
+}
 
 const recordsMap = computed(() => {
   const m = new Map<string, Sct.FeeRecord>();
@@ -362,165 +503,198 @@ const owedBadges = computed(() => {
 
       <!-- 搜索与提示栏 -->
       <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
-        <NInput
-          v-model:value="searchKeyword"
-          size="small"
-          clearable
-          class="w-240px"
-          :placeholder="bi('搜索党员姓名、编号、党费类别…', 'Search member name, code, category…')"
-        >
-          <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
-        </NInput>
+        <div class="flex flex-nowrap items-center gap-8px">
+          <div class="w-210px shrink-0">
+            <NInput
+              v-model:value="searchKeyword"
+              size="small"
+              clearable
+              :placeholder="bi('搜索党员姓名、编号、类别…', 'Search member name, code…')"
+            >
+              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+            </NInput>
+          </div>
+          <NButton size="small" secondary class="shrink-0" :disabled="!hasCustomFeeLayout" @click="resetFeeLayout">
+            <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+            {{ bi('重置列宽', 'Reset Columns') }}
+          </NButton>
+        </div>
         <span class="text-12px text-gray-400">
           {{
             bi(
-              '点击任意月份单元格可下拉选择缴费状态与自定义金额 · 点击「党费标准」列可修改党员固定月标准',
-              'Click any month cell to update status & custom amount · Click "Dues Standard" to edit monthly rate'
+              '拖拽表头可调列顺序 · 拖右侧边线可调列宽（自动记忆） · 点击单元格改缴费状态',
+              'Drag headers to reorder · Drag edge to resize · Click cell to edit status'
             )
           }}
         </span>
       </div>
 
-      <!-- 人×月矩阵 -->
+      <!-- 人×月矩阵（支持列顺序拖拽 + 列宽调整 + 记忆） -->
       <div class="fee-matrix">
         <table>
           <thead>
             <tr>
-              <th class="fee-th">
-                <span class="inline-flex items-center gap-4px">
-                  <SvgIcon icon="lucide:user" class="text-13px opacity-80" />
-                  <span>{{ bi('姓名', 'Name') }}</span>
+              <th
+                v-for="colKey in orderedFeeCols"
+                :key="colKey"
+                class="fee-th relative"
+                :class="{
+                  'fee-th--cur': colKey === currentMonth,
+                  'sct-th-wrap--dragging': feeDraggingCol === colKey,
+                  'sct-th-wrap--over': feeDragOverCol === colKey && feeDraggingCol !== colKey
+                }"
+                :style="feeColStyle(colKey)"
+                :draggable="!feeResizingCol"
+                @dragstart="onFeeColDragStart($event, colKey)"
+                @dragover.prevent="feeDragOverCol = colKey"
+                @dragleave="feeDragOverCol === colKey && (feeDragOverCol = null)"
+                @drop="onFeeColDrop($event, colKey)"
+                @dragend="
+                  feeDraggingCol = null;
+                  feeDragOverCol = null;
+                "
+              >
+                <span class="inline-flex cursor-grab items-center gap-4px select-none">
+                  <template v-if="colKey === 'name'">
+                    <SvgIcon icon="lucide:user" class="text-13px opacity-80" />
+                    <span>{{ bi('姓名', 'Name') }}</span>
+                  </template>
+                  <template v-else-if="colKey === 'standard'">
+                    <SvgIcon icon="lucide:coins" class="text-13px opacity-80" />
+                    <span>{{ bi('党费标准（点击修改）', 'Dues Standard') }}</span>
+                  </template>
+                  <template v-else>
+                    <SvgIcon icon="lucide:calendar" class="text-12px opacity-75" />
+                    <span>{{ colKey }}</span>
+                  </template>
                 </span>
-              </th>
-              <th class="fee-th">
-                <span class="inline-flex items-center gap-4px">
-                  <SvgIcon icon="lucide:coins" class="text-13px opacity-80" />
-                  <span>{{ bi('党费标准（点击修改）', 'Dues Standard (Click to Edit)') }}</span>
-                </span>
-              </th>
-              <th v-for="ym in months" :key="ym" class="fee-th" :class="{ 'fee-th--cur': ym === currentMonth }">
-                <span class="inline-flex items-center gap-4px">
-                  <SvgIcon icon="lucide:calendar" class="text-12px opacity-75" />
-                  <span>{{ ym }}</span>
-                </span>
+                <span
+                  class="sct-col-resizer"
+                  :class="{ 'sct-col-resizer--active': feeResizingCol === colKey }"
+                  title="拖拽调整列宽"
+                  @mousedown="startFeeColResize($event, colKey)"
+                  @click.stop.prevent
+                />
               </th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="m in filteredFeeMembers" :key="m.id">
-              <td class="fee-td fee-td--name">
-                <div class="flex items-center gap-6px">
-                  <span
-                    class="inline-block size-8px flex-shrink-0 rounded-full"
-                    :style="{ background: MEMBER_TYPE_COLORS[m.type] }"
-                  />
-                  <span class="font-semibold">{{ m.name }}</span>
-                  <span v-if="consecutiveOwed(m.id)" class="text-11px font-bold text-[#d43030]">
-                    {{ bi('连续欠缴', '2+ Months Overdue') }}
-                  </span>
-                </div>
-              </td>
-              <td class="fee-td">
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-5px rounded-6px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-8px py-3px text-12px transition hover:border-[#A81C24]"
-                  :title="bi('点击设置该党员的党费类别与月应缴标准', 'Click to set dues category & monthly rate')"
-                  @click="openStandardModal(m)"
-                >
-                  <NTag size="tiny" :bordered="false" :type="m.fee_category === '在职党员' ? 'warning' : 'default'">
-                    {{ tFeeCategory(m.fee_category) }}
-                  </NTag>
-                  <span class="font-bold text-[var(--sct-ink)]">
-                    ¥{{ workStore.memberMonthlyFee(m).toFixed(1) }}/{{ bi('月', 'mo') }}
-                  </span>
-                  <SvgIcon icon="lucide:pencil" class="text-11px text-gray-400" />
-                </button>
-              </td>
-              <td
-                v-for="ym in months"
-                :key="ym"
-                class="fee-td fee-cell"
-                :class="{ 'fee-cell--cur': ym === currentMonth }"
-              >
-                <NPopover
-                  :show="activeCellKey === `${m.id}|${ym}`"
-                  trigger="click"
-                  placement="bottom"
-                  :show-arrow="true"
-                  @update:show="v => (activeCellKey = v ? `${m.id}|${ym}` : null)"
-                >
-                  <template #trigger>
-                    <button
-                      type="button"
-                      class="fee-cell__btn"
-                      :style="{ color: feeColor(cellOf(m.id, ym)?.status) }"
-                      @click="openCellPopover(m, ym)"
-                    >
-                      <span>{{ feeCellText(m.id, ym) }}</span>
-                      <SvgIcon icon="lucide:chevron-down" class="fee-cell__chevron text-11px opacity-45" />
-                    </button>
-                  </template>
-
-                  <div class="w-260px p-4px">
-                    <div class="mb-8px flex items-center justify-between border-b border-[var(--sct-border)] pb-6px">
-                      <span class="text-13px font-bold text-[var(--sct-ink)]">{{ m.name }} · {{ ym }}</span>
-                      <NTag size="tiny" :bordered="false">{{ m.fee_category ?? '学生党员' }}</NTag>
-                    </div>
-
-                    <div class="flex flex-col gap-10px">
-                      <div>
-                        <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
-                          <SvgIcon icon="lucide:check-circle-2" class="text-12px text-[#A81C24]" />
-                          <span>缴费状态</span>
-                        </div>
-                        <NSelect v-model:value="cellDraft.status" :options="STATUS_OPTIONS" size="small" />
-                      </div>
-
-                      <div>
-                        <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
-                          <SvgIcon icon="lucide:wallet" class="text-12px text-[#A81C24]" />
-                          <span>党费类别</span>
-                        </div>
-                        <NSelect
-                          :value="cellDraft.feeCategory"
-                          :options="FEE_CATEGORY_OPTIONS"
-                          size="small"
-                          @update:value="onCellCategoryChange"
-                        />
-                      </div>
-
-                      <div>
-                        <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
-                          <SvgIcon icon="lucide:coins" class="text-12px text-[#A81C24]" />
-                          <span>本月金额（元，支持自定义）</span>
-                        </div>
-                        <NInputNumber
-                          v-model:value="cellDraft.amount"
-                          size="small"
-                          :min="0"
-                          :step="0.5"
-                          :precision="1"
-                          class="w-full"
-                        >
-                          <template #suffix>元</template>
-                        </NInputNumber>
-                      </div>
-
-                      <NCheckbox v-model:checked="cellDraft.syncMemberStandard" size="small">
-                        <span class="text-11px text-gray-500">同步设为该党员默认月应缴标准</span>
-                      </NCheckbox>
-
-                      <div class="flex justify-end gap-6px pt-2px">
-                        <NButton size="tiny" @click="activeCellKey = null">取消</NButton>
-                        <NButton size="tiny" type="primary" @click="saveCellEdit">
-                          <template #icon><SvgIcon icon="lucide:check" /></template>
-                          确定
-                        </NButton>
-                      </div>
-                    </div>
+              <template v-for="colKey in orderedFeeCols" :key="`${m.id}-${colKey}`">
+                <td v-if="colKey === 'name'" class="fee-td fee-td--name" :style="feeColStyle(colKey)">
+                  <div class="flex items-center gap-6px">
+                    <span
+                      class="inline-block size-8px flex-shrink-0 rounded-full"
+                      :style="{ background: MEMBER_TYPE_COLORS[m.type] }"
+                    />
+                    <span class="font-semibold">{{ m.name }}</span>
+                    <span v-if="consecutiveOwed(m.id)" class="text-11px font-bold text-[#d43030]">
+                      {{ bi('连续欠缴', '2+ Months Overdue') }}
+                    </span>
                   </div>
-                </NPopover>
-              </td>
+                </td>
+                <td v-else-if="colKey === 'standard'" class="fee-td" :style="feeColStyle(colKey)">
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-5px rounded-6px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-8px py-3px text-12px transition hover:border-[#A81C24]"
+                    :title="bi('点击设置该党员的党费类别与月应缴标准', 'Click to set dues category & monthly rate')"
+                    @click="openStandardModal(m)"
+                  >
+                    <NTag size="tiny" :bordered="false" :type="m.fee_category === '在职党员' ? 'warning' : 'default'">
+                      {{ tFeeCategory(m.fee_category) }}
+                    </NTag>
+                    <span class="font-bold text-[var(--sct-ink)]">
+                      ¥{{ workStore.memberMonthlyFee(m).toFixed(1) }}/{{ bi('月', 'mo') }}
+                    </span>
+                    <SvgIcon icon="lucide:pencil" class="text-11px text-gray-400" />
+                  </button>
+                </td>
+                <td
+                  v-else
+                  class="fee-td fee-cell"
+                  :class="{ 'fee-cell--cur': colKey === currentMonth }"
+                  :style="feeColStyle(colKey)"
+                >
+                  <NPopover
+                    :show="activeCellKey === `${m.id}|${colKey}`"
+                    trigger="click"
+                    placement="bottom"
+                    :show-arrow="true"
+                    @update:show="v => (activeCellKey = v ? `${m.id}|${colKey}` : null)"
+                  >
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="fee-cell__btn"
+                        :style="{ color: feeColor(cellOf(m.id, colKey)?.status) }"
+                        @click="openCellPopover(m, colKey)"
+                      >
+                        <span>{{ feeCellText(m.id, colKey) }}</span>
+                        <SvgIcon icon="lucide:chevron-down" class="fee-cell__chevron text-11px opacity-45" />
+                      </button>
+                    </template>
+
+                    <div class="w-260px p-4px">
+                      <div class="mb-8px flex items-center justify-between border-b border-[var(--sct-border)] pb-6px">
+                        <span class="text-13px font-bold text-[var(--sct-ink)]">{{ m.name }} · {{ colKey }}</span>
+                        <NTag size="tiny" :bordered="false">{{ m.fee_category ?? '学生党员' }}</NTag>
+                      </div>
+
+                      <div class="flex flex-col gap-10px">
+                        <div>
+                          <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
+                            <SvgIcon icon="lucide:check-circle-2" class="text-12px text-[#A81C24]" />
+                            <span>缴费状态</span>
+                          </div>
+                          <NSelect v-model:value="cellDraft.status" :options="STATUS_OPTIONS" size="small" />
+                        </div>
+
+                        <div>
+                          <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
+                            <SvgIcon icon="lucide:wallet" class="text-12px text-[#A81C24]" />
+                            <span>党费类别</span>
+                          </div>
+                          <NSelect
+                            :value="cellDraft.feeCategory"
+                            :options="FEE_CATEGORY_OPTIONS"
+                            size="small"
+                            @update:value="onCellCategoryChange"
+                          />
+                        </div>
+
+                        <div>
+                          <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
+                            <SvgIcon icon="lucide:coins" class="text-12px text-[#A81C24]" />
+                            <span>本月金额（元，支持自定义）</span>
+                          </div>
+                          <NInputNumber
+                            v-model:value="cellDraft.amount"
+                            size="small"
+                            :min="0"
+                            :step="0.5"
+                            :precision="1"
+                            class="w-full"
+                          >
+                            <template #suffix>元</template>
+                          </NInputNumber>
+                        </div>
+
+                        <NCheckbox v-model:checked="cellDraft.syncMemberStandard" size="small">
+                          <span class="text-11px text-gray-500">同步设为该党员默认月应缴标准</span>
+                        </NCheckbox>
+
+                        <div class="flex justify-end gap-6px pt-2px">
+                          <NButton size="tiny" @click="activeCellKey = null">取消</NButton>
+                          <NButton size="tiny" type="primary" @click="saveCellEdit">
+                            <template #icon><SvgIcon icon="lucide:check" /></template>
+                            确定
+                          </NButton>
+                        </div>
+                      </div>
+                    </div>
+                  </NPopover>
+                </td>
+              </template>
             </tr>
           </tbody>
         </table>
@@ -588,7 +762,9 @@ const owedBadges = computed(() => {
   overflow-x: auto;
 }
 .fee-matrix table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 .fee-th {

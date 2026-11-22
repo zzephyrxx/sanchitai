@@ -297,7 +297,10 @@ html[data-preset='crm-frosted-glass'] .roster-cell:not(.roster-cell--empty) {
   background-color: var(--sct-page) !important;
   border: 1px solid var(--sct-border) !important;
   box-shadow: none !important;
-  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+  transition:
+    transform 0.14s ease,
+    box-shadow 0.14s ease,
+    border-color 0.14s ease;
 }
 
 html[data-preset='crm-frosted-glass'] .dev-card:hover,
@@ -403,4 +406,158 @@ html.dark {
   --sct-teal-soft: #0f2422;
   --sct-overlay-bg: rgba(11, 14, 20, 0.66);
   --sct-overlay-card: rgba(18, 22, 31, 0.95);
+}
+
+/* ---------------- 表格列顺序拖拽 + 无跳变自定义列宽手柄 ---------------- */
+.n-data-table-th {
+  position: relative;
+}
+
+.sct-th-wrap {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  user-select: none;
+}
+
+.sct-th-wrap--draggable {
+  cursor: grab;
+}
+
+.sct-th-wrap--draggable:active {
+  cursor: grabbing;
+}
+
+.sct-th-wrap--dragging {
+  opacity: 0.45;
+}
+
+.sct-th-wrap--over {
+  box-shadow: inset 3px 0 0 var(--sct-accent, #a81c24);
+  padding-left: 4px;
+}
+
+.sct-th-inner {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sct-col-resizer {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 9px;
+  cursor: col-resize;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sct-col-resizer::after {
+  content: '';
+  width: 2px;
+  height: 60%;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.sct-col-resizer:hover::after,
+.sct-col-resizer--active::after {
+  background: var(--sct-accent, #a81c24);
+}
+
+/* 成员列表 层次 / 年级 柔和区分底色标签 */
+.sct-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.sct-pill--phd {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+.sct-pill--master {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+.sct-pill--bachelor {
+  background: #fef3c7;
+  color: #b45309;
+}
+.sct-pill--neutral {
+  background: var(--sct-soft, #f3f4f6);
+  color: #4b5563;
+}
+
+.sct-pill--grade-0 {
+  background: #dcfce7;
+  color: #166534;
+}
+.sct-pill--grade-1 {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.sct-pill--grade-2 {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.sct-pill--grade-3 {
+  background: #fce7f3;
+  color: #be185d;
+}
+.sct-pill--grade-4 {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+html.dark .sct-pill--phd {
+  background: rgba(139, 92, 246, 0.22);
+  color: #c4b5fd;
+}
+html.dark .sct-pill--master {
+  background: rgba(14, 165, 233, 0.22);
+  color: #7dd3fc;
+}
+html.dark .sct-pill--bachelor {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+}
+html.dark .sct-pill--neutral {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+}
+html.dark .sct-pill--grade-0 {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+html.dark .sct-pill--grade-1 {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+html.dark .sct-pill--grade-2 {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fdba74;
+}
+html.dark .sct-pill--grade-3 {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f9a8d4;
+}
+html.dark .sct-pill--grade-4 {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
 }

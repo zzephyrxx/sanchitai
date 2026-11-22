@@ -1,4 +1,5 @@
 import { createApp } from 'vue';
+import { initDesktopBridge } from './utils/desktop-bridge';
 import { setupAppVersionNotification, setupDayjs, setupIconifyOffline, setupLoading, setupNProgress } from './plugins';
 import './plugins/assets';
 import { setupI18n } from './locales';
@@ -27,6 +28,9 @@ async function setupApp() {
 
   // 按入党/转正时间自动同步党员身份（预备期满自动转为正式党员，无需手动确认）
   await syncMemberPartyStatuses();
+
+  // 初始化桌面端 ⇄ 浏览器本机微服务桥接与双向同步
+  await initDesktopBridge();
 
   // 预备期满临近时自动生成转正大会候选事项（不阻塞启动）
   void ensureProbationCandidates().catch(err => {

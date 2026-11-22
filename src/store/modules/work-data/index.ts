@@ -573,6 +573,32 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     return { inserted, updated, skipped };
   }
 
+  // ---------------- 座位图布区 ----------------
+  async function addSeatMap(input: { name: string; rows: number; cols: number; map_id?: string }) {
+    const mapId = input.map_id?.trim() || `map-${nanoid(6)}`;
+    const row: Sct.SeatMap = {
+      map_id: mapId,
+      name: input.name.trim(),
+      grid: { rows: Math.max(1, Math.min(20, input.rows)), cols: Math.max(1, Math.min(20, input.cols)) },
+      identity: 'secretary'
+    };
+    await guardWrite(db.seatMaps.put(plain(row)), '座位图布区');
+    return mapId;
+  }
+
+  async function deleteSeatMap(mapId: string) {
+    await guardWrite(
+      db.transaction('rw', [db.seatMaps, db.members], async () => {
+        await db.seatMaps.delete(mapId);
+        const seated = await db.members.filter(m => m.seat?.map_id === mapId).toArray();
+        for (const m of seated) {
+          await db.members.update(m.id, { seat: null });
+        }
+      }),
+      '删除座位图布区'
+    );
+  }
+
   // ---------------- 会议考勤 ----------------
   /** 某会议的考勤行 */
   function attendanceOfEvent(eventId: string): Sct.Attendance[] {
@@ -750,6 +776,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     addMember,
     updateMember,
     deleteMember,
-    bulkImportMembers
+    bulkImportMembers,
+    addSeatMap,
+    deleteSeatMap
   };
 });

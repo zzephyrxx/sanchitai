@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
+import { useDesktopBridge } from '@/utils/desktop-bridge';
+import type { OpenModePref } from '@/utils/desktop-bridge';
 import { buildHandoverHtml } from '@/utils/handover';
 import { saveFileWithPicker } from '@/utils/save-file';
 import { useAppLockStore, LOCK_QUESTIONS } from '@/store/modules/applock';
@@ -23,7 +25,26 @@ defineOptions({ name: 'SettingsPage' });
 const appLock = useAppLockStore();
 const workStore = useWorkDataStore();
 const { bi } = useSctI18n();
+const desktopBridge = useDesktopBridge();
 const APP_VERSION = 'v0.2.3';
+
+// ---------------- 默认打开方式（桌面端 / 浏览器） ----------------
+const runtimeStatusLabel = computed(() => {
+  if (desktopBridge.runtimeMode.value === 'tauri-desktop') {
+    return bi('桌面端窗口（已开启本机同步）', 'Desktop App (Local Sync Active)');
+  }
+  if (desktopBridge.runtimeMode.value === 'tauri-browser') {
+    return bi('浏览器模式（已连接桌面端实时同步）', 'Browser Mode (Synced with Desktop)');
+  }
+  return bi('纯网页模式（桌面安装包支持与浏览器无缝双向同步）', 'Standalone Web Mode');
+});
+
+async function handleOpenModeChange(mode: OpenModePref) {
+  await desktopBridge.setDefaultOpenMode(mode);
+  window.$message?.success(
+    mode === 'browser' ? '默认打开方式已设为「浏览器」（下次启动桌面端生效）' : '默认打开方式已设为「桌面端」'
+  );
+}
 
 // ---------------- 支部名称设置 ----------------
 const branchNameInput = ref('');
@@ -403,6 +424,63 @@ onMounted(listSnapshots);
             <NButton type="primary" @click="saveBranchNameSetting">
               <template #icon><SvgIcon icon="lucide:check" /></template>
               {{ bi('保存名称', 'Save Name') }}
+            </NButton>
+          </div>
+        </NSpace>
+      </NCard>
+
+      <!-- 默认打开方式 -->
+      <NCard :bordered="false" :title="bi('默认打开方式', 'Default Open Mode')">
+        <NSpace vertical size="medium">
+          <div class="text-13px leading-relaxed text-gray-500">
+            {{
+              bi(
+                '桌面安装包内置仅本机 127.0.0.1 同步服务：选择「桌面端」启动时弹出独立窗口；选择「浏览器」启动时自动在系统默认浏览器打开，且桌面端与浏览器始终读写同一份本机数据。',
+                'Desktop app includes a loopback-only 127.0.0.1 bridge: choose Desktop or Browser as default launch mode with real-time local data sync.'
+              )
+            }}
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-10px">
+            <span class="text-13px font-medium">{{ bi('启动时默认使用', 'Launch Mode') }}</span>
+            <NRadioGroup
+              :value="desktopBridge.defaultOpenMode.value"
+              size="small"
+              @update:value="v => handleOpenModeChange(v as OpenModePref)"
+            >
+              <NRadioButton value="desktop">
+                <span class="inline-flex items-center gap-4px">
+                  <SvgIcon icon="lucide:monitor" class="text-13px" />
+                  <span>{{ bi('桌面端', 'Desktop') }}</span>
+                </span>
+              </NRadioButton>
+              <NRadioButton value="browser">
+                <span class="inline-flex items-center gap-4px">
+                  <SvgIcon icon="lucide:globe" class="text-13px" />
+                  <span>{{ bi('浏览器', 'Browser') }}</span>
+                </span>
+              </NRadioButton>
+            </NRadioGroup>
+          </div>
+          <div
+            class="flex flex-wrap items-center justify-between gap-8px rounded-8px bg-[var(--sct-soft)] px-10px py-7px text-12px text-gray-500"
+          >
+            <span>
+              {{ bi('当前运行环境：', 'Current Runtime: ') }}
+              <strong>{{ runtimeStatusLabel }}</strong>
+            </span>
+            <NButton
+              v-if="desktopBridge.runtimeMode.value === 'tauri-browser'"
+              size="tiny"
+              type="primary"
+              secondary
+              @click="desktopBridge.returnToDesktopMode()"
+            >
+              <template #icon><SvgIcon icon="lucide:monitor" /></template>
+              {{ bi('返回桌面端', 'Return to Desktop') }}
+            </NButton>
+            <NButton v-else size="tiny" secondary @click="desktopBridge.openInBrowserMode()">
+              <template #icon><SvgIcon icon="lucide:external-link" /></template>
+              {{ bi('在浏览器中打开', 'Open in Browser') }}
             </NButton>
           </div>
         </NSpace>

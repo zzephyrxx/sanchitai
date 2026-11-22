@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, h, reactive, ref } from 'vue';
-import dayjs from 'dayjs';
 import { NButton, NPopconfirm, NTag } from 'naive-ui';
-import type { DataTableColumns } from 'naive-ui';
+import dayjs from 'dayjs';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
+import { useTableColumnLayout } from '@/hooks/common/table-layout';
 
 // NDatePicker 时间戳适配
 function useDateAdapter(form: { date: string }) {
@@ -84,49 +84,54 @@ function colHeader(icon: string, text: string) {
   ]);
 }
 
-const recordColumns = computed<DataTableColumns<Sct.Talk>>(() => [
-  {
-    title: () => colHeader('lucide:calendar', bi('日期', 'Date')),
+const TALK_COL_ORDER = ['date', 'type', 'members', 'content', 'follow_up', 'op'] as const;
+
+const talkColumnMap = computed(() => ({
+  date: {
     key: 'date',
-    width: 115,
-    resizable: true,
-    sorter: (a, b) => a.date.localeCompare(b.date)
+    defaultWidth: 118,
+    minWidth: 90,
+    titleContent: () => colHeader('lucide:calendar', bi('日期', 'Date')),
+    sorter: (a: Sct.Talk, b: Sct.Talk) => a.date.localeCompare(b.date)
   },
-  {
-    title: () => colHeader('lucide:tag', bi('类型', 'Type')),
+  type: {
     key: 'type',
-    width: 140,
-    resizable: true,
-    sorter: (a, b) => a.type.localeCompare(b.type),
-    render: r => h(NTag, { size: 'tiny', bordered: false }, () => r.type)
+    defaultWidth: 140,
+    minWidth: 96,
+    titleContent: () => colHeader('lucide:tag', bi('类型', 'Type')),
+    sorter: (a: Sct.Talk, b: Sct.Talk) => a.type.localeCompare(b.type),
+    render: (r: Sct.Talk) => h(NTag, { size: 'tiny', bordered: false }, () => r.type)
   },
-  {
-    title: () => colHeader('lucide:users', bi('对象', 'Participants')),
+  members: {
     key: 'members',
-    width: 150,
-    resizable: true,
-    render: r => r.member_ids.map((id: string) => workStore.memberName(id)).join('、')
+    defaultWidth: 155,
+    minWidth: 96,
+    titleContent: () => colHeader('lucide:users', bi('对象', 'Participants')),
+    render: (r: Sct.Talk) => r.member_ids.map((id: string) => workStore.memberName(id)).join('、')
   },
-  {
-    title: () => colHeader('lucide:message-square-text', bi('要点', 'Key Points')),
+  content: {
     key: 'content',
-    minWidth: 200,
-    resizable: true,
-    ellipsis: { tooltip: true }
-  },
-  {
-    title: () => colHeader('lucide:check-square', bi('后续跟进', 'Follow-up')),
-    key: 'follow_up',
-    width: 160,
-    resizable: true,
+    defaultWidth: 260,
+    minWidth: 140,
     ellipsis: { tooltip: true },
-    render: r => r.follow_up || '—'
+    titleContent: () => colHeader('lucide:message-square-text', bi('要点', 'Key Points'))
   },
-  {
-    title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
+  follow_up: {
+    key: 'follow_up',
+    defaultWidth: 165,
+    minWidth: 100,
+    ellipsis: { tooltip: true },
+    titleContent: () => colHeader('lucide:check-square', bi('后续跟进', 'Follow-up')),
+    render: (r: Sct.Talk) => r.follow_up || '—'
+  },
+  op: {
     key: 'op',
-    width: 150,
-    render: r =>
+    defaultWidth: 150,
+    fixed: 'right' as const,
+    resizable: false,
+    reorderable: false,
+    titleContent: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
+    render: (r: Sct.Talk) =>
       h('div', { class: 'flex items-center gap-6px' }, [
         h(
           NButton,
@@ -163,7 +168,25 @@ const recordColumns = computed<DataTableColumns<Sct.Talk>>(() => [
         )
       ])
   }
-]);
+}));
+
+const {
+  columns: recordColumns,
+  scrollX: talkScrollX,
+  hasCustomLayout: hasCustomTalkLayout,
+  resetLayout: resetTalkLayout
+} = useTableColumnLayout<Sct.Talk>({
+  storageKey: 'talks',
+  defaultOrder: TALK_COL_ORDER,
+  pinnedEndKeys: ['op'],
+  columnMap: talkColumnMap,
+  minTableWidth: 820
+});
+
+function handleResetTalkLayout() {
+  resetTalkLayout();
+  window.$message?.success('谈心谈话表列宽与列顺序已重置');
+}
 
 // ---------------- 新建 / 编辑谈话 ----------------
 const addShow = ref(false);
@@ -208,9 +231,7 @@ async function removeTalk(id: string) {
   window.$message?.success('谈话记录已删除');
 }
 
-const memberOptions = computed(() =>
-  workStore.members.map(m => ({ label: `${m.name}（${m.type}）`, value: m.id }))
-);
+const memberOptions = computed(() => workStore.members.map(m => ({ label: `${m.name}（${m.type}）`, value: m.id })));
 
 const dateTs = useDateAdapter(addForm);
 
@@ -268,11 +289,13 @@ async function handleAdd() {
         <div v-for="a in applicantAlert" :key="a">{{ a }}</div>
       </NAlert>
       <NAlert v-if="uncovered.length" type="info" class="mb-12px" :show-icon="false">
-        {{ bi(`今年未覆盖（${uncovered.length}）`, `Uncovered this year (${uncovered.length})`) }}：{{ uncovered.join('、') }}
+        {{ bi(`今年未覆盖（${uncovered.length}）`, `Uncovered this year (${uncovered.length})`) }}：{{
+          uncovered.join('、')
+        }}
       </NAlert>
 
-      <!-- 覆盖矩阵 -->
-      <div class="mb-14px grid grid-cols-2 gap-8px md:grid-cols-3 lg:grid-cols-4">
+      <!-- 覆盖矩阵（宽屏一行五列，自适应响应式） -->
+      <div class="mb-14px grid grid-cols-2 gap-8px sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         <div
           v-for="c in coverage"
           :key="c.member.id"
@@ -293,24 +316,40 @@ async function handleAdd() {
             </NTag>
           </div>
           <div class="mt-2px text-11px text-gray-500">
-            {{ c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年尚未谈心谈话', 'No talk recorded this year') }}
+            {{
+              c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年尚未谈心谈话', 'No talk recorded this year')
+            }}
           </div>
         </div>
       </div>
 
       <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
-        <NInput
-          v-model:value="searchKeyword"
-          size="small"
-          clearable
-          class="w-260px"
-          :placeholder="bi('搜索谈话对象、类型、要点或后续跟进…', 'Search participant, type, key points…')"
-          @update:value="pagination.page = 1"
-        >
-          <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
-        </NInput>
+        <div class="flex flex-nowrap items-center gap-8px">
+          <div class="w-240px shrink-0">
+            <NInput
+              v-model:value="searchKeyword"
+              size="small"
+              clearable
+              :placeholder="bi('搜索谈话对象、类型、要点或后续跟进…', 'Search participant, type, key points…')"
+              @update:value="pagination.page = 1"
+            >
+              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+            </NInput>
+          </div>
+          <NButton
+            size="small"
+            secondary
+            class="shrink-0"
+            :disabled="!hasCustomTalkLayout"
+            @click="handleResetTalkLayout"
+          >
+            <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+            {{ bi('重置列宽', 'Reset Columns') }}
+          </NButton>
+        </div>
         <span class="text-12px text-gray-400">
-          {{ bi('支持拖拽列宽与排序 · 共 ', 'Resizable & sortable · Total ') }}{{ recordRows.length }}{{ bi(' 条记录', ' records') }}
+          {{ bi('拖拽表头可换列顺序 · 共 ', 'Drag headers to reorder · Total ') }}{{ recordRows.length
+          }}{{ bi(' 条记录', ' records') }}
         </span>
       </div>
 
@@ -320,12 +359,18 @@ async function handleAdd() {
         :pagination="pagination"
         size="small"
         :bordered="false"
+        :scroll-x="talkScrollX"
         :row-key="(r: Sct.Talk) => r.id"
       />
     </NCard>
 
     <!-- 新建 / 编辑谈话（label-width="112" 带图标防折行） -->
-    <NModal v-model:show="addShow" preset="card" :title="editingTalkId ? '编辑谈心谈话' : '新建谈心谈话'" class="w-580px">
+    <NModal
+      v-model:show="addShow"
+      preset="card"
+      :title="editingTalkId ? '编辑谈心谈话' : '新建谈心谈话'"
+      class="w-580px"
+    >
       <NForm label-placement="left" label-width="112" size="small">
         <NFormItem required>
           <template #label>
@@ -343,7 +388,12 @@ async function handleAdd() {
               <span>类型</span>
             </span>
           </template>
-          <NSelect v-model:value="addForm.type" :options="TALK_TYPES.map(v => ({ label: v, value: v }))" tag filterable />
+          <NSelect
+            v-model:value="addForm.type"
+            :options="TALK_TYPES.map(v => ({ label: v, value: v }))"
+            tag
+            filterable
+          />
         </NFormItem>
         <NFormItem>
           <template #label>
@@ -370,7 +420,12 @@ async function handleAdd() {
               <span>谈话要点</span>
             </span>
           </template>
-          <NInput v-model:value="addForm.content" type="textarea" :rows="4" placeholder="要点：思想动态/困难诉求/反馈提醒…" />
+          <NInput
+            v-model:value="addForm.content"
+            type="textarea"
+            :rows="4"
+            placeholder="要点：思想动态/困难诉求/反馈提醒…"
+          />
         </NFormItem>
         <NFormItem>
           <template #label>

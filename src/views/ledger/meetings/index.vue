@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, h, reactive, ref } from 'vue';
 import { NButton, NDatePicker, NTag } from 'naive-ui';
-import type { DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
 import { saveFileWithPicker } from '@/utils/save-file';
 import { generateSemesterDrafts, draftToEvent } from '@/utils/schedule-gen';
@@ -9,6 +8,7 @@ import type { GenDraftEvent, GenParams } from '@/utils/schedule-gen';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
+import { useTableColumnLayout } from '@/hooks/common/table-layout';
 import MeetingDetail from './modules/meeting-detail.vue';
 
 defineOptions({ name: 'MeetingsPage' });
@@ -270,57 +270,58 @@ function renderKindCapsule(kind?: string, merged?: string) {
   );
 }
 
-const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
-  {
-    title: () => colHeader('lucide:calendar', bi('日期', 'Date')),
+const MEETING_COL_ORDER = ['date', 'kind', 'title', 'location', 'owner', 'helper', 'status', 'rate', 'op'] as const;
+
+const meetingColumnMap = computed(() => ({
+  date: {
     key: 'date',
-    width: 115,
-    resizable: true,
-    sorter: (a, b) => a.date.localeCompare(b.date),
-    render: r =>
+    defaultWidth: 118,
+    minWidth: 88,
+    titleContent: () => colHeader('lucide:calendar', bi('日期', 'Date')),
+    sorter: (a: MeetingRow, b: MeetingRow) => a.date.localeCompare(b.date),
+    render: (r: MeetingRow) =>
       `${dayjs(r.date).format('MM-DD')} ${bi(WEEKDAY_CN[dayjs(r.date).day()], WEEKDAY_EN[dayjs(r.date).day()])}`
   },
-  {
-    title: () => colHeader('lucide:tag', bi('类型', 'Type')),
+  kind: {
     key: 'kind',
-    width: 145,
-    resizable: true,
-    sorter: (a, b) => (a.kind ?? '').localeCompare(b.kind ?? ''),
-    render: r => renderKindCapsule(r.kind, r.merged_into)
+    defaultWidth: 145,
+    minWidth: 100,
+    titleContent: () => colHeader('lucide:tag', bi('类型', 'Type')),
+    sorter: (a: MeetingRow, b: MeetingRow) => (a.kind ?? '').localeCompare(b.kind ?? ''),
+    render: (r: MeetingRow) => renderKindCapsule(r.kind, r.merged_into)
   },
-  {
-    title: () => colHeader('lucide:file-text', bi('标题（可拖拽列宽）', 'Title (Resizable)')),
+  title: {
     key: 'title',
-    width: 210,
-    minWidth: 130,
-    maxWidth: 500,
-    resizable: true,
+    defaultWidth: 220,
+    minWidth: 120,
     ellipsis: { tooltip: true },
-    sorter: (a, b) => a.title.localeCompare(b.title)
+    titleContent: () => colHeader('lucide:file-text', bi('标题', 'Title')),
+    sorter: (a: MeetingRow, b: MeetingRow) => a.title.localeCompare(b.title)
   },
-  {
-    title: () => colHeader('lucide:map-pin', bi('地点', 'Location')),
+  location: {
     key: 'location',
-    width: 115,
-    resizable: true,
+    defaultWidth: 118,
+    minWidth: 80,
     ellipsis: { tooltip: true },
-    sorter: (a, b) => (a.location ?? '').localeCompare(b.location ?? ''),
-    render: r => r.location || '—'
+    titleContent: () => colHeader('lucide:map-pin', bi('地点', 'Location')),
+    sorter: (a: MeetingRow, b: MeetingRow) => (a.location ?? '').localeCompare(b.location ?? ''),
+    render: (r: MeetingRow) => r.location || '—'
   },
-  {
-    title: () => colHeader('lucide:user', bi('主责人', 'Owner')),
+  owner: {
     key: 'owner',
-    width: 95,
-    resizable: true,
-    sorter: (a, b) => workStore.memberName(a.owner).localeCompare(workStore.memberName(b.owner)),
-    render: r => workStore.memberName(r.owner) || '—'
+    defaultWidth: 96,
+    minWidth: 74,
+    titleContent: () => colHeader('lucide:user', bi('主责人', 'Owner')),
+    sorter: (a: MeetingRow, b: MeetingRow) =>
+      workStore.memberName(a.owner).localeCompare(workStore.memberName(b.owner)),
+    render: (r: MeetingRow) => workStore.memberName(r.owner) || '—'
   },
-  {
-    title: () => colHeader('lucide:users', bi('协助人', 'Helper')),
+  helper: {
     key: 'helper',
-    width: 110,
-    resizable: true,
-    render: r =>
+    defaultWidth: 115,
+    minWidth: 80,
+    titleContent: () => colHeader('lucide:users', bi('协助人', 'Helper')),
+    render: (r: MeetingRow) =>
       r.helper
         ? r.helper
             .split(/[、,，]/)
@@ -328,13 +329,13 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
             .join('、')
         : '—'
   },
-  {
-    title: () => colHeader('lucide:circle-dot', bi('状态', 'Status')),
+  status: {
     key: 'status',
-    width: 95,
-    resizable: true,
-    sorter: (a, b) => a.status.localeCompare(b.status),
-    render: r =>
+    defaultWidth: 96,
+    minWidth: 74,
+    titleContent: () => colHeader('lucide:circle-dot', bi('状态', 'Status')),
+    sorter: (a: MeetingRow, b: MeetingRow) => a.status.localeCompare(b.status),
+    render: (r: MeetingRow) =>
       h(
         NTag,
         {
@@ -345,20 +346,23 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
         () => tEventStatus(r.status)
       )
   },
-  {
-    title: () => colHeader('lucide:percent', bi('到会率', 'Attendance')),
+  rate: {
     key: 'rate',
-    width: 115,
-    resizable: true,
-    sorter: (a, b) => (a.rate?.rate ?? -1) - (b.rate?.rate ?? -1),
-    render: r =>
+    defaultWidth: 118,
+    minWidth: 86,
+    titleContent: () => colHeader('lucide:percent', bi('到会率', 'Attendance')),
+    sorter: (a: MeetingRow, b: MeetingRow) => (a.rate?.rate ?? -1) - (b.rate?.rate ?? -1),
+    render: (r: MeetingRow) =>
       r.status === '计划' || !r.rate ? '—' : `${Math.round(r.rate.rate * 100)}%（${r.rate.present}/${r.rate.due}）`
   },
-  {
-    title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
+  op: {
     key: 'op',
-    width: 96,
-    render: r =>
+    defaultWidth: 96,
+    fixed: 'right' as const,
+    resizable: false,
+    reorderable: false,
+    titleContent: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
+    render: (r: MeetingRow) =>
       h(
         NButton,
         {
@@ -373,7 +377,25 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
         }
       )
   }
-]);
+}));
+
+const {
+  columns: listColumns,
+  scrollX: meetingScrollX,
+  hasCustomLayout: hasCustomMeetingLayout,
+  resetLayout: resetMeetingLayout
+} = useTableColumnLayout<MeetingRow>({
+  storageKey: 'meetings',
+  defaultOrder: MEETING_COL_ORDER,
+  pinnedEndKeys: ['op'],
+  columnMap: meetingColumnMap,
+  minTableWidth: 860
+});
+
+function handleResetMeetingLayout() {
+  resetMeetingLayout();
+  window.$message?.success('三会一课表列宽与列顺序已重置');
+}
 </script>
 
 <template>
@@ -425,8 +447,8 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
       </div>
 
       <div class="mb-12px flex flex-wrap items-center justify-between gap-10px">
-        <div class="flex flex-wrap items-center gap-10px">
-          <div class="w-180px">
+        <div class="flex flex-nowrap items-center gap-8px overflow-x-auto">
+          <div class="w-165px shrink-0">
             <NSelect
               v-model:value="kindFilter"
               :options="kindFilterOptions"
@@ -434,22 +456,33 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
               @update:value="pagination.page = 1"
             />
           </div>
-          <NInput
-            v-model:value="searchKeyword"
+          <div class="w-230px shrink-0">
+            <NInput
+              v-model:value="searchKeyword"
+              size="small"
+              clearable
+              :placeholder="bi('搜索会议标题、地点、主责人…', 'Search title, location, owner…')"
+              @update:value="pagination.page = 1"
+            >
+              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+            </NInput>
+          </div>
+          <NButton
             size="small"
-            clearable
-            class="w-240px"
-            :placeholder="bi('搜索会议标题、地点、主责人…', 'Search title, location, owner…')"
-            @update:value="pagination.page = 1"
+            secondary
+            class="shrink-0"
+            :disabled="!hasCustomMeetingLayout"
+            @click="handleResetMeetingLayout"
           >
-            <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
-          </NInput>
+            <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+            {{ bi('重置列宽', 'Reset Columns') }}
+          </NButton>
         </div>
         <span class="text-12px text-gray-400">
           {{
             bi(
-              '支持拖拽列宽与排序 · 点击「详情」管理参会考勤与签到表',
-              'Resizable & sortable columns · Click Details for attendance & sign-in sheet'
+              '拖拽表头可换列顺序 · 拖右侧边线调列宽（自动记忆） · 点击「详情」管理考勤',
+              'Drag headers to reorder · Drag edge to resize · Click Details for attendance'
             )
           }}
         </span>
@@ -461,6 +494,7 @@ const listColumns = computed<DataTableColumns<MeetingRow>>(() => [
         :pagination="pagination"
         size="small"
         :bordered="false"
+        :scroll-x="meetingScrollX"
         :row-key="(r: MeetingRow) => r.id"
       />
     </NCard>

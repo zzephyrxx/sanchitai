@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onUnmounted, reactive, ref, watch } from 'vue';
 import { NButton, NPopconfirm, NTag } from 'naive-ui';
-import type { DataTableColumn, DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
 import { FEE_STANDARD, MEMBER_TYPE_COLORS, MEMBER_TYPE_ORDER } from '@/constants/sanchitai';
 import { generateNextMemberCode, getBranchAbbreviation, maskIdCard } from '@/utils/member-code';
@@ -16,6 +15,7 @@ import { buildSeatSheet, printHtml } from '@/utils/print';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
+import { useTableColumnLayout } from '@/hooks/common/table-layout';
 import MemberCard from './modules/member-card.vue';
 import MemberImportModal from './modules/member-import-modal.vue';
 import RosterBoard from './modules/roster-board.vue';
@@ -41,6 +41,59 @@ watch(
 const activeMap = computed(() => workStore.seatMaps.find(m => m.map_id === activeMapId.value) ?? workStore.seatMaps[0]);
 const editable = ref(false);
 
+// ---------------- 座位图预设模板 ----------------
+interface SeatMapPreset {
+  id: string;
+  name: string;
+  rows: number;
+  cols: number;
+  icon: string;
+  desc: string;
+}
+
+const SEAT_MAP_PRESETS: SeatMapPreset[] = [
+  {
+    id: 'lab',
+    name: '实验室工位',
+    rows: 4,
+    cols: 8,
+    icon: 'lucide:monitor',
+    desc: '4 行 × 8 列（32 位），适合科研课题组/工位布点'
+  },
+  {
+    id: 'classroom',
+    name: '标准教室',
+    rows: 6,
+    cols: 8,
+    icon: 'lucide:school',
+    desc: '6 行 × 8 列（48 位），适合大班党课/集中学习'
+  },
+  {
+    id: 'meeting',
+    name: '支部会议室',
+    rows: 4,
+    cols: 6,
+    icon: 'lucide:users',
+    desc: '4 行 × 6 列（24 位），适合支委会/组织生活会'
+  },
+  {
+    id: 'hall',
+    name: '报告厅阶梯',
+    rows: 8,
+    cols: 10,
+    icon: 'lucide:landmark',
+    desc: '8 行 × 10 列（80 位），适合大支部党员大会'
+  }
+];
+
+async function applySeatMapPreset(preset: SeatMapPreset) {
+  const existingCount = workStore.seatMaps.filter(m => m.name.startsWith(preset.name)).length;
+  const label = existingCount ? `${preset.name} ${existingCount + 1}` : preset.name;
+  const newId = await workStore.addSeatMap({ name: label, rows: preset.rows, cols: preset.cols });
+  activeMapId.value = newId;
+  window.$message?.success(`已创建座位图「${label}」（${preset.rows}×${preset.cols}）`);
+}
+
 // ---------------- 欠缴角标（座位图使用） ----------------
 const feeBadges = computed(() => {
   const bad = new Set(workStore.feeRecords.filter(f => f.status === '欠缴').map(f => f.member_id));
@@ -60,7 +113,7 @@ function snapshotSeats(): SeatSnapshot[] {
   return workStore.members.map(m => ({ id: m.id, seat: m.seat ? { ...m.seat } : null }));
 }
 
-function handleMove({
+async function handleMove({
   memberId,
   from,
   to
@@ -89,18 +142,26 @@ function handleMove({
   } else {
     tasks.push(workStore.updateMember(mover.id, { seat: { map_id: mapId, x: to.x, y: to.y } }));
   }
-  Promise.all(tasks).then(() => window.$message?.success('布点已更新'));
+  try {
+    await Promise.all(tasks);
+    window.$message?.success('布点已更新');
+  } catch {
+    // guardWrite 已弹出错误提示
+  }
 }
 
-function handleUndo() {
+async function handleUndo() {
   const snap = undoStack.value.pop();
   if (!snap) {
     window.$message?.info('没有可撤销的操作');
     return;
   }
-  Promise.all(snap.map(s => workStore.updateMember(s.id, { seat: s.seat }))).then(() =>
-    window.$message?.success('已撤销')
-  );
+  try {
+    await Promise.all(snap.map(s => workStore.updateMember(s.id, { seat: s.seat })));
+    window.$message?.success('已撤销');
+  } catch {
+    // guardWrite 已弹出错误提示
+  }
 }
 
 /** 打印座次/工位表 */
@@ -368,116 +429,164 @@ function colHeader(icon: string, text: string) {
   ]);
 }
 
-const allColumnMap = computed<Record<ToggleableColumnKey | 'name' | 'op', DataTableColumn<MemberRow>>>(() => ({
+function levelPillClass(level?: string): string {
+  const s = (level ?? '').trim();
+  if (/博/.test(s)) return 'sct-pill sct-pill--phd';
+  if (/硕/.test(s)) return 'sct-pill sct-pill--master';
+  if (/本/.test(s)) return 'sct-pill sct-pill--bachelor';
+  return 'sct-pill sct-pill--neutral';
+}
+
+function gradePillClass(grade?: string): string {
+  const s = (grade ?? '').trim();
+  const match = s.match(/20(\d{2})/);
+  if (!match) return 'sct-pill sct-pill--grade-4';
+  const yr = Number(match[1]);
+  const paletteIdx = (((26 - yr) % 5) + 5) % 5;
+  return `sct-pill sct-pill--grade-${paletteIdx}`;
+}
+
+const ORDERED_COLUMN_SEQUENCE: Array<ToggleableColumnKey | 'name' | 'op'> = [
+  'seq',
+  'code',
+  'branch_name',
+  'name',
+  'student_id',
+  'gender',
+  'ethnicity',
+  'birth_date',
+  'dorm_building',
+  'dorm_room',
+  'level',
+  'grade',
+  'major',
+  'class_name',
+  'id_card',
+  'phone',
+  'type',
+  'join_date',
+  'full_date',
+  'advisor',
+  'role',
+  'group',
+  'op'
+];
+
+const allColumnMap = computed(() => ({
   seq: {
-    title: () => colHeader('lucide:list-ordered', bi('序号', 'No.')),
     key: 'seq',
-    width: 66,
-    render: row => row.seqNo
+    defaultWidth: 66,
+    minWidth: 54,
+    titleContent: () => colHeader('lucide:list-ordered', bi('序号', 'No.')),
+    render: (row: MemberRow) => row.seqNo
   },
   code: {
-    title: () => colHeader('lucide:hash', bi('编号', 'Code')),
     key: 'code',
-    width: 102,
-    resizable: true,
-    sorter: (a, b) => (a.code ?? '').localeCompare(b.code ?? '')
+    defaultWidth: 104,
+    minWidth: 78,
+    titleContent: () => colHeader('lucide:hash', bi('编号', 'Code')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.code ?? '').localeCompare(b.code ?? '')
   },
   branch_name: {
-    title: () => colHeader('lucide:building-2', bi('支部名称', 'Branch')),
     key: 'branch_name',
-    width: 155,
-    resizable: true,
+    defaultWidth: 155,
+    minWidth: 96,
     ellipsis: { tooltip: true },
-    sorter: (a, b) => (a.branch_name ?? workStore.branchName).localeCompare(b.branch_name ?? workStore.branchName),
-    render: row => row.branch_name || workStore.branchName
+    titleContent: () => colHeader('lucide:building-2', bi('支部名称', 'Branch')),
+    sorter: (a: MemberRow, b: MemberRow) =>
+      (a.branch_name ?? workStore.branchName).localeCompare(b.branch_name ?? workStore.branchName),
+    render: (row: MemberRow) => row.branch_name || workStore.branchName
   },
   name: {
-    title: () => colHeader('lucide:user', bi('姓名', 'Name')),
     key: 'name',
-    width: 96,
-    resizable: true,
-    sorter: (a, b) => a.name.localeCompare(b.name)
+    defaultWidth: 96,
+    minWidth: 74,
+    titleContent: () => colHeader('lucide:user', bi('姓名', 'Name')),
+    sorter: (a: MemberRow, b: MemberRow) => a.name.localeCompare(b.name)
   },
   student_id: {
-    title: () => colHeader('lucide:id-card', bi('学号', 'Student ID')),
     key: 'student_id',
-    width: 120,
-    resizable: true,
-    sorter: (a, b) => (a.student_id ?? '').localeCompare(b.student_id ?? ''),
-    render: row => row.student_id || '—'
+    defaultWidth: 120,
+    minWidth: 88,
+    titleContent: () => colHeader('lucide:id-card', bi('学号', 'Student ID')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.student_id ?? '').localeCompare(b.student_id ?? ''),
+    render: (row: MemberRow) => row.student_id || '—'
   },
   gender: {
-    title: () => colHeader('lucide:users', bi('性别', 'Gender')),
     key: 'gender',
-    width: 72,
-    resizable: true,
-    sorter: (a, b) => (a.gender ?? '').localeCompare(b.gender ?? ''),
-    render: row => row.gender || '—'
+    defaultWidth: 72,
+    minWidth: 58,
+    titleContent: () => colHeader('lucide:users', bi('性别', 'Gender')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.gender ?? '').localeCompare(b.gender ?? ''),
+    render: (row: MemberRow) => row.gender || '—'
   },
   ethnicity: {
-    title: () => colHeader('lucide:flag', bi('民族', 'Ethnicity')),
     key: 'ethnicity',
-    width: 82,
-    resizable: true,
-    sorter: (a, b) => (a.ethnicity ?? '').localeCompare(b.ethnicity ?? ''),
-    render: row => row.ethnicity || '—'
+    defaultWidth: 82,
+    minWidth: 64,
+    titleContent: () => colHeader('lucide:flag', bi('民族', 'Ethnicity')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.ethnicity ?? '').localeCompare(b.ethnicity ?? ''),
+    render: (row: MemberRow) => row.ethnicity || '—'
   },
   birth_date: {
-    title: () => colHeader('lucide:cake', bi('出生年月', 'Birth')),
     key: 'birth_date',
-    width: 108,
-    resizable: true,
-    sorter: (a, b) => (a.birth_date ?? '').localeCompare(b.birth_date ?? ''),
-    render: row => row.birth_date || '—'
+    defaultWidth: 108,
+    minWidth: 84,
+    titleContent: () => colHeader('lucide:cake', bi('出生年月', 'Birth')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.birth_date ?? '').localeCompare(b.birth_date ?? ''),
+    render: (row: MemberRow) => row.birth_date || '—'
   },
   dorm_building: {
-    title: () => colHeader('lucide:home', bi('宿舍楼栋号', 'Dorm Bldg')),
     key: 'dorm_building',
-    width: 112,
-    resizable: true,
-    render: row => row.dorm_building || '—'
+    defaultWidth: 112,
+    minWidth: 84,
+    titleContent: () => colHeader('lucide:home', bi('宿舍楼栋号', 'Dorm Bldg')),
+    render: (row: MemberRow) => row.dorm_building || '—'
   },
   dorm_room: {
-    title: () => colHeader('lucide:door-open', bi('宿舍号', 'Room')),
     key: 'dorm_room',
-    width: 88,
-    resizable: true,
-    render: row => row.dorm_room || '—'
+    defaultWidth: 88,
+    minWidth: 68,
+    titleContent: () => colHeader('lucide:door-open', bi('宿舍号', 'Room')),
+    render: (row: MemberRow) => row.dorm_room || '—'
   },
   level: {
-    title: () => colHeader('lucide:layers', bi('层次', 'Level')),
     key: 'level',
-    width: 92,
-    resizable: true,
-    sorter: (a, b) => (a.level ?? '').localeCompare(b.level ?? ''),
-    render: row => row.level || '—'
+    defaultWidth: 96,
+    minWidth: 74,
+    titleContent: () => colHeader('lucide:layers', bi('层次', 'Level')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.level ?? '').localeCompare(b.level ?? ''),
+    render: (row: MemberRow) => (row.level ? h('span', { class: levelPillClass(row.level) }, row.level) : '—')
   },
   grade: {
-    title: () => colHeader('lucide:graduation-cap', bi('年级', 'Grade')),
     key: 'grade',
-    width: 88,
-    resizable: true,
-    sorter: (a, b) => (a.grade ?? '').localeCompare(b.grade ?? ''),
-    render: row => row.grade || '—'
+    defaultWidth: 92,
+    minWidth: 72,
+    titleContent: () => colHeader('lucide:graduation-cap', bi('年级', 'Grade')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.grade ?? '').localeCompare(b.grade ?? ''),
+    render: (row: MemberRow) => (row.grade ? h('span', { class: gradePillClass(row.grade) }, row.grade) : '—')
   },
   major: {
-    title: () => colHeader('lucide:book-open', bi('专业', 'Major')),
     key: 'major',
-    width: 145,
-    resizable: true,
+    defaultWidth: 145,
+    minWidth: 90,
     ellipsis: { tooltip: true },
-    sorter: (a, b) => (a.major ?? '').localeCompare(b.major ?? ''),
-    render: row => row.major || '—'
+    titleContent: () => colHeader('lucide:book-open', bi('专业', 'Major')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.major ?? '').localeCompare(b.major ?? ''),
+    render: (row: MemberRow) => row.major || '—'
   },
   class_name: {
-    title: () => colHeader('lucide:school', bi('班级', 'Class')),
     key: 'class_name',
-    width: 108,
-    resizable: true,
-    render: row => row.class_name || '—'
+    defaultWidth: 108,
+    minWidth: 80,
+    titleContent: () => colHeader('lucide:school', bi('班级', 'Class')),
+    render: (row: MemberRow) => row.class_name || '—'
   },
   id_card: {
-    title: () =>
+    key: 'id_card',
+    defaultWidth: 180,
+    minWidth: 140,
+    titleContent: () =>
       h('span', { class: 'inline-flex items-center gap-4px whitespace-nowrap' }, [
         SvgIconVNode({ icon: 'lucide:shield-alert', fontSize: 13 })?.(),
         h('span', bi('身份证号', 'ID Card')),
@@ -494,10 +603,7 @@ const allColumnMap = computed<Record<ToggleableColumnKey | 'name' | 'op', DataTa
           }
         )
       ]),
-    key: 'id_card',
-    width: 176,
-    resizable: true,
-    render: row =>
+    render: (row: MemberRow) =>
       h(
         'span',
         { class: 'font-mono text-12px' },
@@ -505,42 +611,42 @@ const allColumnMap = computed<Record<ToggleableColumnKey | 'name' | 'op', DataTa
       )
   },
   phone: {
-    title: () => colHeader('lucide:phone', bi('联系电话', 'Phone')),
     key: 'phone',
-    width: 124,
-    resizable: true,
-    render: row => row.phone || '—'
+    defaultWidth: 124,
+    minWidth: 96,
+    titleContent: () => colHeader('lucide:phone', bi('联系电话', 'Phone')),
+    render: (row: MemberRow) => row.phone || '—'
   },
   type: {
-    title: () => colHeader('lucide:award', bi('正式/预备党员', 'Party Status')),
     key: 'type',
-    width: 132,
-    resizable: true,
-    sorter: (a, b) => MEMBER_TYPE_ORDER.indexOf(a.type) - MEMBER_TYPE_ORDER.indexOf(b.type),
-    render: row =>
+    defaultWidth: 132,
+    minWidth: 96,
+    titleContent: () => colHeader('lucide:award', bi('正式/预备党员', 'Party Status')),
+    sorter: (a: MemberRow, b: MemberRow) => MEMBER_TYPE_ORDER.indexOf(a.type) - MEMBER_TYPE_ORDER.indexOf(b.type),
+    render: (row: MemberRow) =>
       h('span', { class: 'inline-flex items-center gap-5px whitespace-nowrap' }, [
         h('span', { class: 'inline-block size-8px rounded-full', style: { background: MEMBER_TYPE_COLORS[row.type] } }),
         tMemberType(row.type)
       ])
   },
   join_date: {
-    title: () => colHeader('lucide:calendar', bi('入党时间', 'Join Date')),
     key: 'join_date',
-    width: 112,
-    resizable: true,
-    sorter: (a, b) => (a.join_date ?? '').localeCompare(b.join_date ?? ''),
-    render: row => row.join_date || '—'
+    defaultWidth: 112,
+    minWidth: 90,
+    titleContent: () => colHeader('lucide:calendar', bi('入党时间', 'Join Date')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.join_date ?? '').localeCompare(b.join_date ?? ''),
+    render: (row: MemberRow) => row.join_date || '—'
   },
   full_date: {
-    title: () => colHeader('lucide:calendar-check-2', bi('转正时间', 'Full Date')),
     key: 'full_date',
-    width: 132,
-    resizable: true,
-    sorter: (a, b) =>
+    defaultWidth: 134,
+    minWidth: 96,
+    titleContent: () => colHeader('lucide:calendar-check-2', bi('转正时间', 'Full Date')),
+    sorter: (a: MemberRow, b: MemberRow) =>
       resolveEffectiveFullDate(a.join_date, a.full_date, a.key_dates?.probation_end).localeCompare(
         resolveEffectiveFullDate(b.join_date, b.full_date, b.key_dates?.probation_end)
       ),
-    render: row => {
+    render: (row: MemberRow) => {
       const fd = resolveEffectiveFullDate(row.join_date, row.full_date, row.key_dates?.probation_end);
       if (!fd) return '—';
       const isFuture = fd > dayjs().format('YYYY-MM-DD');
@@ -552,35 +658,37 @@ const allColumnMap = computed<Record<ToggleableColumnKey | 'name' | 'op', DataTa
     }
   },
   advisor: {
-    title: () => colHeader('lucide:user-check', bi('导师姓名', 'Advisor')),
     key: 'advisor',
-    width: 100,
-    resizable: true,
-    sorter: (a, b) => (a.advisor ?? '').localeCompare(b.advisor ?? ''),
-    render: row => row.advisor || '—'
+    defaultWidth: 100,
+    minWidth: 76,
+    titleContent: () => colHeader('lucide:user-check', bi('导师姓名', 'Advisor')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.advisor ?? '').localeCompare(b.advisor ?? ''),
+    render: (row: MemberRow) => row.advisor || '—'
   },
   role: {
-    title: () => colHeader('lucide:shield', bi('党内职务', 'Role')),
     key: 'role',
-    width: 96,
-    resizable: true,
-    sorter: (a, b) => (a.role ?? '').localeCompare(b.role ?? ''),
-    render: row => row.role || '—'
+    defaultWidth: 96,
+    minWidth: 74,
+    titleContent: () => colHeader('lucide:shield', bi('党内职务', 'Role')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.role ?? '').localeCompare(b.role ?? ''),
+    render: (row: MemberRow) => row.role || '—'
   },
   group: {
-    title: () => colHeader('lucide:network', bi('研究方向组', 'Group')),
     key: 'group',
-    width: 112,
-    resizable: true,
-    sorter: (a, b) => (a.group ?? '').localeCompare(b.group ?? ''),
-    render: row => row.group || '—'
+    defaultWidth: 112,
+    minWidth: 80,
+    titleContent: () => colHeader('lucide:network', bi('研究方向组', 'Group')),
+    sorter: (a: MemberRow, b: MemberRow) => (a.group ?? '').localeCompare(b.group ?? ''),
+    render: (row: MemberRow) => row.group || '—'
   },
   op: {
-    title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
     key: 'op',
-    width: 196,
-    fixed: 'right',
-    render: row =>
+    defaultWidth: 196,
+    fixed: 'right' as const,
+    resizable: false,
+    reorderable: false,
+    titleContent: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
+    render: (row: MemberRow) =>
       h('div', { class: 'flex items-center gap-6px', onClick: (e: MouseEvent) => e.stopPropagation() }, [
         h(
           NButton,
@@ -635,47 +743,26 @@ const allColumnMap = computed<Record<ToggleableColumnKey | 'name' | 'op', DataTa
   }
 }));
 
-const ORDERED_COLUMN_SEQUENCE: Array<ToggleableColumnKey | 'name'> = [
-  'seq',
-  'code',
-  'branch_name',
-  'name',
-  'student_id',
-  'gender',
-  'ethnicity',
-  'birth_date',
-  'dorm_building',
-  'dorm_room',
-  'level',
-  'grade',
-  'major',
-  'class_name',
-  'id_card',
-  'phone',
-  'type',
-  'join_date',
-  'full_date',
-  'advisor',
-  'role',
-  'group'
-];
+const activeVisibleKeys = computed(() => [...visibleColKeys.value, 'name', 'op']);
 
-const listColumns = computed<DataTableColumns<MemberRow>>(() => {
-  const activeSet = new Set<string>(visibleColKeys.value);
-  const cols: DataTableColumns<MemberRow> = [];
-  for (const key of ORDERED_COLUMN_SEQUENCE) {
-    if (key === 'name' || activeSet.has(key)) {
-      cols.push(allColumnMap.value[key]);
-    }
-  }
-  cols.push(allColumnMap.value.op);
-  return cols;
+const {
+  columns: listColumns,
+  scrollX: tableScrollX,
+  hasCustomLayout,
+  resetLayout: resetMemberTableLayout
+} = useTableColumnLayout<MemberRow>({
+  storageKey: 'members',
+  defaultOrder: ORDERED_COLUMN_SEQUENCE,
+  visibleKeys: activeVisibleKeys,
+  pinnedEndKeys: ['op'],
+  columnMap: allColumnMap,
+  minTableWidth: 960
 });
 
-const tableScrollX = computed(() => {
-  const total = listColumns.value.reduce((acc, col) => acc + (typeof col.width === 'number' ? col.width : 110), 0);
-  return Math.max(total, 960);
-});
+function handleResetTableLayout() {
+  resetMemberTableLayout();
+  window.$message?.success('成员列表列宽与列顺序已重置');
+}
 
 // ---------------- 新增 / 编辑成员 & 批量导入 ----------------
 const importShow = ref(false);
@@ -942,9 +1029,9 @@ async function removeMember(id: string) {
 
       <!-- 列表（默认页） -->
       <div v-if="activeTab === 'list'">
-        <div class="mb-10px flex flex-wrap items-center justify-between gap-12px">
-          <div class="flex flex-wrap items-center gap-10px">
-            <div class="w-170px">
+        <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
+          <div class="flex flex-nowrap items-center gap-8px overflow-x-auto">
+            <div class="w-150px shrink-0">
               <NSelect
                 v-model:value="typeFilter"
                 :options="[{ label: bi('全部身份', 'All Status'), value: '' }, ...typeOptions]"
@@ -952,19 +1039,20 @@ async function removeMember(id: string) {
                 @update:value="pagination.page = 1"
               />
             </div>
-            <NInput
-              v-model:value="searchKeyword"
-              size="small"
-              clearable
-              class="w-260px"
-              :placeholder="bi('搜索姓名、学号、编号、班级、导师、宿舍…', 'Search name, ID, code, class, advisor…')"
-              @update:value="pagination.page = 1"
-            >
-              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
-            </NInput>
+            <div class="w-230px shrink-0">
+              <NInput
+                v-model:value="searchKeyword"
+                size="small"
+                clearable
+                :placeholder="bi('搜索姓名、学号、编号、导师…', 'Search name, ID, code, advisor…')"
+                @update:value="pagination.page = 1"
+              >
+                <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+              </NInput>
+            </div>
             <NPopover trigger="click" placement="bottom-start" :width="400">
               <template #trigger>
-                <NButton size="small" secondary>
+                <NButton size="small" secondary class="shrink-0">
                   <template #icon><SvgIcon icon="lucide:columns-3" /></template>
                   {{ bi(`列设置（${visibleColKeys.length + 1}/${COLUMN_PICKER_META.length + 1}）`, 'Columns') }}
                 </NButton>
@@ -1001,12 +1089,22 @@ async function removeMember(id: string) {
                 </div>
               </div>
             </NPopover>
+            <NButton
+              size="small"
+              secondary
+              class="shrink-0"
+              :disabled="!hasCustomLayout"
+              @click="handleResetTableLayout"
+            >
+              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+              {{ bi('重置列宽', 'Reset Columns') }}
+            </NButton>
           </div>
           <span class="text-12px text-gray-400">
             {{
               bi(
-                '编号规则：支部缩写 + 三位数字 · 拖拽列分隔线可调宽',
-                'Code: Branch Abbr + 3 digits · Drag dividers to resize'
+                '拖拽表头可换列顺序 · 拖右侧边线调列宽（自动记忆）',
+                'Drag headers to reorder · Drag edge to resize (saved)'
               )
             }}
           </span>
@@ -1025,28 +1123,94 @@ async function removeMember(id: string) {
 
       <!-- 座位图 -->
       <div v-else>
-        <NTabs v-model:value="activeMapId" type="bar" size="small" class="mb-12px">
-          <NTab v-for="m in workStore.seatMaps" :key="m.map_id" :name="m.map_id" :tab="m.name" />
-        </NTabs>
-        <div v-if="editable" class="mb-10px text-12px text-gray-400">
-          {{
-            bi(
-              '拖拽头像换位（目标有人则互换）· 或先点一人再点另一处；点空位可安排未布点成员',
-              'Drag avatars to swap seats · or click one then another; click an empty seat to assign unseated members'
-            )
-          }}
+        <!-- 空布区时展示预设模板选择 -->
+        <div v-if="!workStore.seatMaps.length" class="flex flex-col gap-14px py-8px">
+          <NAlert type="info" :show-icon="true">
+            {{
+              bi(
+                '当前暂无座位图布区，请从以下常用场景模板中一键创建（可同时创建多个布区切换使用）：',
+                'No seat maps yet. Pick a preset template below to get started:'
+              )
+            }}
+          </NAlert>
+          <div class="grid grid-cols-1 gap-12px sm:grid-cols-2 lg:grid-cols-4">
+            <div
+              v-for="preset in SEAT_MAP_PRESETS"
+              :key="preset.id"
+              class="flex flex-col justify-between gap-10px border border-gray-200 rounded-10px bg-[var(--sct-soft)] p-14px transition-all dark:border-gray-700 hover:border-[var(--sct-accent)]"
+            >
+              <div class="flex flex-col gap-6px">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-6px text-14px font-bold">
+                    <SvgIcon :icon="preset.icon" class="text-16px text-[var(--sct-accent)]" />
+                    {{ preset.name }}
+                  </span>
+                  <NTag size="tiny" :bordered="false">{{ preset.rows }}×{{ preset.cols }}</NTag>
+                </div>
+                <div class="text-12px leading-relaxed text-gray-500">{{ preset.desc }}</div>
+              </div>
+              <NButton size="small" type="primary" secondary @click="applySeatMapPreset(preset)">
+                <template #icon><SvgIcon icon="lucide:plus" /></template>
+                使用此模板
+              </NButton>
+            </div>
+          </div>
         </div>
-        <RosterBoard
-          v-if="activeMap"
-          :key="activeMap.map_id"
-          :map="activeMap"
-          :members="workStore.members"
-          :fee-badges="feeBadges"
-          :editable="editable"
-          @move="handleMove"
-          @open="openCard"
-          @place-empty="openPicker"
-        />
+
+        <template v-else>
+          <div class="mb-12px flex flex-wrap items-center justify-between gap-10px">
+            <NTabs v-model:value="activeMapId" type="bar" size="small" class="min-w-0 flex-1">
+              <NTab v-for="m in workStore.seatMaps" :key="m.map_id" :name="m.map_id" :tab="m.name" />
+            </NTabs>
+            <NPopover trigger="click" placement="bottom-end" :width="280">
+              <template #trigger>
+                <NButton size="tiny" secondary class="shrink-0">
+                  <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
+                  {{ bi('添加预设模板', 'Add Preset Map') }}
+                </NButton>
+              </template>
+              <div class="flex flex-col gap-6px p-2px">
+                <div class="px-4px text-12px text-gray-500 font-semibold">
+                  {{ bi('选择座位图场景模板', 'Seat Map Presets') }}
+                </div>
+                <div
+                  v-for="preset in SEAT_MAP_PRESETS"
+                  :key="preset.id"
+                  class="flex cursor-pointer items-center justify-between rounded-6px px-8px py-6px hover:bg-[var(--sct-soft)]"
+                  @click="applySeatMapPreset(preset)"
+                >
+                  <div class="flex items-center gap-6px">
+                    <SvgIcon :icon="preset.icon" class="text-14px text-[var(--sct-accent)]" />
+                    <div>
+                      <div class="text-12px font-medium">{{ preset.name }}</div>
+                      <div class="text-11px text-gray-400">{{ preset.rows }} 行 × {{ preset.cols }} 列</div>
+                    </div>
+                  </div>
+                  <SvgIcon icon="lucide:plus" class="text-13px text-gray-400" />
+                </div>
+              </div>
+            </NPopover>
+          </div>
+          <div v-if="editable" class="mb-10px text-12px text-gray-400">
+            {{
+              bi(
+                '拖拽头像换位（目标有人则互换）· 或先点一人再点另一处；点空位可安排未布点成员',
+                'Drag avatars to swap seats · or click one then another; click an empty seat to assign unseated members'
+              )
+            }}
+          </div>
+          <RosterBoard
+            v-if="activeMap"
+            :key="activeMap.map_id"
+            :map="activeMap"
+            :members="workStore.members"
+            :fee-badges="feeBadges"
+            :editable="editable"
+            @move="handleMove"
+            @open="openCard"
+            @place-empty="openPicker"
+          />
+        </template>
       </div>
     </NCard>
 
