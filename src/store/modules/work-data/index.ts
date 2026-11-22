@@ -11,6 +11,7 @@ import { nanoid } from '@sa/utils';
 import { nodesOfStage } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
+import { formatMemberCode, generateNextMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import type { DuplicateStrategy, ImportPreviewRow } from '@/utils/member-import';
 import { computeDefaultFullDate, normalizeMemberRecord } from '@/utils/member-status';
 import { expandRecurrence } from '@/utils/recurrence';
@@ -78,7 +79,36 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       window.$message?.warning('支部名称不能为空');
       return;
     }
+    const prevName = branchName.value;
+    const prevPrefix = getBranchAbbreviation(prevName);
+    const nextPrefix = getBranchAbbreviation(clean);
     await guardWrite(db.meta.put({ key: 'branch-name', value: clean }), '支部名称');
+
+    // 同步更新默认支部名称与沿用旧支部缩写的成员编号
+    if (prevName !== clean) {
+      const prevCodeRe = new RegExp(`^${prevPrefix}(\\d+)$`, 'i');
+      const all = await db.members.toArray();
+      const updatedRows = all
+        .map(m => {
+          let changed = false;
+          const nextRow = { ...m };
+          if (!nextRow.branch_name || nextRow.branch_name === prevName) {
+            nextRow.branch_name = clean;
+            changed = true;
+          }
+          const match = (nextRow.code ?? '').trim().match(prevCodeRe);
+          if (match && prevPrefix !== nextPrefix) {
+            nextRow.code = formatMemberCode(nextPrefix, Number(match[1]));
+            changed = true;
+          }
+          return changed ? nextRow : null;
+        })
+        .filter((row): row is Sct.Member => row !== null);
+
+      if (updatedRows.length) {
+        await guardWrite(db.members.bulkPut(plain(updatedRows)), '支部编号同步');
+      }
+    }
   }
 
   function memberMonthlyFee(member?: Sct.Member): number {
@@ -229,8 +259,19 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     }
     const id = input.id ?? `M${nanoid(6)}`;
     const todayStr = dayjs().format('YYYY-MM-DD');
+    const targetBranch = input.branch_name?.trim() || branchName.value;
+    const existingCodes = members.value.map(m => m.code);
+    const autoCode = input.code?.trim() || generateNextMemberCode(targetBranch, existingCodes);
     const draft: Sct.Member = {
-      code: id,
+      student_id: '',
+      gender: '',
+      ethnicity: '',
+      birth_date: '',
+      dorm_building: '',
+      dorm_room: '',
+      class_name: '',
+      id_card: '',
+      phone: '',
       group: '',
       grade: '',
       level: '',
@@ -243,6 +284,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       fee_monthly: FEE_STANDARD.studentMonthly,
       ...input,
       id,
+      code: autoCode,
+      branch_name: targetBranch,
       identity: 'secretary'
     };
     const row = normalizeMemberRecord(draft, todayStr);
@@ -360,17 +403,27 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await guardWrite(
       db.transaction('rw', [db.members, db.devStages], async () => {
         const currentMembers = await db.members.toArray();
+        const byStudentId = new Map<string, Sct.Member>();
         const byCode = new Map<string, Sct.Member>();
         const byName = new Map<string, Sct.Member>();
+        const usedCodes = new Set<string>();
         currentMembers.forEach(m => {
-          if (m.code?.trim()) byCode.set(m.code.trim().toLowerCase(), m);
+          if (m.student_id?.trim()) byStudentId.set(m.student_id.trim().toLowerCase(), m);
+          if (m.code?.trim()) {
+            byCode.set(m.code.trim().toLowerCase(), m);
+            usedCodes.add(m.code.trim().toUpperCase());
+          }
           if (m.name?.trim()) byName.set(m.name.trim(), m);
         });
 
         for (const item of validRows) {
           const d = item.data;
+          const sidKey = d.student_id.trim().toLowerCase();
           const codeKey = d.code.trim().toLowerCase();
-          const matched = (codeKey ? byCode.get(codeKey) : undefined) ?? byName.get(d.name.trim());
+          const matched =
+            (sidKey ? byStudentId.get(sidKey) : undefined) ??
+            (codeKey ? byCode.get(codeKey) : undefined) ??
+            byName.get(d.name.trim());
 
           if (matched && strategy === 'skip') {
             skipped += 1;
@@ -387,6 +440,16 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
             const mergedRaw: Sct.Member = {
               ...matched,
               code: d.code || matched.code,
+              branch_name: d.branch_name || matched.branch_name || branchName.value,
+              student_id: d.student_id || matched.student_id,
+              gender: d.gender || matched.gender,
+              ethnicity: d.ethnicity || matched.ethnicity,
+              birth_date: d.birth_date || matched.birth_date,
+              dorm_building: d.dorm_building || matched.dorm_building,
+              dorm_room: d.dorm_room || matched.dorm_room,
+              class_name: d.class_name || matched.class_name,
+              id_card: d.id_card || matched.id_card,
+              phone: d.phone || matched.phone,
               role: d.role || matched.role,
               group: d.group || matched.group,
               grade: d.grade || matched.grade,
@@ -432,7 +495,11 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
               );
             }
 
-            if (next.code?.trim()) byCode.set(next.code.trim().toLowerCase(), next);
+            if (next.student_id?.trim()) byStudentId.set(next.student_id.trim().toLowerCase(), next);
+            if (next.code?.trim()) {
+              byCode.set(next.code.trim().toLowerCase(), next);
+              usedCodes.add(next.code.trim().toUpperCase());
+            }
             byName.set(next.name.trim(), next);
             updated += 1;
             continue;
@@ -440,9 +507,23 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
           // 新增成员（或 strategy === 'append'）
           const id = `M${nanoid(6)}`;
+          const targetBranch = d.branch_name || branchName.value;
+          const assignedCode = d.code || generateNextMemberCode(targetBranch, usedCodes);
+          usedCodes.add(assignedCode.toUpperCase());
+
           const draft: Sct.Member = {
             id,
-            code: d.code || id,
+            code: assignedCode,
+            branch_name: targetBranch,
+            student_id: d.student_id,
+            gender: d.gender,
+            ethnicity: d.ethnicity,
+            birth_date: d.birth_date,
+            dorm_building: d.dorm_building,
+            dorm_room: d.dorm_room,
+            class_name: d.class_name,
+            id_card: d.id_card,
+            phone: d.phone,
             name: d.name.trim(),
             type: d.type,
             role: d.role,
@@ -480,6 +561,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
             })
           );
 
+          if (row.student_id?.trim()) byStudentId.set(row.student_id.trim().toLowerCase(), row);
           if (row.code?.trim()) byCode.set(row.code.trim().toLowerCase(), row);
           byName.set(row.name.trim(), row);
           inserted += 1;

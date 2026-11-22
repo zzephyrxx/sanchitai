@@ -3,6 +3,7 @@
  * 内容为纯虚构演示数据（见 docs/research/case-data-plan.md 脱敏声明）。
  */
 import dayjs from 'dayjs';
+import { formatMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import { normalizeMemberRecord } from '@/utils/member-status';
 import { db, getMeta, setMeta } from './db';
 import seedJson from './seed/seed-data.json';
@@ -31,7 +32,19 @@ export async function ensureSeeded(): Promise<void> {
   if (flag === SEED_VERSION) return;
 
   const today = dayjs().format('YYYY-MM-DD');
-  const normalizedMembers = withIdentity(SEED.members).map(m => normalizeMemberRecord(m, today));
+  const savedBranch = await getMeta<string>('branch-name');
+  const defaultBranch = typeof savedBranch === 'string' && savedBranch.trim() ? savedBranch.trim() : '智感硕博党支部';
+  const codePrefix = getBranchAbbreviation(defaultBranch);
+  const normalizedMembers = withIdentity(SEED.members).map((m, idx) =>
+    normalizeMemberRecord(
+      {
+        ...m,
+        code: formatMemberCode(codePrefix, idx + 1),
+        branch_name: m.branch_name || defaultBranch
+      },
+      today
+    )
+  );
 
   await db.transaction(
     'rw',

@@ -7,6 +7,7 @@ import dayjs from 'dayjs';
  */
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
+import { formatMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import { normalizeMemberRecord } from '@/utils/member-status';
 
 export const DB_NAME = 'sanchitai-db';
@@ -85,6 +86,47 @@ class SanchitaiDB extends Dexie {
               m.key_dates = normalized.key_dates;
             }
           });
+      });
+
+    // v5：党员信息表扩展（学号/性别/民族/出生年月/宿舍/班级/身份证号/联系电话/支部名称），并规范编号为「支部缩写+3位数字」
+    this.version(5)
+      .stores({
+        members: 'id, identity, code, student_id, type, group, name, join_date, full_date'
+      })
+      .upgrade(async tx => {
+        const metaRow = (await tx.table('meta').get('branch-name')) as MetaRow | undefined;
+        const defaultBranch =
+          typeof metaRow?.value === 'string' && metaRow.value.trim() ? metaRow.value.trim() : '智感硕博党支部';
+        const prefix = getBranchAbbreviation(defaultBranch);
+        const rows = (await tx.table('members').toArray()) as Sct.Member[];
+        const legacyRe = /^(DY|FZ|JJ|SQ)\d+$/i;
+        const randomRe = /^M[A-Za-z0-9_-]{6}$/;
+        const prefixRe = new RegExp(`^${prefix}(\\d+)$`, 'i');
+
+        let maxSeq = 0;
+        for (const m of rows) {
+          const hit = (m.code ?? '').trim().match(prefixRe);
+          if (hit) {
+            maxSeq = Math.max(maxSeq, Number(hit[1]) || 0);
+          }
+        }
+
+        for (const m of rows) {
+          let changed = false;
+          if (!m.branch_name?.trim()) {
+            m.branch_name = defaultBranch;
+            changed = true;
+          }
+          const curCode = (m.code ?? '').trim();
+          if (!curCode || legacyRe.test(curCode) || randomRe.test(curCode)) {
+            maxSeq += 1;
+            m.code = formatMemberCode(prefix, maxSeq);
+            changed = true;
+          }
+          if (changed) {
+            await tx.table('members').put(m);
+          }
+        }
       });
   }
 }

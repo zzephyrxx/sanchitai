@@ -264,7 +264,9 @@ function rowActionTag(row: ImportPreviewRow): { label: string; type: 'success' |
   if (row.errors.length > 0) return { label: '异常跳过', type: 'error' };
   if (row.matchedExisting) {
     if (duplicateStrategy.value === 'merge') {
-      return { label: row.matchReason === 'code' ? '按编号更新' : '按姓名更新', type: 'info' };
+      if (row.matchReason === 'student_id') return { label: '按学号更新', type: 'info' };
+      if (row.matchReason === 'code') return { label: '按编号更新', type: 'info' };
+      return { label: '按姓名更新', type: 'info' };
     }
     if (duplicateStrategy.value === 'skip') {
       return { label: '已有跳过', type: 'default' };
@@ -314,6 +316,12 @@ const previewColumns = computed<DataTableColumns<ImportPreviewRow>>(() => [
     }
   },
   {
+    title: '学号',
+    key: 'student_id',
+    width: 112,
+    render: row => row.data.student_id || '—'
+  },
+  {
     title: '入党时间',
     key: 'join_date',
     width: 106,
@@ -326,11 +334,11 @@ const previewColumns = computed<DataTableColumns<ImportPreviewRow>>(() => [
     render: row => row.data.full_date || '—'
   },
   {
-    title: '组别 / 年级 / 专业',
+    title: '层次 / 年级 / 专业 / 导师',
     key: 'meta',
-    width: 170,
+    width: 190,
     ellipsis: { tooltip: true },
-    render: row => [row.data.group, row.data.grade, row.data.major].filter(Boolean).join(' · ') || '—'
+    render: row => [row.data.level, row.data.grade, row.data.major, row.data.advisor].filter(Boolean).join(' · ') || '—'
   },
   {
     title: '校验提示 / 备注',
@@ -506,7 +514,9 @@ async function executeImport() {
         <NAlert v-if="sensitiveColumnCount" type="info" :show-icon="true">
           检测到
           <strong>{{ sensitiveColumnCount }}</strong>
-          个隐私敏感列（如身份证号 / 手机号 / 住址），已按隐私规范默认设为「忽略此列」。
+          个身份证号/高敏列：仅存于本机数据库，且在人员列表中
+          <strong>默认自动隐藏并脱敏显示</strong>
+          （如无需入库可手动切换为「忽略此列」）。
         </NAlert>
 
         <div class="max-h-360px overflow-y-auto border border-gray-200 rounded-8px dark:border-gray-700">
@@ -596,7 +606,7 @@ async function executeImport() {
 
         <div class="flex flex-wrap items-center gap-10px text-12px">
           <span class="text-gray-600 font-semibold dark:text-gray-300">
-            {{ bi('遇到已有成员（同编号或同名）：', 'When existing member matched:') }}
+            {{ bi('遇到已有成员（同学号、同编号或同名）：', 'When existing member matched:') }}
           </span>
           <NRadioGroup v-model:value="duplicateStrategy" size="small">
             <NSpace>

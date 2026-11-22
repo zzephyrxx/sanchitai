@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, h, reactive, ref, watch } from 'vue';
+import { computed, h, onUnmounted, reactive, ref, watch } from 'vue';
 import { NButton, NPopconfirm, NTag } from 'naive-ui';
-import type { DataTableColumns } from 'naive-ui';
+import type { DataTableColumn, DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
 import { FEE_STANDARD, MEMBER_TYPE_COLORS, MEMBER_TYPE_ORDER } from '@/constants/sanchitai';
+import { generateNextMemberCode, getBranchAbbreviation, maskIdCard } from '@/utils/member-code';
 import {
   computeDefaultFullDate,
   describePartyStatusRule,
@@ -23,12 +24,11 @@ defineOptions({ name: 'MembersPage' });
 
 const workStore = useWorkDataStore();
 const { SvgIconVNode } = useSvgIcon();
-const { bi, tMemberType, tFeeCategory, tFeeStatus } = useSctI18n();
+const { bi, tMemberType } = useSctI18n();
 
-// ---------------- 视图与布区 ----------------
-const activeTab = ref<'roster' | 'list'>('roster');
+// ---------------- 视图与布区（默认打开列表页） ----------------
+const activeTab = ref<'list' | 'roster'>('list');
 const activeMapId = ref('');
-// seatMaps 为 liveQuery 异步填充：默认选中第一张图
 watch(
   () => workStore.seatMaps,
   maps => {
@@ -41,7 +41,7 @@ watch(
 const activeMap = computed(() => workStore.seatMaps.find(m => m.map_id === activeMapId.value) ?? workStore.seatMaps[0]);
 const editable = ref(false);
 
-// ---------------- 欠缴角标 ----------------
+// ---------------- 欠缴角标（座位图使用） ----------------
 const feeBadges = computed(() => {
   const bad = new Set(workStore.feeRecords.filter(f => f.status === '欠缴').map(f => f.member_id));
   const map: Record<string, boolean> = {};
@@ -122,16 +122,11 @@ function printSeatMap() {
 }
 
 const statsText = computed(() => {
-  const inMap = workStore.members.filter(m => m.seat?.map_id === activeMapId.value);
-  const unseated = workStore.members.filter(m => !m.seat);
+  const total = workStore.members.length;
   const typeCount = MEMBER_TYPE_ORDER.map(
     t => `${tMemberType(t)} ${workStore.members.filter(m => m.type === t).length}`
   ).join(' · ');
-  const capacity = activeMap.value ? activeMap.value.grid.cols * activeMap.value.grid.rows : 0;
-  return bi(
-    `在座 ${inMap.length}/${capacity} · 未入座 ${unseated.length} ｜ ${typeCount}`,
-    `Seated ${inMap.length}/${capacity} · Unseated ${unseated.length} ｜ ${typeCount}`
-  );
+  return bi(`共 ${total} 人 ｜ ${typeCount}`, `Total ${total} ｜ ${typeCount}`);
 });
 
 // ---------------- 人员卡 ----------------
@@ -158,7 +153,163 @@ function handlePlace(memberId: string | null) {
   pickerShow.value = false;
 }
 
-// ---------------- 成员列表（支持拖拽列宽、排序、搜索、分页与图标表头） ----------------
+// ---------------- 列显示控制 & 身份证号自动隐藏 ----------------
+type ToggleableColumnKey =
+  | 'seq'
+  | 'code'
+  | 'branch_name'
+  | 'student_id'
+  | 'gender'
+  | 'ethnicity'
+  | 'birth_date'
+  | 'dorm_building'
+  | 'dorm_room'
+  | 'level'
+  | 'grade'
+  | 'major'
+  | 'class_name'
+  | 'id_card'
+  | 'phone'
+  | 'type'
+  | 'join_date'
+  | 'full_date'
+  | 'advisor'
+  | 'role'
+  | 'group';
+
+const COL_STORAGE_KEY = 'sct:members:visible-columns:v1';
+
+const COLUMN_PICKER_META: Array<{ key: ToggleableColumnKey; labelZh: string; labelEn: string; autoHide?: boolean }> = [
+  { key: 'seq', labelZh: '序号', labelEn: 'No.' },
+  { key: 'code', labelZh: '支部编号', labelEn: 'Code' },
+  { key: 'branch_name', labelZh: '支部名称', labelEn: 'Branch' },
+  { key: 'student_id', labelZh: '学号', labelEn: 'Student ID' },
+  { key: 'gender', labelZh: '性别', labelEn: 'Gender' },
+  { key: 'ethnicity', labelZh: '民族', labelEn: 'Ethnicity' },
+  { key: 'birth_date', labelZh: '出生年月', labelEn: 'Birth Date' },
+  { key: 'dorm_building', labelZh: '宿舍楼栋号', labelEn: 'Dorm Bldg' },
+  { key: 'dorm_room', labelZh: '宿舍号', labelEn: 'Dorm Room' },
+  { key: 'level', labelZh: '层次', labelEn: 'Level' },
+  { key: 'grade', labelZh: '年级', labelEn: 'Grade' },
+  { key: 'major', labelZh: '专业', labelEn: 'Major' },
+  { key: 'class_name', labelZh: '班级', labelEn: 'Class' },
+  { key: 'id_card', labelZh: '身份证号（默认自动隐藏）', labelEn: 'ID Card (Auto-hide)', autoHide: true },
+  { key: 'phone', labelZh: '联系电话', labelEn: 'Phone' },
+  { key: 'type', labelZh: '正式/预备党员', labelEn: 'Party Status' },
+  { key: 'join_date', labelZh: '入党时间', labelEn: 'Join Date' },
+  { key: 'full_date', labelZh: '转正时间', labelEn: 'Full Date' },
+  { key: 'advisor', labelZh: '导师姓名', labelEn: 'Advisor' },
+  { key: 'role', labelZh: '党内职务', labelEn: 'Role' },
+  { key: 'group', labelZh: '研究方向组', labelEn: 'Group' }
+];
+
+const DEFAULT_VISIBLE_COLS: ToggleableColumnKey[] = [
+  'seq',
+  'code',
+  'student_id',
+  'type',
+  'role',
+  'level',
+  'grade',
+  'major',
+  'join_date',
+  'full_date',
+  'advisor'
+];
+
+const ROSTER_STANDARD_COLS: ToggleableColumnKey[] = [
+  'seq',
+  'branch_name',
+  'student_id',
+  'gender',
+  'ethnicity',
+  'birth_date',
+  'dorm_building',
+  'dorm_room',
+  'level',
+  'grade',
+  'major',
+  'class_name',
+  'phone',
+  'type',
+  'join_date',
+  'full_date',
+  'advisor'
+];
+
+function loadSavedVisibleCols(): ToggleableColumnKey[] {
+  try {
+    const raw = localStorage.getItem(COL_STORAGE_KEY);
+    if (!raw) return [...DEFAULT_VISIBLE_COLS];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [...DEFAULT_VISIBLE_COLS];
+    const validKeys = new Set<string>(COLUMN_PICKER_META.map(c => c.key));
+    // 安全兜底：刷新页面时身份证号仍自动恢复为隐藏状态
+    const filtered = parsed.filter(
+      (k): k is ToggleableColumnKey => typeof k === 'string' && validKeys.has(k) && k !== 'id_card'
+    );
+    return filtered.length ? filtered : [...DEFAULT_VISIBLE_COLS];
+  } catch {
+    return [...DEFAULT_VISIBLE_COLS];
+  }
+}
+
+const visibleColKeys = ref<ToggleableColumnKey[]>(loadSavedVisibleCols());
+
+watch(
+  visibleColKeys,
+  cols => {
+    try {
+      // 持久化时不保留 id_card，确保每次重新进入或刷新均自动隐藏身份证号列
+      localStorage.setItem(COL_STORAGE_KEY, JSON.stringify(cols.filter(k => k !== 'id_card')));
+    } catch {
+      /* ignore storage errors */
+    }
+  },
+  { deep: true }
+);
+
+function applyColPreset(preset: 'default' | 'roster' | 'all') {
+  if (preset === 'default') {
+    visibleColKeys.value = [...DEFAULT_VISIBLE_COLS];
+  } else if (preset === 'roster') {
+    visibleColKeys.value = [...ROSTER_STANDARD_COLS];
+  } else {
+    visibleColKeys.value = COLUMN_PICKER_META.map(c => c.key).filter(k => k !== 'id_card');
+  }
+}
+
+// 身份证号临时明文开关（勾选展示身份证号列后，默认脱敏掩码，点眼睛临时明文 15 秒后自动隐藏）
+const revealIdCardColumn = ref(false);
+let idCardAutoHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearIdCardTimer() {
+  if (idCardAutoHideTimer) {
+    clearTimeout(idCardAutoHideTimer);
+    idCardAutoHideTimer = null;
+  }
+}
+
+function toggleRevealIdCardColumn(e: MouseEvent) {
+  e.stopPropagation();
+  clearIdCardTimer();
+  revealIdCardColumn.value = !revealIdCardColumn.value;
+  if (revealIdCardColumn.value) {
+    idCardAutoHideTimer = setTimeout(() => {
+      revealIdCardColumn.value = false;
+      idCardAutoHideTimer = null;
+    }, 15_000);
+  }
+}
+
+watch(activeTab, () => {
+  clearIdCardTimer();
+  revealIdCardColumn.value = false;
+});
+
+onUnmounted(clearIdCardTimer);
+
+// ---------------- 成员列表（搜索、分页、自定义列显隐、拖拽列宽） ----------------
 const typeFilter = ref<string>('');
 const searchKeyword = ref<string>('');
 const pagination = reactive({
@@ -176,8 +327,7 @@ const pagination = reactive({
 });
 
 type MemberRow = Sct.Member & {
-  stage?: Sct.DevStage;
-  latestFee?: Sct.FeeRecord;
+  seqNo: number;
 };
 
 const listRows = computed<MemberRow[]>(() => {
@@ -186,17 +336,29 @@ const listRows = computed<MemberRow[]>(() => {
     .filter(m => !typeFilter.value || m.type === typeFilter.value)
     .filter(m => {
       if (!kw) return true;
-      return [m.code, m.name, m.type, m.role, m.group, m.grade, m.major, m.advisor]
+      return [
+        m.code,
+        m.branch_name,
+        m.name,
+        m.student_id,
+        m.gender,
+        m.ethnicity,
+        m.dorm_building,
+        m.dorm_room,
+        m.level,
+        m.grade,
+        m.major,
+        m.class_name,
+        m.phone,
+        m.type,
+        m.role,
+        m.group,
+        m.advisor
+      ]
         .filter(Boolean)
         .some(v => String(v).toLowerCase().includes(kw));
     })
-    .map(m => {
-      const stage = workStore.devStages.find(d => d.member_id === m.id);
-      const latestFee = [...workStore.feeRecords]
-        .filter(f => f.member_id === m.id)
-        .sort((a, b) => b.year_month.localeCompare(a.year_month))[0];
-      return { ...m, stage, latestFee };
-    });
+    .map((m, idx) => ({ ...m, seqNo: idx + 1 }));
 });
 
 function colHeader(icon: string, text: string) {
@@ -206,127 +368,173 @@ function colHeader(icon: string, text: string) {
   ]);
 }
 
-const listColumns = computed<DataTableColumns<MemberRow>>(() => [
-  {
+const allColumnMap = computed<Record<ToggleableColumnKey | 'name' | 'op', DataTableColumn<MemberRow>>>(() => ({
+  seq: {
+    title: () => colHeader('lucide:list-ordered', bi('序号', 'No.')),
+    key: 'seq',
+    width: 66,
+    render: row => row.seqNo
+  },
+  code: {
     title: () => colHeader('lucide:hash', bi('编号', 'Code')),
     key: 'code',
-    width: 90,
+    width: 102,
     resizable: true,
-    sorter: (a, b) => a.code.localeCompare(b.code)
+    sorter: (a, b) => (a.code ?? '').localeCompare(b.code ?? '')
   },
-  {
+  branch_name: {
+    title: () => colHeader('lucide:building-2', bi('支部名称', 'Branch')),
+    key: 'branch_name',
+    width: 155,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    sorter: (a, b) => (a.branch_name ?? workStore.branchName).localeCompare(b.branch_name ?? workStore.branchName),
+    render: row => row.branch_name || workStore.branchName
+  },
+  name: {
     title: () => colHeader('lucide:user', bi('姓名', 'Name')),
     key: 'name',
-    width: 105,
+    width: 96,
     resizable: true,
     sorter: (a, b) => a.name.localeCompare(b.name)
   },
-  {
-    title: () => colHeader('lucide:award', bi('类型', 'Type')),
+  student_id: {
+    title: () => colHeader('lucide:id-card', bi('学号', 'Student ID')),
+    key: 'student_id',
+    width: 120,
+    resizable: true,
+    sorter: (a, b) => (a.student_id ?? '').localeCompare(b.student_id ?? ''),
+    render: row => row.student_id || '—'
+  },
+  gender: {
+    title: () => colHeader('lucide:users', bi('性别', 'Gender')),
+    key: 'gender',
+    width: 72,
+    resizable: true,
+    sorter: (a, b) => (a.gender ?? '').localeCompare(b.gender ?? ''),
+    render: row => row.gender || '—'
+  },
+  ethnicity: {
+    title: () => colHeader('lucide:flag', bi('民族', 'Ethnicity')),
+    key: 'ethnicity',
+    width: 82,
+    resizable: true,
+    sorter: (a, b) => (a.ethnicity ?? '').localeCompare(b.ethnicity ?? ''),
+    render: row => row.ethnicity || '—'
+  },
+  birth_date: {
+    title: () => colHeader('lucide:cake', bi('出生年月', 'Birth')),
+    key: 'birth_date',
+    width: 108,
+    resizable: true,
+    sorter: (a, b) => (a.birth_date ?? '').localeCompare(b.birth_date ?? ''),
+    render: row => row.birth_date || '—'
+  },
+  dorm_building: {
+    title: () => colHeader('lucide:home', bi('宿舍楼栋号', 'Dorm Bldg')),
+    key: 'dorm_building',
+    width: 112,
+    resizable: true,
+    render: row => row.dorm_building || '—'
+  },
+  dorm_room: {
+    title: () => colHeader('lucide:door-open', bi('宿舍号', 'Room')),
+    key: 'dorm_room',
+    width: 88,
+    resizable: true,
+    render: row => row.dorm_room || '—'
+  },
+  level: {
+    title: () => colHeader('lucide:layers', bi('层次', 'Level')),
+    key: 'level',
+    width: 92,
+    resizable: true,
+    sorter: (a, b) => (a.level ?? '').localeCompare(b.level ?? ''),
+    render: row => row.level || '—'
+  },
+  grade: {
+    title: () => colHeader('lucide:graduation-cap', bi('年级', 'Grade')),
+    key: 'grade',
+    width: 88,
+    resizable: true,
+    sorter: (a, b) => (a.grade ?? '').localeCompare(b.grade ?? ''),
+    render: row => row.grade || '—'
+  },
+  major: {
+    title: () => colHeader('lucide:book-open', bi('专业', 'Major')),
+    key: 'major',
+    width: 145,
+    resizable: true,
+    ellipsis: { tooltip: true },
+    sorter: (a, b) => (a.major ?? '').localeCompare(b.major ?? ''),
+    render: row => row.major || '—'
+  },
+  class_name: {
+    title: () => colHeader('lucide:school', bi('班级', 'Class')),
+    key: 'class_name',
+    width: 108,
+    resizable: true,
+    render: row => row.class_name || '—'
+  },
+  id_card: {
+    title: () =>
+      h('span', { class: 'inline-flex items-center gap-4px whitespace-nowrap' }, [
+        SvgIconVNode({ icon: 'lucide:shield-alert', fontSize: 13 })?.(),
+        h('span', bi('身份证号', 'ID Card')),
+        h(
+          NButton,
+          {
+            size: 'tiny',
+            quaternary: true,
+            title: revealIdCardColumn.value ? '点击隐藏明文' : '点击临时查看明文（15 秒后自动隐藏）',
+            onClick: toggleRevealIdCardColumn
+          },
+          {
+            icon: SvgIconVNode({ icon: revealIdCardColumn.value ? 'lucide:eye-off' : 'lucide:eye', fontSize: 13 })
+          }
+        )
+      ]),
+    key: 'id_card',
+    width: 176,
+    resizable: true,
+    render: row =>
+      h(
+        'span',
+        { class: 'font-mono text-12px' },
+        revealIdCardColumn.value ? row.id_card || '—' : maskIdCard(row.id_card)
+      )
+  },
+  phone: {
+    title: () => colHeader('lucide:phone', bi('联系电话', 'Phone')),
+    key: 'phone',
+    width: 124,
+    resizable: true,
+    render: row => row.phone || '—'
+  },
+  type: {
+    title: () => colHeader('lucide:award', bi('正式/预备党员', 'Party Status')),
     key: 'type',
-    width: 125,
+    width: 132,
     resizable: true,
     sorter: (a, b) => MEMBER_TYPE_ORDER.indexOf(a.type) - MEMBER_TYPE_ORDER.indexOf(b.type),
     render: row =>
-      h('span', { class: 'inline-flex items-center gap-5px' }, [
+      h('span', { class: 'inline-flex items-center gap-5px whitespace-nowrap' }, [
         h('span', { class: 'inline-block size-8px rounded-full', style: { background: MEMBER_TYPE_COLORS[row.type] } }),
         tMemberType(row.type)
       ])
   },
-  {
-    title: () => colHeader('lucide:shield', bi('角色', 'Role')),
-    key: 'role',
-    width: 100,
-    resizable: true,
-    sorter: (a, b) => (a.role ?? '').localeCompare(b.role ?? ''),
-    render: row => row.role || '—'
-  },
-  {
-    title: () => colHeader('lucide:network', bi('研究方向组', 'Group')),
-    key: 'group',
-    width: 125,
-    resizable: true,
-    sorter: (a, b) => (a.group ?? '').localeCompare(b.group ?? ''),
-    render: row => row.group || '—'
-  },
-  {
-    title: () => colHeader('lucide:graduation-cap', bi('年级', 'Grade')),
-    key: 'grade',
-    width: 95,
-    resizable: true,
-    sorter: (a, b) => (a.grade ?? '').localeCompare(b.grade ?? '')
-  },
-  {
-    title: () => colHeader('lucide:git-branch', bi('发展阶段', 'Stage')),
-    key: 'stage',
-    width: 120,
-    resizable: true,
-    sorter: (a, b) => (a.stage?.stage ?? a.type).localeCompare(b.stage?.stage ?? b.type),
-    render: row => tMemberType(row.stage?.stage ?? row.type)
-  },
-  {
-    title: () => colHeader('lucide:wallet', bi('党费类别', 'Dues Category')),
-    key: 'fee_category',
-    width: 115,
-    resizable: true,
-    sorter: (a, b) => (a.fee_category ?? '学生党员').localeCompare(b.fee_category ?? '学生党员'),
-    render: row => {
-      if (row.type !== '正式党员' && row.type !== '预备党员') return '—';
-      const cat = row.fee_category ?? '学生党员';
-      return h(
-        NTag,
-        {
-          size: 'tiny',
-          bordered: false,
-          type: cat === '在职党员' ? 'warning' : 'default'
-        },
-        () => tFeeCategory(cat)
-      );
-    }
-  },
-  {
-    title: () => colHeader('lucide:coins', bi('月应缴党费', 'Monthly Dues')),
-    key: 'fee_monthly',
-    width: 115,
-    resizable: true,
-    sorter: (a, b) => workStore.memberMonthlyFee(a) - workStore.memberMonthlyFee(b),
-    render: row => {
-      if (row.type !== '正式党员' && row.type !== '预备党员') return '—';
-      return `¥${workStore.memberMonthlyFee(row).toFixed(1)} / ${bi('月', 'mo')}`;
-    }
-  },
-  {
-    title: () => colHeader('lucide:receipt', bi('最近缴费', 'Latest Dues')),
-    key: 'fee',
-    width: 125,
-    resizable: true,
-    sorter: (a, b) => (a.latestFee?.status ?? '').localeCompare(b.latestFee?.status ?? ''),
-    render: row =>
-      row.latestFee
-        ? h(
-            'span',
-            {
-              style: {
-                color: row.latestFee.status === '欠缴' ? '#d43030' : undefined,
-                fontWeight: row.latestFee.status === '欠缴' ? 600 : 400
-              }
-            },
-            `${row.latestFee.year_month} ${tFeeStatus(row.latestFee.status)}`
-          )
-        : '—'
-  },
-  {
+  join_date: {
     title: () => colHeader('lucide:calendar', bi('入党时间', 'Join Date')),
     key: 'join_date',
-    width: 118,
+    width: 112,
     resizable: true,
     sorter: (a, b) => (a.join_date ?? '').localeCompare(b.join_date ?? ''),
     render: row => row.join_date || '—'
   },
-  {
+  full_date: {
     title: () => colHeader('lucide:calendar-check-2', bi('转正时间', 'Full Date')),
     key: 'full_date',
-    width: 136,
+    width: 132,
     resizable: true,
     sorter: (a, b) =>
       resolveEffectiveFullDate(a.join_date, a.full_date, a.key_dates?.probation_end).localeCompare(
@@ -343,10 +551,35 @@ const listColumns = computed<DataTableColumns<MemberRow>>(() => [
       ]);
     }
   },
-  {
+  advisor: {
+    title: () => colHeader('lucide:user-check', bi('导师姓名', 'Advisor')),
+    key: 'advisor',
+    width: 100,
+    resizable: true,
+    sorter: (a, b) => (a.advisor ?? '').localeCompare(b.advisor ?? ''),
+    render: row => row.advisor || '—'
+  },
+  role: {
+    title: () => colHeader('lucide:shield', bi('党内职务', 'Role')),
+    key: 'role',
+    width: 96,
+    resizable: true,
+    sorter: (a, b) => (a.role ?? '').localeCompare(b.role ?? ''),
+    render: row => row.role || '—'
+  },
+  group: {
+    title: () => colHeader('lucide:network', bi('研究方向组', 'Group')),
+    key: 'group',
+    width: 112,
+    resizable: true,
+    sorter: (a, b) => (a.group ?? '').localeCompare(b.group ?? ''),
+    render: row => row.group || '—'
+  },
+  op: {
     title: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
     key: 'op',
-    width: 210,
+    width: 196,
+    fixed: 'right',
     render: row =>
       h('div', { class: 'flex items-center gap-6px', onClick: (e: MouseEvent) => e.stopPropagation() }, [
         h(
@@ -400,7 +633,49 @@ const listColumns = computed<DataTableColumns<MemberRow>>(() => [
         )
       ])
   }
-]);
+}));
+
+const ORDERED_COLUMN_SEQUENCE: Array<ToggleableColumnKey | 'name'> = [
+  'seq',
+  'code',
+  'branch_name',
+  'name',
+  'student_id',
+  'gender',
+  'ethnicity',
+  'birth_date',
+  'dorm_building',
+  'dorm_room',
+  'level',
+  'grade',
+  'major',
+  'class_name',
+  'id_card',
+  'phone',
+  'type',
+  'join_date',
+  'full_date',
+  'advisor',
+  'role',
+  'group'
+];
+
+const listColumns = computed<DataTableColumns<MemberRow>>(() => {
+  const activeSet = new Set<string>(visibleColKeys.value);
+  const cols: DataTableColumns<MemberRow> = [];
+  for (const key of ORDERED_COLUMN_SEQUENCE) {
+    if (key === 'name' || activeSet.has(key)) {
+      cols.push(allColumnMap.value[key]);
+    }
+  }
+  cols.push(allColumnMap.value.op);
+  return cols;
+});
+
+const tableScrollX = computed(() => {
+  const total = listColumns.value.reduce((acc, col) => acc + (typeof col.width === 'number' ? col.width : 110), 0);
+  return Math.max(total, 960);
+});
 
 // ---------------- 新增 / 编辑成员 & 批量导入 ----------------
 const importShow = ref(false);
@@ -408,18 +683,42 @@ const addShow = ref(false);
 const editingMemberId = ref<string | null>(null);
 const lastAutoFullDate = ref<string>('');
 const addForm = reactive({
+  code: '',
+  branch_name: '',
   name: '',
-  type: '正式党员' as Sct.MemberType,
+  student_id: '',
+  gender: '' as string,
+  ethnicity: '',
+  birth_date: '',
+  dorm_building: '',
+  dorm_room: '',
+  level: '',
+  grade: '',
+  major: '',
+  class_name: '',
+  id_card: '',
+  phone: '',
+  type: '申请人' as Sct.MemberType,
   join_date: null as string | null,
   full_date: null as string | null,
   fee_category: '学生党员' as Sct.FeeCategory,
   fee_monthly: FEE_STANDARD.studentMonthly,
   group: '',
-  grade: '',
-  major: '',
   advisor: '',
   note: ''
 });
+
+const genderOptions = [
+  { label: '男', value: '男' },
+  { label: '女', value: '女' }
+];
+
+const nextAutoCodePreview = computed(() =>
+  generateNextMemberCode(
+    addForm.branch_name || workStore.branchName,
+    workStore.members.map(m => m.code)
+  )
+);
 
 const isDateAutoType = computed(() => isPartyStatusAutoComputed(addForm.join_date, addForm.full_date));
 const effectiveFormType = computed<Sct.MemberType>(() =>
@@ -474,15 +773,27 @@ function openAddMember() {
   editingMemberId.value = null;
   lastAutoFullDate.value = '';
   Object.assign(addForm, {
+    code: '',
+    branch_name: workStore.branchName,
     name: '',
+    student_id: '',
+    gender: '',
+    ethnicity: '',
+    birth_date: '',
+    dorm_building: '',
+    dorm_room: '',
+    level: '',
+    grade: '',
+    major: '',
+    class_name: '',
+    id_card: '',
+    phone: '',
     type: '申请人',
     join_date: null,
     full_date: null,
     fee_category: '学生党员',
     fee_monthly: FEE_STANDARD.studentMonthly,
     group: '',
-    grade: '',
-    major: '',
     advisor: '',
     note: ''
   });
@@ -495,15 +806,27 @@ function openEditMember(row: Sct.Member) {
   const autoFull = computeDefaultFullDate(row.join_date);
   lastAutoFullDate.value = resolvedFull && resolvedFull === autoFull ? autoFull : '';
   Object.assign(addForm, {
+    code: row.code ?? '',
+    branch_name: row.branch_name || workStore.branchName,
     name: row.name,
+    student_id: row.student_id ?? '',
+    gender: row.gender ?? '',
+    ethnicity: row.ethnicity ?? '',
+    birth_date: row.birth_date ?? '',
+    dorm_building: row.dorm_building ?? '',
+    dorm_room: row.dorm_room ?? '',
+    level: row.level ?? '',
+    grade: row.grade ?? '',
+    major: row.major ?? '',
+    class_name: row.class_name ?? '',
+    id_card: row.id_card ?? '',
+    phone: row.phone ?? '',
     type: resolveMemberTypeByDates(row.type, row.join_date, resolvedFull),
     join_date: row.join_date || null,
     full_date: resolvedFull || null,
     fee_category: row.fee_category ?? '学生党员',
     fee_monthly: workStore.memberMonthlyFee(row),
     group: row.group ?? '',
-    grade: row.grade ?? '',
-    major: row.major ?? '',
     advisor: row.advisor ?? '',
     note: row.note ?? ''
   });
@@ -522,35 +845,40 @@ async function handleSaveMember() {
   const finalType = effectiveFormType.value;
   const joinDate = addForm.join_date?.trim() ?? '';
   const fullDate = addForm.full_date?.trim() ?? '';
+  const payload: Partial<Sct.Member> = {
+    code: addForm.code.trim() || undefined,
+    branch_name: addForm.branch_name.trim() || workStore.branchName,
+    name: addForm.name.trim(),
+    student_id: addForm.student_id.trim(),
+    gender: addForm.gender,
+    ethnicity: addForm.ethnicity.trim(),
+    birth_date: addForm.birth_date.trim(),
+    dorm_building: addForm.dorm_building.trim(),
+    dorm_room: addForm.dorm_room.trim(),
+    level: addForm.level.trim(),
+    grade: addForm.grade.trim(),
+    major: addForm.major.trim(),
+    class_name: addForm.class_name.trim(),
+    id_card: addForm.id_card.trim(),
+    phone: addForm.phone.trim(),
+    type: finalType,
+    join_date: joinDate,
+    full_date: fullDate,
+    fee_category: addForm.fee_category,
+    fee_monthly: normalizedMonthly,
+    group: addForm.group.trim(),
+    advisor: addForm.advisor.trim(),
+    note: addForm.note.trim() || undefined
+  };
 
   if (editingMemberId.value) {
-    await workStore.updateMember(editingMemberId.value, {
-      name: addForm.name.trim(),
-      type: finalType,
-      join_date: joinDate,
-      full_date: fullDate,
-      fee_category: addForm.fee_category,
-      fee_monthly: normalizedMonthly,
-      group: addForm.group,
-      grade: addForm.grade,
-      major: addForm.major,
-      advisor: addForm.advisor,
-      note: addForm.note || undefined
-    });
+    await workStore.updateMember(editingMemberId.value, payload);
     window.$message?.success(`成员信息已更新（身份：${finalType}）`);
   } else {
     await workStore.addMember({
+      ...payload,
       name: addForm.name.trim(),
-      type: finalType,
-      join_date: joinDate,
-      full_date: fullDate,
-      fee_category: addForm.fee_category,
-      fee_monthly: normalizedMonthly,
-      group: addForm.group,
-      grade: addForm.grade,
-      major: addForm.major,
-      advisor: addForm.advisor,
-      note: addForm.note || undefined
+      type: finalType
     });
     window.$message?.success(`成员已加入（身份：${finalType}，可在座位图编排布点）`);
   }
@@ -558,10 +886,9 @@ async function handleSaveMember() {
   editingMemberId.value = null;
 }
 
-// 类型选项
 const typeOptions = MEMBER_TYPE_ORDER.map(v => ({ label: v, value: v }));
+const branchAbbrHint = computed(() => getBranchAbbreviation(addForm.branch_name || workStore.branchName));
 
-/** 删除成员（P2-5：联动清理发展台账与党费记录） */
 async function removeMember(id: string) {
   await workStore.deleteMember(id);
   window.$message?.success('成员已删除');
@@ -572,7 +899,7 @@ async function removeMember(id: string) {
   <div class="min-h-500px">
     <NCard :bordered="false">
       <template #header>
-        <div class="flex items-center gap-12px">
+        <div class="flex flex-wrap items-center gap-12px">
           <span class="text-16px font-bold">{{ bi('人员', 'Members') }}</span>
           <span class="text-12px text-gray-400">{{ statsText }}</span>
         </div>
@@ -609,12 +936,95 @@ async function removeMember(id: string) {
       </template>
 
       <NTabs v-model:value="activeTab" type="segment" size="small" class="mb-14px w-220px">
-        <NTab name="roster" :tab="bi('座位图', 'Seat Map')" />
         <NTab name="list" :tab="bi('列表', 'List View')" />
+        <NTab name="roster" :tab="bi('座位图', 'Seat Map')" />
       </NTabs>
 
+      <!-- 列表（默认页） -->
+      <div v-if="activeTab === 'list'">
+        <div class="mb-10px flex flex-wrap items-center justify-between gap-12px">
+          <div class="flex flex-wrap items-center gap-10px">
+            <div class="w-170px">
+              <NSelect
+                v-model:value="typeFilter"
+                :options="[{ label: bi('全部身份', 'All Status'), value: '' }, ...typeOptions]"
+                size="small"
+                @update:value="pagination.page = 1"
+              />
+            </div>
+            <NInput
+              v-model:value="searchKeyword"
+              size="small"
+              clearable
+              class="w-260px"
+              :placeholder="bi('搜索姓名、学号、编号、班级、导师、宿舍…', 'Search name, ID, code, class, advisor…')"
+              @update:value="pagination.page = 1"
+            >
+              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+            </NInput>
+            <NPopover trigger="click" placement="bottom-start" :width="400">
+              <template #trigger>
+                <NButton size="small" secondary>
+                  <template #icon><SvgIcon icon="lucide:columns-3" /></template>
+                  {{ bi(`列设置（${visibleColKeys.length + 1}/${COLUMN_PICKER_META.length + 1}）`, 'Columns') }}
+                </NButton>
+              </template>
+              <div class="flex flex-col gap-10px p-4px">
+                <div class="flex items-center justify-between gap-8px">
+                  <span class="text-13px font-semibold">{{ bi('自定义显示列', 'Visible Columns') }}</span>
+                  <div class="flex items-center gap-6px">
+                    <NButton size="tiny" secondary @click="applyColPreset('default')">
+                      {{ bi('默认', 'Default') }}
+                    </NButton>
+                    <NButton size="tiny" secondary @click="applyColPreset('roster')">
+                      {{ bi('花名册全列', 'Roster') }}
+                    </NButton>
+                    <NButton size="tiny" secondary @click="applyColPreset('all')">{{ bi('全部', 'All') }}</NButton>
+                  </div>
+                </div>
+                <NCheckboxGroup v-model:value="visibleColKeys">
+                  <div class="grid grid-cols-2 gap-x-10px gap-y-6px">
+                    <NCheckbox v-for="col in COLUMN_PICKER_META" :key="col.key" :value="col.key" size="small">
+                      <span class="text-12px">{{ bi(col.labelZh, col.labelEn) }}</span>
+                    </NCheckbox>
+                  </div>
+                </NCheckboxGroup>
+                <div
+                  class="border-t border-gray-100 pt-6px text-11px leading-relaxed text-gray-400 dark:border-gray-800"
+                >
+                  {{
+                    bi(
+                      '「姓名」与「操作」列常驻显示；「身份证号」每次刷新自动恢复隐藏，展示时亦默认脱敏（点表头眼睛临时查看 15 秒后自动隐藏）。',
+                      'Name & Actions stay pinned; ID Card auto-hides on reload and masks values by default.'
+                    )
+                  }}
+                </div>
+              </div>
+            </NPopover>
+          </div>
+          <span class="text-12px text-gray-400">
+            {{
+              bi(
+                '编号规则：支部缩写 + 三位数字 · 拖拽列分隔线可调宽',
+                'Code: Branch Abbr + 3 digits · Drag dividers to resize'
+              )
+            }}
+          </span>
+        </div>
+        <NDataTable
+          :columns="listColumns"
+          :data="listRows"
+          :pagination="pagination"
+          :bordered="false"
+          size="small"
+          :scroll-x="tableScrollX"
+          :row-key="(r: MemberRow) => r.id"
+          :row-props="(r: MemberRow) => ({ style: 'cursor: pointer', onClick: () => openCard(r.id) })"
+        />
+      </div>
+
       <!-- 座位图 -->
-      <div v-if="activeTab === 'roster'">
+      <div v-else>
         <NTabs v-model:value="activeMapId" type="bar" size="small" class="mb-12px">
           <NTab v-for="m in workStore.seatMaps" :key="m.map_id" :name="m.map_id" :tab="m.name" />
         </NTabs>
@@ -636,49 +1046,6 @@ async function removeMember(id: string) {
           @move="handleMove"
           @open="openCard"
           @place-empty="openPicker"
-        />
-      </div>
-
-      <!-- 列表 -->
-      <div v-else>
-        <div class="mb-10px flex flex-wrap items-center justify-between gap-12px">
-          <div class="flex flex-wrap items-center gap-10px">
-            <div class="w-180px">
-              <NSelect
-                v-model:value="typeFilter"
-                :options="[{ label: bi('全部类型', 'All Types'), value: '' }, ...typeOptions]"
-                size="small"
-                @update:value="pagination.page = 1"
-              />
-            </div>
-            <NInput
-              v-model:value="searchKeyword"
-              size="small"
-              clearable
-              class="w-240px"
-              :placeholder="bi('搜索姓名、编号、方向组、导师…', 'Search name, code, group, advisor…')"
-              @update:value="pagination.page = 1"
-            >
-              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
-            </NInput>
-          </div>
-          <span class="text-12px text-gray-400">
-            {{
-              bi(
-                '支持拖拽表头分隔线调整列宽 · 点击列头可排序',
-                'Drag column dividers to resize · Click column headers to sort'
-              )
-            }}
-          </span>
-        </div>
-        <NDataTable
-          :columns="listColumns"
-          :data="listRows"
-          :pagination="pagination"
-          :bordered="false"
-          size="small"
-          :row-key="(r: MemberRow) => r.id"
-          :row-props="(r: MemberRow) => ({ style: 'cursor: pointer', onClick: () => openCard(r.id) })"
         />
       </div>
     </NCard>
@@ -705,61 +1072,219 @@ async function removeMember(id: string) {
       <div v-if="!unseatedOptions.length" class="text-13px text-gray-400">所有成员均已布点</div>
     </NModal>
 
-    <!-- 新增 / 编辑成员（label-width="116" 确保带图标绝不折行） -->
-    <NModal v-model:show="addShow" preset="card" :title="editingMemberId ? '编辑成员' : '新增成员'" class="w-560px">
-      <NForm label-placement="left" label-width="116" size="small">
-        <NFormItem required>
-          <template #label>
-            <span class="sct-field-label">
-              <SvgIcon icon="lucide:user" class="sct-field-icon" />
-              <span>姓名</span>
-            </span>
-          </template>
-          <NInput v-model:value="addForm.name" placeholder="必填" />
-        </NFormItem>
+    <!-- 新增 / 编辑成员 -->
+    <NModal
+      v-model:show="addShow"
+      preset="card"
+      :title="editingMemberId ? '编辑成员档案' : '新增成员档案'"
+      class="max-w-95vw w-720px"
+    >
+      <NForm label-placement="left" label-width="102" size="small">
+        <div class="grid grid-cols-1 gap-x-14px sm:grid-cols-2">
+          <NFormItem required>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:user" class="sct-field-icon" />
+                <span>姓名</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.name" placeholder="必填" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:hash" class="sct-field-icon" />
+                <span>支部编号</span>
+              </span>
+            </template>
+            <NInput
+              v-model:value="addForm.code"
+              :placeholder="`留空自动生成：${nextAutoCodePreview}（${branchAbbrHint}+3位）`"
+            />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:building-2" class="sct-field-icon" />
+                <span>支部名称</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.branch_name" :placeholder="workStore.branchName" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:id-card" class="sct-field-icon" />
+                <span>学号</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.student_id" placeholder="选填" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:users" class="sct-field-icon" />
+                <span>性别</span>
+              </span>
+            </template>
+            <NSelect v-model:value="addForm.gender" :options="genderOptions" clearable placeholder="请选择" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:flag" class="sct-field-icon" />
+                <span>民族</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.ethnicity" placeholder="如 汉族" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:cake" class="sct-field-icon" />
+                <span>出生年月</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.birth_date" placeholder="如 2001-05" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:phone" class="sct-field-icon" />
+                <span>联系电话</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.phone" placeholder="选填" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:home" class="sct-field-icon" />
+                <span>宿舍楼栋</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.dorm_building" placeholder="如 西区3舍" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:door-open" class="sct-field-icon" />
+                <span>宿舍号</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.dorm_room" placeholder="如 402" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:layers" class="sct-field-icon" />
+                <span>层次</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.level" placeholder="如 硕士 / 博士 / 本科" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:graduation-cap" class="sct-field-icon" />
+                <span>年级</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.grade" placeholder="如 2026级" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:book-open" class="sct-field-icon" />
+                <span>专业</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.major" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:school" class="sct-field-icon" />
+                <span>班级</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.class_name" placeholder="如 计硕2501" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:user-check" class="sct-field-icon" />
+                <span>导师姓名</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.advisor" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:network" class="sct-field-icon" />
+                <span>研究方向</span>
+              </span>
+            </template>
+            <NInput v-model:value="addForm.group" placeholder="选填，用于分组筛选" />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:calendar" class="sct-field-icon" />
+                <span>入党时间</span>
+              </span>
+            </template>
+            <NDatePicker
+              :formatted-value="addForm.join_date"
+              type="date"
+              value-format="yyyy-MM-dd"
+              clearable
+              class="w-full"
+              placeholder="接收为预备党员日期"
+              @update:formatted-value="handleJoinDateChange"
+            />
+          </NFormItem>
+          <NFormItem>
+            <template #label>
+              <span class="sct-field-label">
+                <SvgIcon icon="lucide:calendar-check-2" class="sct-field-icon" />
+                <span>转正时间</span>
+              </span>
+            </template>
+            <NDatePicker
+              :formatted-value="addForm.full_date"
+              type="date"
+              value-format="yyyy-MM-dd"
+              clearable
+              class="w-full"
+              placeholder="默认按入党满 1 年计算"
+              @update:formatted-value="handleFullDateChange"
+            />
+          </NFormItem>
+        </div>
+
         <NFormItem>
           <template #label>
             <span class="sct-field-label">
-              <SvgIcon icon="lucide:calendar" class="sct-field-icon" />
-              <span>{{ bi('入党时间', 'Join Date') }}</span>
+              <SvgIcon icon="lucide:shield-alert" class="sct-field-icon" />
+              <span>身份证号</span>
             </span>
           </template>
-          <NDatePicker
-            :formatted-value="addForm.join_date"
-            type="date"
-            value-format="yyyy-MM-dd"
-            clearable
-            class="w-full"
-            :placeholder="
-              bi('选填：接收为预备党员日期（自动推算转正时间）', 'Optional: date accepted as probationary member')
-            "
-            @update:formatted-value="handleJoinDateChange"
+          <NInput
+            v-model:value="addForm.id_card"
+            type="password"
+            show-password-on="mousedown"
+            placeholder="选填（仅存本机，列表默认自动隐藏并脱敏）"
+            :maxlength="20"
           />
         </NFormItem>
-        <NFormItem>
-          <template #label>
-            <span class="sct-field-label">
-              <SvgIcon icon="lucide:calendar-check-2" class="sct-field-icon" />
-              <span>{{ bi('转正时间', 'Full Date') }}</span>
-            </span>
-          </template>
-          <NDatePicker
-            :formatted-value="addForm.full_date"
-            type="date"
-            value-format="yyyy-MM-dd"
-            clearable
-            class="w-full"
-            :placeholder="
-              bi('默认按入党满 1 年计算，支持按实际转正/延期手动调整', 'Defaults to +1 year; editable if extended')
-            "
-            @update:formatted-value="handleFullDateChange"
-          />
-        </NFormItem>
+
         <NFormItem required>
           <template #label>
             <span class="sct-field-label">
               <SvgIcon icon="lucide:award" class="sct-field-icon" />
-              <span>{{ bi('党员身份', 'Status') }}</span>
+              <span>党员身份</span>
             </span>
           </template>
           <div class="w-full flex flex-col gap-6px">
@@ -787,7 +1312,11 @@ async function removeMember(id: string) {
             </div>
           </div>
         </NFormItem>
-        <template v-if="effectiveFormType === '正式党员' || effectiveFormType === '预备党员'">
+
+        <div
+          v-if="effectiveFormType === '正式党员' || effectiveFormType === '预备党员'"
+          class="grid grid-cols-1 gap-x-14px sm:grid-cols-2"
+        >
           <NFormItem>
             <template #label>
               <span class="sct-field-label">
@@ -808,50 +1337,12 @@ async function removeMember(id: string) {
                 <span>月应缴党费</span>
               </span>
             </template>
-            <div class="w-full flex items-center gap-8px">
-              <NInputNumber v-model:value="addForm.fee_monthly" :min="0" :step="0.5" :precision="1" class="flex-1">
-                <template #suffix>元/月</template>
-              </NInputNumber>
-              <span class="text-11px text-gray-400">同步至党费台账</span>
-            </div>
+            <NInputNumber v-model:value="addForm.fee_monthly" :min="0" :step="0.5" :precision="1" class="w-full">
+              <template #suffix>元/月</template>
+            </NInputNumber>
           </NFormItem>
-        </template>
-        <NFormItem>
-          <template #label>
-            <span class="sct-field-label">
-              <SvgIcon icon="lucide:network" class="sct-field-icon" />
-              <span>研究方向组</span>
-            </span>
-          </template>
-          <NInput v-model:value="addForm.group" />
-        </NFormItem>
-        <NFormItem>
-          <template #label>
-            <span class="sct-field-label">
-              <SvgIcon icon="lucide:graduation-cap" class="sct-field-icon" />
-              <span>年级</span>
-            </span>
-          </template>
-          <NInput v-model:value="addForm.grade" placeholder="如 2026级" />
-        </NFormItem>
-        <NFormItem>
-          <template #label>
-            <span class="sct-field-label">
-              <SvgIcon icon="lucide:book-open" class="sct-field-icon" />
-              <span>专业</span>
-            </span>
-          </template>
-          <NInput v-model:value="addForm.major" />
-        </NFormItem>
-        <NFormItem>
-          <template #label>
-            <span class="sct-field-label">
-              <SvgIcon icon="lucide:user-check" class="sct-field-icon" />
-              <span>导师</span>
-            </span>
-          </template>
-          <NInput v-model:value="addForm.advisor" />
-        </NFormItem>
+        </div>
+
         <NFormItem>
           <template #label>
             <span class="sct-field-label">

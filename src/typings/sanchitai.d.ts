@@ -6,14 +6,7 @@
 declare namespace Sct {
   type MemberType = '正式党员' | '预备党员' | '发展对象' | '入党积极分子' | '申请人';
 
-  type EventCategory =
-    | '组织生活'
-    | '党务常规'
-    | '发展党员'
-    | '品牌活动'
-    | '服务实践'
-    | '工作例会'
-    | '理论学习';
+  type EventCategory = '组织生活' | '党务常规' | '发展党员' | '品牌活动' | '服务实践' | '工作例会' | '理论学习';
 
   type EventStatus = '计划' | '进行中' | '已完成' | '已取消';
 
@@ -38,14 +31,35 @@ declare namespace Sct {
 
   interface Member {
     id: string;
+    /** 支部内统一编号：支部缩写 + 3 位数字（如 ZGSB001） */
     code: string;
+    /** 所属支部名称（默认继承当前工作台支部名称） */
+    branch_name?: string;
     name: string;
+    /** 学号 / 工号 */
+    student_id?: string;
+    /** 性别 */
+    gender?: string;
+    /** 民族 */
+    ethnicity?: string;
+    /** 出生年月（YYYY-MM 或 YYYY-MM-DD） */
+    birth_date?: string;
+    /** 宿舍楼栋号 */
+    dorm_building?: string;
+    /** 宿舍号 */
+    dorm_room?: string;
     type: MemberType;
     role: string;
     group: string;
     grade: string;
     level: string;
     major: string;
+    /** 班级 */
+    class_name?: string;
+    /** 身份证号（界面默认自动隐藏并脱敏展示） */
+    id_card?: string;
+    /** 联系电话 */
+    phone?: string;
     advisor: string;
     join_date: string;
     full_date: string;

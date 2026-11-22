@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * 人员详情抽屉：A8 六项信息（类型/年级/研究方向组/发展阶段/最近缴费/今年谈话次数）
+ * 人员详情抽屉：完整展示支部党员档案（身份证号默认脱敏，点击临时查看 15 秒后自动隐藏）
  */
-import { computed } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import dayjs from 'dayjs';
 import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
+import { maskIdCard } from '@/utils/member-code';
 import { resolveEffectiveFullDate } from '@/utils/member-status';
 import { useWorkDataStore } from '@/store/modules/work-data';
 
@@ -27,30 +28,49 @@ const show = computed({
   set: v => emit('update:show', v)
 });
 
+// 身份证号临时明文展示（15 秒自动重新隐藏，关闭抽屉立即重置）
+const revealIdCard = ref(false);
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearHideTimer() {
+  if (hideTimer) {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+}
+
+function toggleRevealIdCard() {
+  clearHideTimer();
+  revealIdCard.value = !revealIdCard.value;
+  if (revealIdCard.value) {
+    hideTimer = setTimeout(() => {
+      revealIdCard.value = false;
+      hideTimer = null;
+    }, 15_000);
+  }
+}
+
+watch(
+  () => [props.show, props.memberId],
+  () => {
+    clearHideTimer();
+    revealIdCard.value = false;
+  }
+);
+
+onUnmounted(clearHideTimer);
+
 const member = computed(() => (props.memberId ? workStore.memberOf(props.memberId) : undefined));
 
 const devStage = computed(() =>
   props.memberId ? workStore.devStages.find(d => d.member_id === props.memberId) : undefined
 );
 
-const latestFee = computed(() => {
-  if (!props.memberId) return undefined;
-  return [...workStore.feeRecords]
-    .filter(f => f.member_id === props.memberId)
-    .sort((a, b) => b.year_month.localeCompare(a.year_month))[0];
-});
-
 const talksThisYear = computed(() => {
   if (!props.memberId) return 0;
   const year = dayjs().format('YYYY');
   return workStore.talks.filter(t => t.member_ids.includes(props.memberId!) && t.date.startsWith(year)).length;
 });
-
-const unpaidMonths = computed(() =>
-  props.memberId
-    ? workStore.feeRecords.filter(f => f.member_id === props.memberId && f.status === '欠缴').map(f => f.year_month)
-    : []
-);
 
 const effectiveFullDate = computed(() =>
   member.value
@@ -62,32 +82,24 @@ const isProbationFuture = computed(() =>
   Boolean(effectiveFullDate.value && effectiveFullDate.value > dayjs().format('YYYY-MM-DD'))
 );
 
-const feeStatusType = computed<'success' | 'error' | 'default' | 'warning'>(() => {
-  switch (latestFee.value?.status) {
-    case '已缴':
-      return 'success';
-    case '欠缴':
-      return 'error';
-    case '未在校':
-      return 'default';
-    default:
-      return 'warning';
-  }
+const dormText = computed(() => {
+  if (!member.value) return '';
+  return [member.value.dorm_building, member.value.dorm_room].filter(Boolean).join(' · ');
 });
 </script>
 
 <template>
-  <NDrawer v-model:show="show" :width="400">
+  <NDrawer v-model:show="show" :width="440">
     <NDrawerContent v-if="member" :title="`${member.name}（${member.code}）`" closable>
       <NSpace vertical size="large">
         <div class="flex items-center justify-between gap-8px">
-          <div class="flex items-center gap-8px">
+          <div class="flex flex-wrap items-center gap-6px">
             <NTag :color="{ color: MEMBER_TYPE_COLORS[member.type] ?? '#666', textColor: '#fff' }" :bordered="false">
               {{ member.type }}
             </NTag>
             <NTag v-if="member.role" size="small" :bordered="false">{{ member.role }}</NTag>
           </div>
-          <div class="flex items-center gap-6px">
+          <div class="flex shrink-0 items-center gap-6px">
             <NButton
               size="tiny"
               secondary
@@ -113,36 +125,42 @@ const feeStatusType = computed<'success' | 'error' | 'default' | 'warning'>(() =
         </div>
 
         <NDescriptions :column="1" size="small" label-placement="left" bordered>
-          <NDescriptionsItem label="年级 / 层次">{{ member.grade }} · {{ member.level || '—' }}</NDescriptionsItem>
-          <NDescriptionsItem label="研究方向组">{{ member.group || '—' }}</NDescriptionsItem>
-          <NDescriptionsItem label="专业 / 导师">
-            {{ member.major || '—' }}{{ member.advisor ? ` / ${member.advisor}` : '' }}
+          <NDescriptionsItem label="支部名称">{{ member.branch_name || workStore.branchName }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.student_id" label="学号">{{ member.student_id }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.gender || member.ethnicity" label="性别 / 民族">
+            {{ [member.gender, member.ethnicity].filter(Boolean).join(' · ') }}
           </NDescriptionsItem>
-          <NDescriptionsItem label="当前发展阶段">
-            {{ devStage?.stage ?? member.type }}
-            <template v-if="devStage?.stage_date">（{{ devStage.stage_date }} 起）</template>
+          <NDescriptionsItem v-if="member.birth_date" label="出生年月">{{ member.birth_date }}</NDescriptionsItem>
+          <NDescriptionsItem label="层次 / 年级">
+            {{ [member.level, member.grade].filter(Boolean).join(' · ') || '—' }}
           </NDescriptionsItem>
-          <NDescriptionsItem v-if="member.type === '正式党员' || member.type === '预备党员'" label="党费标准">
-            <span class="font-semibold">{{ member.fee_category ?? '学生党员' }}</span>
-            <span class="ml-4px text-gray-500">· {{ workStore.memberMonthlyFee(member).toFixed(1) }} 元/月</span>
+          <NDescriptionsItem label="专业 / 班级">
+            {{ [member.major, member.class_name].filter(Boolean).join(' · ') || '—' }}
           </NDescriptionsItem>
-          <NDescriptionsItem label="最近缴费状态">
-            <NTag v-if="latestFee" :type="feeStatusType" size="small">
-              {{ latestFee.year_month }} {{ latestFee.status
-              }}{{ latestFee.status === '已缴' ? `（¥${latestFee.amount.toFixed(1)}）` : '' }}
-            </NTag>
-            <span v-else class="text-gray-400">无记录</span>
-            <div v-if="unpaidMonths.length" class="mt-4px text-12px text-[#d43030]">
-              欠缴月份：{{ unpaidMonths.join('、') }}
+          <NDescriptionsItem v-if="dormText" label="宿舍">{{ dormText }}</NDescriptionsItem>
+          <NDescriptionsItem label="导师姓名">{{ member.advisor || '—' }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.group" label="研究方向组">{{ member.group }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.phone" label="联系电话">{{ member.phone }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.id_card" label="身份证号">
+            <div class="flex items-center justify-between gap-8px">
+              <span class="font-mono text-12px">
+                {{ revealIdCard ? member.id_card : maskIdCard(member.id_card) }}
+              </span>
+              <NButton size="tiny" quaternary @click="toggleRevealIdCard">
+                <template #icon>
+                  <SvgIcon :icon="revealIdCard ? 'lucide:eye-off' : 'lucide:eye'" />
+                </template>
+                {{ revealIdCard ? '隐藏' : '临时查看' }}
+              </NButton>
             </div>
           </NDescriptionsItem>
-          <NDescriptionsItem label="今年谈心谈话">{{ talksThisYear }} 次</NDescriptionsItem>
           <NDescriptionsItem v-if="member.join_date || effectiveFullDate" label="入党 / 转正">
             {{ member.join_date || '—' }}
             <template v-if="effectiveFullDate">
               / {{ isProbationFuture ? '预计转正' : '转正' }} {{ effectiveFullDate }}
             </template>
           </NDescriptionsItem>
+          <NDescriptionsItem label="今年谈心谈话">{{ talksThisYear }} 次</NDescriptionsItem>
           <NDescriptionsItem v-if="member.note" label="备注">{{ member.note }}</NDescriptionsItem>
         </NDescriptions>
 
