@@ -88,7 +88,7 @@ const searchKeyword = ref('');
 
 const pagination = reactive({
   page: 1,
-  pageSize: 20,
+  pageSize: 15,
   showSizePicker: true,
   pageSizes: [15, 20, 50],
   onChange: (page: number) => {

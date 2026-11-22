@@ -67,8 +67,8 @@ interface WidgetDef {
 const WIDGET_DEFS = computed<WidgetDef[]>(() => [
   { id: 'stats', title: bi('关键数字', 'Key Metrics'), fullRow: true },
   { id: 'reminders', title: bi('待办提醒中心', 'Action & Reminder Center'), fullRow: true },
+  { id: 'heatmap', title: bi('近 1 年日程热力', '1-Year Schedule Heatmap'), fullRow: true },
   { id: 'feeRing', title: bi('本月党费', 'Monthly Dues') },
-  { id: 'heatmap', title: bi('日程热力', 'Schedule Heatmap') },
   { id: 'feeTrend', title: bi('缴费率趋势', 'Dues Trend') },
   { id: 'stageBars', title: bi('发展阶段', 'Development Stages') },
   { id: 'categoryBars', title: bi('类别分布', 'Category Breakdown') },
@@ -77,8 +77,8 @@ const WIDGET_DEFS = computed<WidgetDef[]>(() => [
 const DEFAULT_ORDER = [
   'stats',
   'reminders',
-  'feeRing',
   'heatmap',
+  'feeRing',
   'feeTrend',
   'stageBars',
   'categoryBars',
@@ -224,26 +224,51 @@ const animatedFeeDue = useCountUp(() => monthRate.value.due, 800);
 const animatedFeePaid = useCountUp(() => monthRate.value.paid, 850);
 const animatedFeeUnpaid = useCountUp(() => Math.max(0, monthRate.value.due - monthRate.value.paid), 700);
 
-// ---------------- 近 12 周日程热力 ----------------
+// ---------------- 近 1 年（52 周）日程热力 ----------------
 const heat = computed(() => {
-  const weeks: Array<Array<{ date: string; count: number }>> = [];
-  const start = dayjs().subtract(11, 'week').startOf('week').add(1, 'day'); // 周一
-  for (let w = 0; w < 12; w += 1) {
-    const col: Array<{ date: string; count: number }> = [];
+  const totalWeeks = 52;
+  const now = dayjs();
+  const currentMonday = now.subtract((now.day() + 6) % 7, 'day').startOf('day');
+  const start = currentMonday.subtract(totalWeeks - 1, 'week');
+  const startIso = start.format('YYYY-MM-DD');
+  const todayIso = now.format('YYYY-MM-DD');
+
+  const countByDate = new Map<string, number>();
+  workStore
+    .eventsInRange(startIso, todayIso)
+    .filter(ev => ev.status !== '已取消')
+    .forEach(ev => {
+      countByDate.set(ev.date, (countByDate.get(ev.date) ?? 0) + 1);
+    });
+
+  const weeks: Array<{ monthLabel: string; days: Array<{ date: string; count: number }> }> = [];
+  let prevMonth = -1;
+  let lastLabelWeek = -99;
+  let totalEvents = 0;
+
+  for (let w = 0; w < totalWeeks; w += 1) {
+    const weekStart = start.add(w * 7, 'day');
+    const month = weekStart.month();
+    const isMonthChange = month !== prevMonth;
+    const isNearEnd = w >= totalWeeks - 2;
+    const isInitialStub = w === 0 && start.add(14, 'day').month() !== month;
+    const monthLabel = isMonthChange && !isInitialStub && !isNearEnd && w - lastLabelWeek >= 3 ? `${month + 1}月` : '';
+    if (monthLabel) lastLabelWeek = w;
+    prevMonth = month;
+
+    const days: Array<{ date: string; count: number }> = [];
     for (let d = 0; d < 7; d += 1) {
-      const date = start.add(w * 7 + d, 'day');
+      const date = weekStart.add(d, 'day');
       const iso = date.format('YYYY-MM-DD');
-      col.push({
-        date: iso,
-        count: date.isAfter(dayjs())
-          ? -1
-          : workStore.eventsInRange(iso, iso).filter(ev => ev.status !== '已取消').length
-      });
+      const count = iso > todayIso ? -1 : (countByDate.get(iso) ?? 0);
+      if (count > 0) totalEvents += count;
+      days.push({ date: iso, count });
     }
-    weeks.push(col);
+    weeks.push({ monthLabel, days });
   }
-  const max = Math.max(1, ...weeks.flat().map(c => c.count));
-  return { weeks, max };
+
+  const max = Math.max(1, ...weeks.flatMap(w => w.days.map(c => c.count)));
+  return { weeks, max, totalEvents };
 });
 
 function heatColor(count: number) {
@@ -647,30 +672,58 @@ const weekCategoryCount = computed(() => {
           v-else-if="w.id === 'heatmap'"
           :bordered="false"
           class="h-full rounded-16px"
-          :title="bi('近 12 周日程热力', '12-Week Schedule Heatmap')"
+          :title="bi('近 1 年日程热力', '1-Year Schedule Heatmap')"
         >
-          <div class="flex justify-center gap-4px overflow-x-auto py-8px">
-            <div v-for="(week, wi) in heat.weeks" :key="wi" class="flex flex-col gap-4px">
-              <div
-                v-for="(cell, di) in week"
-                :key="cell.date"
-                class="dash-heat-cell size-16px rounded-4px"
-                :class="{ 'dash-heat-cell--in': entered }"
-                :style="{
-                  background: heatColor(cell.count),
-                  transitionDelay: `${wi * 28 + di * 14}ms`
-                }"
-                :title="`${cell.date}：${cell.count < 0 ? bi('未到来', 'Upcoming') : `${cell.count} ${bi('项安排', 'events')}`}`"
-              />
+          <template #header-extra>
+            <span class="text-12px text-gray-400">
+              {{ bi(`近 52 周累计 ${heat.totalEvents} 项日程`, `${heat.totalEvents} events in past 52 weeks`) }}
+            </span>
+          </template>
+          <div class="overflow-x-auto pb-4px pt-2px">
+            <div class="mx-auto flex w-fit items-end gap-8px">
+              <!-- 星期轴 -->
+              <div class="flex shrink-0 flex-col gap-4px pb-1px text-10px text-gray-400 leading-13px">
+                <span class="h-13px">一</span>
+                <span class="h-13px" />
+                <span class="h-13px">三</span>
+                <span class="h-13px" />
+                <span class="h-13px">五</span>
+                <span class="h-13px" />
+                <span class="h-13px">日</span>
+              </div>
+              <!-- 52 周列（顶部月份标记浮层不撑宽列宽 + 7 天格） -->
+              <div class="flex gap-4px">
+                <div v-for="(week, wi) in heat.weeks" :key="wi" class="w-13px flex shrink-0 flex-col gap-4px">
+                  <div class="relative h-14px w-13px overflow-visible">
+                    <span
+                      v-if="week.monthLabel"
+                      class="pointer-events-none absolute left-0 top-0 whitespace-nowrap text-10px text-gray-400 leading-14px"
+                    >
+                      {{ week.monthLabel }}
+                    </span>
+                  </div>
+                  <div
+                    v-for="(cell, di) in week.days"
+                    :key="cell.date"
+                    class="dash-heat-cell size-13px rounded-3px"
+                    :class="{ 'dash-heat-cell--in': entered }"
+                    :style="{
+                      background: heatColor(cell.count),
+                      transitionDelay: `${wi * 11 + di * 8}ms`
+                    }"
+                    :title="`${cell.date}：${cell.count < 0 ? bi('未到来', 'Upcoming') : `${cell.count} ${bi('项安排', 'events')}`}`"
+                  />
+                </div>
+              </div>
             </div>
           </div>
-          <div class="mt-8px flex items-center justify-center gap-6px text-11px text-gray-400">
+          <div class="mt-8px flex items-center justify-end gap-6px text-11px text-gray-400">
             {{ bi('疏', 'Less') }}
-            <span class="inline-block size-12px rounded-3px" style="background: var(--sct-soft)" />
+            <span class="inline-block size-11px rounded-2px" style="background: var(--sct-soft)" />
             <span
               v-for="a in [0.3, 0.5, 0.7]"
               :key="a"
-              class="inline-block size-12px rounded-3px"
+              class="inline-block size-11px rounded-2px"
               :style="{ background: `rgba(${heatBase}, ${a})` }"
             />
             {{ bi('密', 'More') }}

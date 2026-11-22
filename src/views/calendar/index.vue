@@ -591,7 +591,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
         <div
           v-else
           class="cal-today-list flex flex-col gap-8px"
-          :class="{ 'max-h-436px overflow-y-auto pr-4px': todayEvents.length > 6 }"
+          :class="{ 'cal-today-list--scroll': todayEvents.length > 6 }"
         >
           <div
             v-for="ev in todayEvents"
@@ -925,7 +925,43 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   transition: all 0.15s ease;
 }
 
+.cal-today-list {
+  padding: 2px;
+}
+
+.cal-today-list--scroll {
+  max-height: 444px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding: 3px 10px 6px 3px;
+  margin: -3px -6px -4px -3px;
+}
+
+.cal-today-list--scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.cal-today-list--scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cal-today-list--scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+
+.cal-today-list--scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+.cal-side-card {
+  position: relative;
+  z-index: 1;
+}
+
 .cal-side-card:hover {
+  z-index: 2;
   border-color: rgba(168, 28, 36, 0.35);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 }
@@ -933,7 +969,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 /* 悬浮小弹窗（Nuxt UI Popover 风格） */
 .nuxt-cal-popover {
   position: fixed;
-  z-index: 2100;
+  z-index: 3200;
   width: 308px;
   padding: 12px 14px;
   background: var(--sct-container);

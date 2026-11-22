@@ -68,16 +68,23 @@ const swatches: string[] = [
           {{ $t('theme.appearance.themeColor.followPrimary') }}
         </NCheckbox>
       </template>
-      <div class="w-90px">
+      <div class="w-96px">
         <NColorPicker
           :value="themeStore.themeColors[key]"
           :disabled="key === 'info' && themeStore.isInfoFollowPrimary"
           :show-alpha="false"
+          :modes="['hex']"
           :swatches="swatches"
           @update:value="handleUpdateColor($event, key)"
         />
       </div>
     </SettingItem>
+    <div class="flex justify-end">
+      <NButton size="tiny" secondary @click="themeStore.resetPresetColors()">
+        <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+        恢复当前皮肤默认配色
+      </NButton>
+    </div>
   </div>
 </template>
 

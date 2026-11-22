@@ -44,31 +44,43 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   /** colourWeakness mode */
   const colourWeaknessMode = computed(() => settings.value.colourWeakness);
 
+  const PRESET_PRIMARY_DEFAULTS: Record<UnionKey.ThemePreset, { light: string; dark: string }> = {
+    default: { light: '#2B2926', dark: '#4F6EF7' },
+    'crm-frosted-glass': { light: '#1E6B4B', dark: '#34B37E' }
+  };
+
+  const BUILTIN_PRIMARY_SET = new Set(['#2B2926', '#4F6EF7', '#1E5C42', '#2D8660', '#1E6B4B', '#34B37E']);
+
+  function getPresetDefaultPrimary(preset: UnionKey.ThemePreset, isDark: boolean): string {
+    const key: UnionKey.ThemePreset = preset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+    return PRESET_PRIMARY_DEFAULTS[key][isDark ? 'dark' : 'light'];
+  }
+
   /**
-   * Theme colors（三尺台扩展：主色按 2 皮肤 × 深浅 覆写）
-   * - 默认浅色：墨 #2B2926；默认深色：靛蓝 #4F6EF7
-   * - 电子纸 KONTUR（crm-frosted-glass）：浅色瑞士森林绿 #1E5C42；深色松石绿 #2D8660（100% 还原 KONTUR Ledger CRM 源码）
+   * Theme colors：完全尊重用户在主题配置中自定义的 themeColor / otherColor；
+   * 仅在切换皮肤或深浅模式且当前仍处于内置默认色时，自动匹配对应皮肤默认主色。
    */
   const themeColors = computed(() => {
-    const { themeColor, otherColor, isInfoFollowPrimary, themePreset } = settings.value;
-    const preset: UnionKey.ThemePreset = themePreset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
-
-    let primary = themeColor;
-    if (preset === 'crm-frosted-glass') {
-      primary = darkMode.value ? '#2D8660' : '#1E5C42';
-    } else if (darkMode.value) {
-      primary = '#4F6EF7';
-    }
+    const { themeColor, otherColor, isInfoFollowPrimary } = settings.value;
+    const primary = themeColor || getPresetDefaultPrimary(settings.value.themePreset ?? 'default', darkMode.value);
 
     const colors: App.Theme.ThemeColor = {
       primary,
       ...otherColor,
-      warning: preset === 'crm-frosted-glass' ? '#B7791F' : otherColor.warning,
-      success: preset === 'crm-frosted-glass' ? '#1E5C42' : otherColor.success,
       info: isInfoFollowPrimary ? primary : otherColor.info
     };
     return colors;
   });
+
+  // 迁移旧缓存：旧版切电子纸或深色时未同步写回 settings.themeColor，启动时若为内置旧默认色则自动对齐当前皮肤/深浅默认色
+  (() => {
+    const cur = (settings.value.themeColor || '').toUpperCase();
+    const preset: UnionKey.ThemePreset =
+      settings.value.themePreset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+    if (!cur || BUILTIN_PRIMARY_SET.has(cur)) {
+      settings.value.themeColor = getPresetDefaultPrimary(preset, darkMode.value);
+    }
+  })();
 
   /** 按当前 preset 动态覆盖 layout/container/base-text 表面 token */
   const effectiveTokens = computed<App.Theme.ThemeSetting['tokens']>(() => {
@@ -233,8 +245,7 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     }
     const { sans, heading, mono, scale } = settings.value.fontConfig;
     const sansStack = SANS_FONT_STACKS[sans] ?? SANS_FONT_STACKS.system;
-    const headingStack =
-      heading === 'follow-sans' ? sansStack : (HEADING_FONT_STACKS[heading] ?? sansStack);
+    const headingStack = heading === 'follow-sans' ? sansStack : (HEADING_FONT_STACKS[heading] ?? sansStack);
     const monoStack = MONO_FONT_STACKS[mono] ?? MONO_FONT_STACKS['ibm-plex'];
     const clampedScale = Math.min(125, Math.max(85, scale));
     const ratio = clampedScale / 100;
@@ -267,17 +278,46 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
    * @param [event] 触发事件（用于 View Transitions 圆形扩散起点）
    */
   function setThemePreset(preset: UnionKey.ThemePreset, event?: MouseEvent) {
-    applyViewTransition(
-      () => {
-        const normalized: UnionKey.ThemePreset = preset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
-        settings.value.themePreset = normalized;
-        settings.value.themeRadius = normalized === 'crm-frosted-glass' ? 0 : 6;
-        applyPresetAttr();
-        setupThemeVarsToGlobal();
-        cacheThemeSettings();
-      },
-      event
-    );
+    applyViewTransition(() => {
+      const normalized: UnionKey.ThemePreset = preset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+      settings.value.themePreset = normalized;
+      settings.value.themeRadius = normalized === 'crm-frosted-glass' ? 0 : 6;
+      settings.value.themeColor = getPresetDefaultPrimary(normalized, darkMode.value);
+      if (normalized === 'crm-frosted-glass') {
+        settings.value.otherColor.warning = '#B7791F';
+        settings.value.otherColor.success = '#1E6B4B';
+      } else {
+        settings.value.otherColor.warning = '#faad14';
+        settings.value.otherColor.success = '#52c41a';
+      }
+      applyPresetAttr();
+      setupThemeVarsToGlobal();
+      cacheThemeSettings();
+    }, event);
+  }
+
+  /** 恢复当前皮肤与深浅模式下的默认配色 */
+  function resetPresetColors() {
+    const normalized: UnionKey.ThemePreset =
+      settings.value.themePreset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+    settings.value.themeColor = getPresetDefaultPrimary(normalized, darkMode.value);
+    if (normalized === 'crm-frosted-glass') {
+      settings.value.otherColor = {
+        info: '#16150F',
+        success: '#1E6B4B',
+        warning: '#B7791F',
+        error: '#A81C24'
+      };
+    } else {
+      settings.value.otherColor = {
+        info: '#2080f0',
+        success: '#52c41a',
+        warning: '#faad14',
+        error: '#d43030'
+      };
+    }
+    setupThemeVarsToGlobal();
+    cacheThemeSettings();
   }
 
   /**
@@ -299,20 +339,22 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
       mutate();
     });
 
-    transition.ready.then(() => {
-      document.documentElement.animate(
-        {
-          clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`]
-        },
-        {
-          duration: 450,
-          easing: 'ease-in-out',
-          pseudoElement: '::view-transition-new(root)'
-        }
-      );
-    }).catch(() => {
-      /* 过渡被打断时忽略 */
-    });
+    transition.ready
+      .then(() => {
+        document.documentElement.animate(
+          {
+            clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`]
+          },
+          {
+            duration: 450,
+            easing: 'ease-in-out',
+            pseudoElement: '::view-transition-new(root)'
+          }
+        );
+      })
+      .catch(() => {
+        /* 过渡被打断时忽略 */
+      });
   }
 
   /** Toggle theme scheme */
@@ -367,6 +409,8 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
       settings.value.recommendColor
     );
     addThemeVarsToGlobal(themeTokens, darkThemeTokens);
+    // 同步全局强调色变量 --sct-accent，使电子纸与自定义组件的强调色实时跟随用户所选主色
+    document.documentElement.style.setProperty('--sct-accent', themeColors.value.primary);
   }
 
   /**
@@ -443,6 +487,12 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
       val => {
         toggleCssDarkMode(val);
         localStg.set('darkMode', val);
+        const cur = (settings.value.themeColor || '').toUpperCase();
+        if (!cur || BUILTIN_PRIMARY_SET.has(cur)) {
+          const preset: UnionKey.ThemePreset =
+            settings.value.themePreset === 'crm-frosted-glass' ? 'crm-frosted-glass' : 'default';
+          settings.value.themeColor = getPresetDefaultPrimary(preset, val);
+        }
       },
       { immediate: true }
     );
@@ -513,6 +563,7 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     toggleThemeScheme,
     toggleThemeSchemeWithTransition,
     setThemePreset,
+    resetPresetColors,
     updateThemeColors,
     setThemeLayout,
     setWatermarkEnableUserName,

@@ -294,31 +294,35 @@ async function handleAdd() {
         }}
       </NAlert>
 
-      <!-- 覆盖矩阵（宽屏一行五列，自适应响应式） -->
-      <div class="mb-14px grid grid-cols-2 gap-8px sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        <div
-          v-for="c in coverage"
-          :key="c.member.id"
-          class="rounded-8px px-10px py-8px"
-          :style="{ background: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)' }"
-        >
-          <div class="flex items-center justify-between">
-            <span class="text-13px font-bold">{{ c.member.name }}</span>
-            <NTag
-              size="tiny"
-              :bordered="false"
-              :color="{
-                color: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)',
-                textColor: c.latest ? '#3f9d63' : '#8a8f99'
-              }"
+      <!-- 覆盖矩阵（宽屏每行 7 人，超过 5 行（35 人）自动内部纵向滚动） -->
+      <div class="talks-coverage-wrap mb-14px" :class="{ 'talks-coverage-wrap--scroll': coverage.length > 35 }">
+        <div class="grid grid-cols-2 gap-8px sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7">
+          <div
+            v-for="c in coverage"
+            :key="c.member.id"
+            class="rounded-8px px-9px py-7px"
+            :style="{ background: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)' }"
+          >
+            <div class="flex items-center justify-between gap-4px">
+              <span class="truncate text-13px font-bold">{{ c.member.name }}</span>
+              <NTag
+                size="tiny"
+                :bordered="false"
+                class="shrink-0"
+                :color="{
+                  color: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)',
+                  textColor: c.latest ? '#3f9d63' : '#8a8f99'
+                }"
+              >
+                {{ c.latest ? bi('已覆盖', 'Done') : bi('未覆盖', 'None') }}
+              </NTag>
+            </div>
+            <div
+              class="mt-2px truncate text-11px text-gray-500"
+              :title="c.latest ? `${c.latest.date} · ${c.latest.type}` : ''"
             >
-              {{ c.latest ? bi('已覆盖', 'Covered') : bi('未覆盖', 'Uncovered') }}
-            </NTag>
-          </div>
-          <div class="mt-2px text-11px text-gray-500">
-            {{
-              c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年尚未谈心谈话', 'No talk recorded this year')
-            }}
+              {{ c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年未谈话', 'No talk yet') }}
+            </div>
           </div>
         </div>
       </div>
@@ -450,4 +454,25 @@ async function handleAdd() {
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.talks-coverage-wrap--scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding: 2px 8px 2px 0;
+}
+
+.talks-coverage-wrap--scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.talks-coverage-wrap--scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.talks-coverage-wrap--scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+</style>
