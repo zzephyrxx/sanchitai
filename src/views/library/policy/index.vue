@@ -3,33 +3,36 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { NPopconfirm } from 'naive-ui';
 import { saveFileWithPicker } from '@/utils/save-file';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
+import { db, getMeta, setMeta } from '@/db/db';
 
 defineOptions({ name: 'PolicyPage' });
 
 const { bi, tKnowledgeCat } = useSctI18n();
 
-/** 内置政策要点卡（结构化摘要；源自共产党员网 12371.cn 党内法规库及权威法规全文） */
+/** 政策要点卡（结构化摘要；内置条目的链接全部核验直达共产党员网 12371.cn 官方正文/专题） */
 interface PolicyCard {
   id: string;
   title: string;
   category: string;
   docNo?: string;
   source: string;
-  url: string;
-  tags: string[];
+  url?: string;
+  tags?: string[];
   points: string[];
+  isCustom?: boolean;
 }
 
-const POLICY_CATEGORIES = ['全部', '支部建设', '发展党员', '党员教育管理', '组织生活', '党费与党务公开', '纪律与处分'];
+const POLICY_CARDS_META_KEY = 'policy-cards-v1';
+const BASE_CATEGORIES = ['支部建设', '发展党员', '党员教育管理', '组织生活', '党费与党务公开', '纪律与处分'] as const;
 
-const BUILT_IN: PolicyCard[] = [
+const DEFAULT_BUILT_IN: PolicyCard[] = [
   {
     id: 'p01',
     title: '“三会一课”与主题党日频次口径',
     category: '组织生活',
     docNo: '2018年11月中共中央印发',
     source: '《中国共产党支部工作条例（试行）》第十一至十六条',
-    url: 'https://www.12371.cn/2018/11/25/ARTI1543151856097754.shtml',
+    url: 'https://www.12371.cn/2018/11/25/ARTI1543146320637564.shtml',
     tags: ['三会一课', '主题党日'],
     points: [
       '支部党员大会：一般每季度召开 1 次；表决事项以赞成票超过应到会有表决权党员半数为通过',
@@ -44,7 +47,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '发展党员',
     docNo: '中办发〔2014〕33号',
     source: '《中国共产党发展党员工作细则》全章节核心时限',
-    url: 'https://www.12371.cn/2014/06/10/ARTI1402408565380543.shtml',
+    url: 'https://www.12371.cn/special/fzdylc/',
     tags: ['发展党员', '25步流程'],
     points: [
       '入党申请谈话：党组织收到入党申请书后，应当在 1 个月内派人同入党申请人谈话',
@@ -74,7 +77,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '组织生活',
     docNo: '《支部工作条例》第十七、十八条',
     source: '《中国共产党支部工作条例（试行）》第五章',
-    url: 'https://www.12371.cn/2018/11/25/ARTI1543151856097754.shtml',
+    url: 'https://www.12371.cn/2018/11/25/ARTI1543146320637564.shtml',
     tags: ['组织生活', '民主评议'],
     points: [
       '组织生活会：党支部每年至少召开 1 次，一般安排在第四季度，也可以根据工作需要随时召开',
@@ -88,7 +91,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '支部建设',
     docNo: '《支部工作条例》第十九至二十三条',
     source: '《中国共产党支部工作条例（试行）》第五、六章',
-    url: 'https://www.12371.cn/2018/11/25/ARTI1543151856097754.shtml',
+    url: 'https://www.12371.cn/2018/11/25/ARTI1543146320637564.shtml',
     tags: ['谈心谈话', '组织建设'],
     points: [
       '谈心谈话频次：党支部委员之间、党支部委员和党员之间、党员和党员之间，每年谈心谈话一般不少于 1 次',
@@ -102,7 +105,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '党员教育管理',
     docNo: '2019年5月中共中央印发',
     source: '《中国共产党党员教育管理工作条例》',
-    url: 'https://www.12371.cn/2019/05/21/ARTI1558442798867164.shtml',
+    url: 'https://www.12371.cn/2019/05/21/ARTI1558449177626771.shtml',
     tags: ['党员教育', '组织关系'],
     points: [
       '集中学习学时：党支部每年组织党员集中学习不少于 32 学时；党支部书记和班子成员每年集中学习不少于 56 学时',
@@ -117,7 +120,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '支部建设',
     docNo: '2020年7月中共中央印发',
     source: '《中国共产党基层组织选举工作条例》',
-    url: 'https://www.12371.cn/2020/07/20/ARTI1595248394815763.shtml',
+    url: 'https://www.12371.cn/2020/07/20/ARTI1595242491980252.shtml',
     tags: ['换届选举', '组织建设'],
     points: [
       '有效到会人数：进行选举时，有选举权的到会人数不少于应到会人数的五分之四（≥ 4/5），会议有效',
@@ -131,7 +134,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '支部建设',
     docNo: '2021年4月修订',
     source: '《中国共产党普通高等学校基层组织工作条例》',
-    url: 'https://www.12371.cn/2021/04/22/ARTI1619094461580831.shtml',
+    url: 'https://www.12371.cn/2021/04/22/ARTI1619087467469356.shtml',
     tags: ['高校党建', '学生支部'],
     points: [
       '支部设置方式：学生党支部可以按照年级、专业、学科方向、课题组、实验室或学生宿舍社区等灵活设置',
@@ -145,7 +148,7 @@ const BUILT_IN: PolicyCard[] = [
     category: '党费与党务公开',
     docNo: '2017年12月中共中央印发',
     source: '《中国共产党党务公开条例（试行）》',
-    url: 'https://www.12371.cn/2017/12/25/ARTI1514203097240968.shtml',
+    url: 'https://news.12371.cn/2017/12/25/ARTI1514189328408335.shtml',
     tags: ['党务公开'],
     points: [
       '公开内容：支部决议部署执行情况、思想政治建设、“三会一课”与组织生活落实、发展党员公示、党费收缴情况等',
@@ -158,8 +161,8 @@ const BUILT_IN: PolicyCard[] = [
     title: '党的六大纪律与支部日常纪检监督',
     category: '纪律与处分',
     docNo: '2023年12月修订（2024年1月施行）',
-    source: '《中国共产党纪律处分条例》（12371.cn 专题）',
-    url: 'https://www.12371.cn/special/zggcdjlcf/',
+    source: '《中国共产党纪律处分条例》全文',
+    url: 'https://www.12371.cn/2023/12/27/ARTI1703689211048182.shtml',
     tags: ['纪律教育', '六大纪律'],
     points: [
       '六大纪律体系：政治纪律、组织纪律、廉洁纪律、群众纪律、工作纪律、生活纪律（政治纪律是最重要、最根本、最关键的纪律）',
@@ -169,25 +172,47 @@ const BUILT_IN: PolicyCard[] = [
   }
 ];
 
+function cloneBuiltIn(): PolicyCard[] {
+  return DEFAULT_BUILT_IN.map(item => ({
+    ...item,
+    tags: item.tags ? [...item.tags] : [],
+    points: [...item.points]
+  }));
+}
+
+const policyCards = ref<PolicyCard[]>(cloneBuiltIn());
 const activeMainTab = ref<'rules' | 'archive'>('rules');
 const activeCategory = ref('全部');
 const keyword = ref('');
 
+const policyCategories = computed(() => {
+  const set = new Set<string>(BASE_CATEGORIES);
+  policyCards.value.forEach(c => {
+    if (c.category?.trim()) set.add(c.category.trim());
+  });
+  return ['全部', ...set];
+});
+
+const categorySelectOptions = computed(() =>
+  policyCategories.value.filter(c => c !== '全部').map(c => ({ label: c, value: c }))
+);
+
 const filteredCards = computed(() =>
-  BUILT_IN.filter(
+  policyCards.value.filter(
     c =>
       (activeCategory.value === '全部' || c.category === activeCategory.value) &&
       (!keyword.value ||
         c.title.toLowerCase().includes(keyword.value.toLowerCase()) ||
-        c.source.toLowerCase().includes(keyword.value.toLowerCase()) ||
+        (c.source || '').toLowerCase().includes(keyword.value.toLowerCase()) ||
+        (c.docNo || '').toLowerCase().includes(keyword.value.toLowerCase()) ||
         c.points.some(p => p.toLowerCase().includes(keyword.value.toLowerCase())))
   )
 );
 
 const policyPagination = reactive({
   page: 1,
-  pageSize: 12,
-  pageSizes: [12, 24, 36]
+  pageSize: 9,
+  pageSizes: [9, 18, 27]
 });
 
 watch([activeCategory, keyword], () => {
@@ -209,7 +234,145 @@ const pagedPolicyCards = computed(() => {
   return filteredCards.value.slice(start, start + policyPagination.pageSize);
 });
 
-// ---------------- 用户导入文件（IndexedDB blob） ----------------
+async function persistPolicyCards() {
+  await setMeta(POLICY_CARDS_META_KEY, JSON.parse(JSON.stringify(policyCards.value)));
+}
+
+// ---------------- 1. 精致纯阅读弹窗（点击卡片打开） ----------------
+const readerShow = ref(false);
+const readingCard = ref<PolicyCard | null>(null);
+
+function openReader(card: PolicyCard) {
+  readingCard.value = card;
+  readerShow.value = true;
+}
+
+async function copyReadingPoints() {
+  const card = readingCard.value;
+  if (!card) return;
+  const lines = [
+    `【${card.title}】`,
+    card.source ? `出处：${card.source}${card.docNo ? `（${card.docNo}）` : ''}` : card.docNo || '',
+    '',
+    ...card.points.map((p, idx) => `${idx + 1}. ${p}`),
+    card.url ? `\n权威原文：${card.url}` : ''
+  ].filter((line, idx, arr) => line !== '' || (idx > 0 && arr[idx - 1] !== ''));
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    window.$message?.success('已复制政策要点到剪贴板');
+  } catch {
+    window.$message?.error('复制失败，请手动选中文本复制');
+  }
+}
+
+// ---------------- 2. 极简 5 项新增 / 编辑弹窗 + 删除 + 恢复内置 ----------------
+const editShow = ref(false);
+const editMode = ref<'create' | 'edit'>('create');
+const editForm = reactive({
+  id: '',
+  title: '',
+  category: '支部建设',
+  source: '',
+  pointsText: '',
+  url: ''
+});
+
+function openCreatePolicy() {
+  editMode.value = 'create';
+  editForm.id = '';
+  editForm.title = '';
+  editForm.category = activeCategory.value === '全部' ? '支部建设' : activeCategory.value;
+  editForm.source = '';
+  editForm.pointsText = '';
+  editForm.url = '';
+  editShow.value = true;
+}
+
+function openEditPolicy(card: PolicyCard) {
+  editMode.value = 'edit';
+  editForm.id = card.id;
+  editForm.title = card.title;
+  editForm.category = card.category || '支部建设';
+  editForm.source = card.docNo && card.source ? `${card.source}（${card.docNo}）` : card.source || card.docNo || '';
+  editForm.pointsText = card.points.join('\n');
+  editForm.url = card.url ?? '';
+  editShow.value = true;
+}
+
+async function handleSavePolicy() {
+  const title = editForm.title.trim();
+  const points = editForm.pointsText
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (!title) {
+    window.$message?.warning('请填写政策标题');
+    return;
+  }
+  if (!points.length) {
+    window.$message?.warning('请至少填写一条核心要点');
+    return;
+  }
+
+  const category = editForm.category.trim() || '支部建设';
+  const source = editForm.source.trim() || '党支部整理';
+  const url = editForm.url.trim();
+
+  if (editMode.value === 'edit' && editForm.id) {
+    policyCards.value = policyCards.value.map(item =>
+      item.id === editForm.id
+        ? {
+            ...item,
+            title,
+            category,
+            source,
+            docNo: undefined,
+            url: url || undefined,
+            points
+          }
+        : item
+    );
+    window.$message?.success(`已更新政策「${title}」`);
+  } else {
+    const newCard: PolicyCard = {
+      id: `p-custom-${Date.now().toString(36)}`,
+      title,
+      category,
+      source,
+      url: url || undefined,
+      tags: [],
+      points,
+      isCustom: true
+    };
+    policyCards.value = [newCard, ...policyCards.value];
+    window.$message?.success(`已新增政策「${title}」`);
+  }
+  await persistPolicyCards();
+  editShow.value = false;
+}
+
+async function handleDeletePolicy(card: PolicyCard) {
+  policyCards.value = policyCards.value.filter(c => c.id !== card.id);
+  await persistPolicyCards();
+  if (readingCard.value?.id === card.id) {
+    readerShow.value = false;
+    readingCard.value = null;
+  }
+  window.$message?.success(`已删除「${card.title}」`);
+}
+
+async function handleRestoreBuiltInPolicies() {
+  const customOnly = policyCards.value.filter(c => c.isCustom);
+  policyCards.value = [...customOnly, ...cloneBuiltIn()];
+  await persistPolicyCards();
+  activeCategory.value = '全部';
+  policyPagination.page = 1;
+  window.$message?.success('已恢复全部内置政策法规（保留你自建的条目）');
+}
+
+// ---------------- 3. 用户导入本单位文件（IndexedDB blob） ----------------
 interface PolicyFile {
   id: string;
   name: string;
@@ -224,7 +387,29 @@ const fileInput = ref<HTMLInputElement>();
 
 onMounted(async () => {
   try {
-    const { db } = await import('@/db/db');
+    const savedCards = await getMeta<PolicyCard[]>(POLICY_CARDS_META_KEY);
+    if (Array.isArray(savedCards)) {
+      // 自动平滑纠正历史缓存中旧的 12371 失效链接
+      const builtInMap = new Map(DEFAULT_BUILT_IN.map(b => [b.id, b.url]));
+      let migrated = false;
+      const normalized = savedCards.map(c => {
+        const freshUrl = builtInMap.get(c.id);
+        if (freshUrl && c.url && c.url !== freshUrl && c.url.includes('12371.cn')) {
+          migrated = true;
+          return { ...c, url: freshUrl };
+        }
+        return c;
+      });
+      policyCards.value = normalized;
+      if (migrated) {
+        await persistPolicyCards();
+      }
+    }
+  } catch {
+    /* 首次加载使用默认内置法规 */
+  }
+
+  try {
     const rows = await db.meta.where('key').startsWith('policy-file-').toArray();
     importedFiles.value = rows
       .map(r => {
@@ -260,7 +445,6 @@ async function onPick(e: Event) {
 
 async function saveToDb(row: PolicyFile) {
   try {
-    const { db } = await import('@/db/db');
     const buf = await row.blob.arrayBuffer();
     await db.meta.put({
       key: `policy-file-${row.id}`,
@@ -273,7 +457,6 @@ async function saveToDb(row: PolicyFile) {
 
 async function removeFile(id: string) {
   try {
-    const { db } = await import('@/db/db');
     await db.meta.delete(`policy-file-${id}`);
     importedFiles.value = importedFiles.value.filter(f => f.id !== id);
     window.$message?.success('文件已移除');
@@ -291,45 +474,52 @@ async function download(row: PolicyFile) {
 function fmtSize(size: number) {
   return size > 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(size / 1024)} KB`;
 }
-
-const relatedTag = computed<Record<string, string>>(() => ({
-  党费: '党费收缴',
-  发展党员: '党员发展',
-  三会一课: '三会一课'
-}));
 </script>
 
 <template>
   <div class="min-h-500px">
     <NCard :bordered="false">
       <template #header>
-        <div class="flex flex-wrap items-center gap-12px">
-          <span class="text-16px font-bold">{{ bi('政策文件', 'Policy Documents') }}</span>
-          <NTabs v-model:value="activeMainTab" type="segment" size="small" class="w-360px">
-            <NTab name="rules" :tab="`${bi('政策文件与法规要点', 'Regulations & Highlights')}（${BUILT_IN.length}）`" />
-            <NTab name="archive" :tab="`${bi('本单位文件归档', 'Local Unit Archive')}（${importedFiles.length}）`" />
+        <div class="flex items-center gap-10px">
+          <span class="shrink-0 text-16px font-bold">{{ bi('政策文件', 'Policy Documents') }}</span>
+          <NTabs v-model:value="activeMainTab" type="segment" size="small" class="w-300px shrink-0">
+            <NTab name="rules" :tab="`${bi('政策与法规', 'Regulations')}（${policyCards.length}）`" />
+            <NTab name="archive" :tab="`${bi('本单位归档', 'Local Archive')}（${importedFiles.length}）`" />
           </NTabs>
         </div>
       </template>
       <template #header-extra>
-        <div class="flex items-center gap-10px">
+        <div class="flex items-center gap-6px">
           <template v-if="activeMainTab === 'rules'">
+            <NButton size="small" type="primary" @click="openCreatePolicy">
+              <template #icon><SvgIcon icon="lucide:plus" /></template>
+              {{ bi('新增政策', 'New') }}
+            </NButton>
+            <NPopconfirm @positive-click="handleRestoreBuiltInPolicies">
+              <template #trigger>
+                <NButton size="small" secondary>
+                  <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+                  {{ bi('恢复内置', 'Restore') }}
+                </NButton>
+              </template>
+              确认恢复全部内置政策法规吗？（将保留你自建的条目，已修改或删除的内置法规会恢复原样）
+            </NPopconfirm>
             <NButton
               tag="a"
-              href="https://www.12371.cn/special/tx/"
+              href="https://www.12371.cn/special/dnfg/zzfg/"
               target="_blank"
+              rel="noopener noreferrer"
               size="small"
-              type="primary"
               secondary
             >
               <template #icon><SvgIcon icon="lucide:landmark" /></template>
-              {{ bi('12371.cn 党内法规专题库', '12371.cn Regulations Portal') }}
+              {{ bi('12371 法规库', '12371.cn') }}
             </NButton>
             <NInput
               v-model:value="keyword"
-              :placeholder="bi('搜索法规名称或条款要点…', 'Search regulation title or points…')"
+              :placeholder="bi('搜索法规或要点…', 'Search…')"
               size="small"
-              class="w-240px"
+              class="w-168px"
               clearable
             >
               <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
@@ -352,68 +542,104 @@ const relatedTag = computed<Record<string, string>>(() => ({
         </div>
       </template>
 
-      <!-- Tab 1：政策文件与法规要点（一行三列） -->
+      <!-- Tab 1：政策文件与法规要点（3×3 每页 9 个，点击打开精致纯阅读弹窗） -->
       <div v-if="activeMainTab === 'rules'">
         <div class="mb-16px flex justify-center">
           <div class="lib-cat-tabs">
             <NTabs v-model:value="activeCategory" type="segment" size="small">
               <NTab
-                v-for="cat in POLICY_CATEGORIES"
+                v-for="cat in policyCategories"
                 :key="cat"
                 :name="cat"
-                :tab="cat === '全部' ? `${bi('全部', 'All')}（${BUILT_IN.length}）` : tKnowledgeCat(cat)"
+                :tab="cat === '全部' ? `${bi('全部', 'All')}（${policyCards.length}）` : tKnowledgeCat(cat)"
               />
             </NTabs>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-14px md:grid-cols-2 lg:grid-cols-3">
-          <div
-            v-for="card in pagedPolicyCards"
-            :key="card.id"
-            class="policy-card flex flex-col justify-between rounded-12px p-16px"
-          >
-            <div>
-              <div class="flex items-start justify-between gap-8px">
-                <div>
-                  <span class="text-15px font-bold text-[var(--sct-ink)]">{{ card.title }}</span>
-                  <div v-if="card.docNo" class="mt-2px text-11px text-gray-400">{{ card.docNo }}</div>
+        <NEmpty
+          v-if="!filteredCards.length"
+          :description="bi('没有匹配的政策法规，可点击右上角「新增政策」添加', 'No matching policy cards')"
+          class="py-36px"
+        />
+        <template v-else>
+          <div class="grid grid-cols-1 gap-14px md:grid-cols-2 lg:grid-cols-3">
+            <div
+              v-for="card in pagedPolicyCards"
+              :key="card.id"
+              class="policy-card group flex cursor-pointer flex-col justify-between rounded-12px p-16px"
+              @click="openReader(card)"
+            >
+              <div>
+                <div class="flex items-start justify-between gap-8px">
+                  <div class="min-w-0 flex-1">
+                    <div class="line-clamp-2 text-15px font-bold leading-snug text-[var(--sct-ink)]">
+                      {{ card.title }}
+                    </div>
+                    <div v-if="card.docNo" class="mt-3px truncate text-11px text-gray-400">{{ card.docNo }}</div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2px" @click.stop>
+                    <NTag size="tiny" type="error" :bordered="false" class="mr-2px">
+                      {{ tKnowledgeCat(card.category) }}
+                    </NTag>
+                    <NButton size="tiny" quaternary title="编辑此政策" @click="openEditPolicy(card)">
+                      <template #icon><SvgIcon icon="lucide:pencil" class="text-12px" /></template>
+                    </NButton>
+                    <NPopconfirm @positive-click="handleDeletePolicy(card)">
+                      <template #trigger>
+                        <NButton size="tiny" quaternary type="error" title="删除此政策">
+                          <template #icon><SvgIcon icon="lucide:trash-2" class="text-12px" /></template>
+                        </NButton>
+                      </template>
+                      确认删除「{{ card.title }}」吗？（内置法规可随时通过右上角「恢复内置」找回）
+                    </NPopconfirm>
+                  </div>
                 </div>
-                <div class="flex flex-shrink-0 flex-wrap gap-4px">
-                  <NTag size="tiny" type="error" :bordered="false">{{ tKnowledgeCat(card.category) }}</NTag>
-                  <NTag v-for="t in card.tags" :key="t" size="tiny" :bordered="false">{{ relatedTag[t] ?? t }}</NTag>
+                <ul class="ma-0 mt-10px pl-18px text-13px leading-relaxed text-[var(--sct-ink)] opacity-90">
+                  <li v-for="(p, i) in card.points.slice(0, 3)" :key="i" class="mb-4px line-clamp-2">{{ p }}</li>
+                </ul>
+                <div v-if="card.points.length > 3" class="mt-2px text-11px text-gray-400">
+                  还有 {{ card.points.length - 3 }} 条要点 · 点击卡片查看完整内容
                 </div>
               </div>
-              <ul class="ma-0 mt-10px pl-18px text-13px leading-relaxed text-[var(--sct-ink)] opacity-90">
-                <li v-for="(p, i) in card.points" :key="i" class="mb-4px">{{ p }}</li>
-              </ul>
-            </div>
-            <div
-              class="mt-12px flex items-center justify-between border-t border-[var(--sct-border)] pt-10px text-12px text-gray-400"
-            >
-              <span class="truncate pr-8px">{{ bi('出处：', 'Source: ') }}{{ card.source }}</span>
-              <NButton v-if="card.url" tag="a" :href="card.url" target="_blank" size="tiny" quaternary type="primary">
-                <template #icon><SvgIcon icon="lucide:external-link" /></template>
-                {{ bi('权威原文', 'Full Text') }}
-              </NButton>
+              <div
+                class="mt-12px flex items-center justify-between border-t border-[var(--sct-border)] pt-10px text-12px text-gray-400"
+              >
+                <span class="truncate pr-8px">{{ bi('出处：', 'Source: ') }}{{ card.source }}</span>
+                <div class="flex shrink-0 items-center gap-4px" @click.stop>
+                  <NButton
+                    v-if="card.url"
+                    tag="a"
+                    :href="card.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    size="tiny"
+                    quaternary
+                    type="primary"
+                  >
+                    <template #icon><SvgIcon icon="lucide:external-link" /></template>
+                    {{ bi('权威原文', 'Full Text') }}
+                  </NButton>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="mt-16px flex justify-end">
-          <NPagination
-            v-model:page="policyPagination.page"
-            v-model:page-size="policyPagination.pageSize"
-            :item-count="filteredCards.length"
-            :page-sizes="policyPagination.pageSizes"
-            show-size-picker
-            size="small"
-          >
-            <template #prefix="{ itemCount }">
-              <span class="text-12px text-gray-400">{{ bi(`共 ${itemCount} 条`, `Total ${itemCount}`) }}</span>
-            </template>
-          </NPagination>
-        </div>
+          <div class="mt-16px flex justify-end">
+            <NPagination
+              v-model:page="policyPagination.page"
+              v-model:page-size="policyPagination.pageSize"
+              :item-count="filteredCards.length"
+              :page-sizes="policyPagination.pageSizes"
+              show-size-picker
+              size="small"
+            >
+              <template #prefix="{ itemCount }">
+                <span class="text-12px text-gray-400">{{ bi(`共 ${itemCount} 条`, `Total ${itemCount}`) }}</span>
+              </template>
+            </NPagination>
+          </div>
+        </template>
       </div>
 
       <!-- Tab 2：本单位文件归档（离线存储） -->
@@ -480,6 +706,124 @@ const relatedTag = computed<Record<string, string>>(() => ({
         <div class="mt-12px text-11px text-gray-400">提示：文件仅存本机 IndexedDB，注意上传前做好个人信息脱敏。</div>
       </div>
     </NCard>
+
+    <!-- 精致纯阅读卡片弹窗（点击政策卡片弹出，专注阅读 / 复制 / 跳转原文） -->
+    <NModal v-model:show="readerShow" :mask-closable="true">
+      <div v-if="readingCard" class="policy-reader-card">
+        <div class="policy-reader-ribbon" />
+        <div class="p-22px pb-18px">
+          <div class="flex items-start justify-between gap-12px">
+            <div class="flex flex-wrap items-center gap-6px">
+              <NTag size="small" type="error" :bordered="false" round>
+                {{ tKnowledgeCat(readingCard.category) }}
+              </NTag>
+              <span v-if="readingCard.docNo" class="text-12px text-gray-400">{{ readingCard.docNo }}</span>
+            </div>
+            <button
+              type="button"
+              class="rounded-full p-4px text-gray-400 transition hover:bg-[var(--sct-soft)] hover:text-[var(--sct-ink)]"
+              title="关闭"
+              @click="readerShow = false"
+            >
+              <SvgIcon icon="lucide:x" class="text-16px" />
+            </button>
+          </div>
+
+          <h3 class="mb-6px mt-10px text-19px font-black leading-snug tracking-tight text-[var(--sct-ink)]">
+            {{ readingCard.title }}
+          </h3>
+          <div class="flex items-center gap-6px text-12px text-gray-500">
+            <SvgIcon icon="lucide:book-open" class="shrink-0 text-13px text-[#A81C24]" />
+            <span>{{ readingCard.source }}</span>
+          </div>
+
+          <div class="mt-16px max-h-52vh flex flex-col gap-10px overflow-y-auto pr-2px">
+            <div
+              v-for="(pt, idx) in readingCard.points"
+              :key="idx"
+              class="flex items-start gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-13px py-10px"
+            >
+              <span
+                class="mt-2px size-20px flex shrink-0 items-center justify-center rounded-full bg-[#A81C24] text-11px font-bold text-white"
+              >
+                {{ idx + 1 }}
+              </span>
+              <span class="text-13.5px leading-relaxed text-[var(--sct-ink)]">{{ pt }}</span>
+            </div>
+          </div>
+
+          <div class="mt-18px flex items-center justify-between gap-10px border-t border-[var(--sct-border)] pt-14px">
+            <NButton size="small" secondary @click="copyReadingPoints">
+              <template #icon><SvgIcon icon="lucide:copy" /></template>
+              复制要点
+            </NButton>
+            <div class="flex items-center gap-8px">
+              <NButton
+                v-if="readingCard.url"
+                tag="a"
+                :href="readingCard.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                size="small"
+                type="primary"
+              >
+                <template #icon><SvgIcon icon="lucide:external-link" /></template>
+                查看权威原文
+              </NButton>
+              <NButton size="small" @click="readerShow = false">关闭</NButton>
+            </div>
+          </div>
+        </div>
+      </div>
+    </NModal>
+
+    <!-- 极简 5 项新增 / 编辑政策弹窗 -->
+    <NModal
+      v-model:show="editShow"
+      preset="card"
+      :title="editMode === 'edit' ? '编辑政策要点' : '新增政策要点'"
+      class="max-w-92vw w-540px"
+    >
+      <NForm label-placement="top" size="small" class="flex flex-col gap-2px">
+        <NFormItem label="政策标题" required>
+          <NInput v-model:value="editForm.title" placeholder="例如：高校基层党支部工作要点" />
+        </NFormItem>
+        <div class="grid grid-cols-1 gap-x-12px sm:grid-cols-2">
+          <NFormItem label="所属分类">
+            <NSelect
+              v-model:value="editForm.category"
+              filterable
+              tag
+              :options="categorySelectOptions"
+              placeholder="选择或输入新分类"
+            />
+          </NFormItem>
+          <NFormItem label="出处 / 发文字号（选填）">
+            <NInput v-model:value="editForm.source" placeholder="如：中办发〔2014〕33号" />
+          </NFormItem>
+        </div>
+        <NFormItem label="核心要点（每行一条，自动生成编号列表）" required>
+          <NInput
+            v-model:value="editForm.pointsText"
+            type="textarea"
+            :rows="6"
+            placeholder="每输入一行将自动排版为一条编号要点…"
+          />
+        </NFormItem>
+        <NFormItem label="权威原文链接（选填）">
+          <NInput v-model:value="editForm.url" placeholder="https://www.12371.cn/..." />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="editShow = false">取消</NButton>
+          <NButton size="small" type="primary" @click="handleSavePolicy">
+            <template #icon><SvgIcon icon="lucide:check" /></template>
+            {{ editMode === 'edit' ? '保存修改' : '确认新增' }}
+          </NButton>
+        </div>
+      </template>
+    </NModal>
   </div>
 </template>
 
@@ -497,11 +841,25 @@ const relatedTag = computed<Record<string, string>>(() => ({
   background: var(--sct-soft);
   border: 1px solid var(--sct-border);
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
 }
 .policy-card:hover {
-  border-color: #a81c24;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  border-color: var(--sct-accent, #a81c24);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+.policy-reader-card {
+  width: min(620px, 92vw);
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--sct-container);
+  border: 1px solid var(--sct-border);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+.policy-reader-ribbon {
+  height: 5px;
+  background: linear-gradient(90deg, #a81c24 0%, #d97706 60%, #a81c24 100%);
 }
 </style>

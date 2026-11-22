@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
 import { $t } from '@/locales';
 import { useAppStore } from '@/store/modules/app';
 import { useWorkDataStore } from '@/store/modules/work-data';
-import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
 
 defineOptions({ name: 'EventDetailDrawer' });
 
@@ -16,6 +16,7 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'update:show', value: boolean): void;
   (e: 'edit', event: Sct.CalEvent): void;
+  (e: 'delete', event: Sct.CalEvent): void;
 }>();
 
 const appStore = useAppStore();
@@ -41,7 +42,7 @@ const event = computed(() => {
     const effectiveDate = typeof override?.new_date === 'string' && override.new_date ? override.new_date : occDate;
     return {
       ...base,
-      ...(override ?? {}),
+      ...override,
       id: rawId,
       date: effectiveDate
     };
@@ -87,12 +88,11 @@ const deleteConfirmNote = computed(() => {
   return isEn.value ? ' (Deletes entire recurring series)' : '（将删除整条重复规则）';
 });
 
-async function handleDelete() {
+function handleDelete() {
   const target = event.value;
   if (!target) return;
   show.value = false;
-  await workStore.deleteEvent(target.id);
-  window.$message?.success('事项已删除');
+  emit('delete', target);
 }
 </script>
 
@@ -147,12 +147,7 @@ async function handleDelete() {
             <template #icon><SvgIcon icon="lucide:pencil" /></template>
             {{ $t('common.edit') }}
           </NButton>
-          <NButton
-            v-if="event.status !== '已完成'"
-            size="small"
-            type="primary"
-            @click="setStatus('已完成')"
-          >
+          <NButton v-if="event.status !== '已完成'" size="small" type="primary" @click="setStatus('已完成')">
             <template #icon><SvgIcon icon="lucide:check-circle-2" /></template>
             {{ $t('sct.calendar.markDone') }}
           </NButton>
@@ -160,11 +155,7 @@ async function handleDelete() {
             <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
             {{ isEn ? 'Restore Planned' : '恢复计划' }}
           </NButton>
-          <NButton
-            v-if="event.status !== '已取消'"
-            size="small"
-            @click="setStatus('已取消')"
-          >
+          <NButton v-if="event.status !== '已取消'" size="small" @click="setStatus('已取消')">
             <template #icon><SvgIcon icon="lucide:ban" /></template>
             {{ isEn ? 'Cancel Event' : '取消事项' }}
           </NButton>

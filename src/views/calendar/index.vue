@@ -121,8 +121,8 @@ function navToday() {
   calendarRef.value?.getApi()?.today();
 }
 
-// ---------------- 鼠标悬浮日程小弹窗（Hover Popover，带 0.5s 悬浮延迟） ----------------
-const HOVER_OPEN_DELAY_MS = 500;
+// ---------------- 鼠标悬浮日程小弹窗（Hover Popover，带 0.25s 悬浮延迟） ----------------
+const HOVER_OPEN_DELAY_MS = 250;
 
 const hoverCard = reactive<{
   visible: boolean;
@@ -279,9 +279,18 @@ function closeUndoBar() {
   undoBar.snapshot = null;
 }
 
-function triggerPaperTearDelete(ev: Sct.CalEvent) {
+function findEventElementById(eventId: string): HTMLElement | null {
+  const escaped = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(eventId) : eventId;
+  const gridEl = document.querySelector<HTMLElement>(`.fc-event [data-cal-event-id="${escaped}"]`);
+  if (gridEl) {
+    return (gridEl.closest('.fc-event') as HTMLElement | null) ?? gridEl;
+  }
+  return document.querySelector<HTMLElement>(`[data-cal-event-id="${escaped}"]`);
+}
+
+function triggerPaperTearDelete(ev: Sct.CalEvent, explicitEl?: HTMLElement | null) {
   if (tearFx.active) return;
-  const targetEl = hoverCard.sourceEl;
+  const targetEl = explicitEl ?? hoverCard.sourceEl ?? findEventElementById(ev.id);
   // 详情悬浮窗立即无动画消失
   dismissHoverPopover(true);
   hoverCard.event = null;
@@ -343,10 +352,19 @@ function triggerPaperTearDelete(ev: Sct.CalEvent) {
   if (tearFx.active) {
     tearFinishTimer = setTimeout(() => {
       void finishDelete();
-    }, 620);
+    }, 520);
   } else {
     void finishDelete();
   }
+}
+
+function handleDrawerDelete(ev: Sct.CalEvent) {
+  detailShow.value = false;
+  // 给右侧抽屉收起留出短瞬视野，再对日历上对应日程播放高帧率撕纸动效
+  setTimeout(() => {
+    const el = findEventElementById(ev.id);
+    triggerPaperTearDelete(ev, el);
+  }, 140);
 }
 
 async function handleUndoDelete() {
@@ -436,7 +454,7 @@ const calendarOptions = ref<CalendarOptions>({
 
     return {
       html: `
-        <div class="nuxt-cal-ev ${isDone ? 'is-done' : ''} ${isCancelled ? 'is-cancelled' : ''}" style="--ev-color: ${palette.color}; --ev-soft: ${palette.soft};">
+        <div class="nuxt-cal-ev ${isDone ? 'is-done' : ''} ${isCancelled ? 'is-cancelled' : ''}" data-cal-event-id="${escapeHtml(arg.event.id)}" style="--ev-color: ${palette.color}; --ev-soft: ${palette.soft};">
           <span class="nuxt-cal-ev__pill"></span>
           <div class="nuxt-cal-ev__body">
             <div class="nuxt-cal-ev__title">${escapeHtml(title)}</div>
@@ -809,6 +827,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           <div
             v-for="ev in todayEvents"
             :key="ev.id"
+            :data-cal-event-id="ev.id"
             class="cal-side-card group flex cursor-pointer items-stretch gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-container)] p-10px transition"
             @click="openDetail(ev.id, ev)"
             @mouseenter="scheduleShowHoverPopover(ev, $event.currentTarget as HTMLElement)"
@@ -1039,7 +1058,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       </Transition>
     </Teleport>
 
-    <!-- 仅作用于被删日程本体的双片锯齿撕纸动效浮层 -->
+    <!-- 仅作用于被删日程本体的纯 GPU 高帧率双片撕纸动效浮层 -->
     <Teleport to="body">
       <div
         v-if="tearFx.active"
@@ -1054,22 +1073,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           '--ev-soft': tearFx.soft
         }"
       >
-        <svg class="pointer-events-none absolute size-0" aria-hidden="true">
-          <defs>
-            <clipPath id="sct-tear-left" clipPathUnits="objectBoundingBox">
-              <polygon
-                points="0,0 0.30,0 0.34,0.12 0.28,0.24 0.35,0.37 0.29,0.51 0.34,0.65 0.27,0.78 0.33,0.90 0.29,1 0,1"
-              />
-            </clipPath>
-            <clipPath id="sct-tear-right" clipPathUnits="objectBoundingBox">
-              <polygon
-                points="0.30,0 1,0 1,1 0.29,1 0.33,0.90 0.27,0.78 0.34,0.65 0.29,0.51 0.35,0.37 0.28,0.24 0.34,0.12"
-              />
-            </clipPath>
-          </defs>
-        </svg>
-
-        <!-- 左残片（留在原位轻微回弹并淡出） -->
+        <!-- 左残片（纯 CSS polygon 锯齿裁切，硬件加速） -->
         <div class="cal-tear-half cal-tear-half--left">
           <div class="cal-tear-card" :class="{ 'is-done': tearFx.isDone }">
             <span class="cal-tear-card__pill" />
@@ -1078,20 +1082,11 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
               <div v-if="tearFx.meta" class="cal-tear-card__meta">{{ tearFx.meta }}</div>
             </div>
           </div>
-          <svg class="cal-tear-seam" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <polyline
-              points="30,0 34,12 28,24 35,37 29,51 34,65 27,78 33,90 29,100"
-              fill="none"
-              stroke="rgba(255,255,255,0.92)"
-              stroke-width="2.6"
-              vector-effect="non-scaling-stroke"
-            />
-          </svg>
         </div>
 
-        <!-- 右撕裂纸片（沿锯齿撕开、翻卷并飘落消失） -->
+        <!-- 右撕裂纸片（纯 CSS polygon 互补锯齿 + 翻折高光，60/120fps 合成层） -->
         <div class="cal-tear-half cal-tear-half--right">
-          <div class="cal-tear-card" :class="{ 'is-done': tearFx.isDone }">
+          <div class="cal-tear-card cal-tear-card--right" :class="{ 'is-done': tearFx.isDone }">
             <span class="cal-tear-card__pill" />
             <div class="cal-tear-card__body">
               <div class="cal-tear-card__title">{{ tearFx.title }}</div>
@@ -1099,15 +1094,6 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
             </div>
           </div>
           <div class="cal-tear-curl-sheen" />
-          <svg class="cal-tear-seam" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <polyline
-              points="30,0 34,12 28,24 35,37 29,51 34,65 27,78 33,90 29,100"
-              fill="none"
-              stroke="rgba(255,255,255,0.96)"
-              stroke-width="3"
-              vector-effect="non-scaling-stroke"
-            />
-          </svg>
         </div>
       </div>
     </Teleport>
@@ -1181,7 +1167,12 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       :preset="editModalPreset"
       @saved="detailShow = false"
     />
-    <EventDetailDrawer v-model:show="detailShow" :event="detailEvent" @edit="openEditEvent($event)" />
+    <EventDetailDrawer
+      v-model:show="detailShow"
+      :event="detailEvent"
+      @edit="openEditEvent($event)"
+      @delete="handleDrawerDelete($event)"
+    />
   </div>
 </template>
 
@@ -1349,31 +1340,32 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   backdrop-filter: blur(10px);
 }
 
-/* 日程真实双片撕纸删除动效（仅作用于日程本体） */
+/* 日程纯 GPU 合成高帧率双片撕纸动效（仅作用于日程本体，零 SVG 滤镜重绘） */
 .cal-tear-stage {
   position: fixed;
   z-index: 3250;
   pointer-events: none;
-  perspective: 720px;
+  contain: layout style;
 }
 
 .cal-tear-half {
   position: absolute;
   inset: 0;
   will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .cal-tear-half--left {
-  clip-path: url(#sct-tear-left);
+  clip-path: polygon(0% 0%, 30% 0%, 34% 14%, 28% 28%, 35% 43%, 29% 58%, 34% 72%, 28% 86%, 31% 100%, 0% 100%);
   transform-origin: left center;
-  animation: cal-tear-left-stub 610ms cubic-bezier(0.22, 0.68, 0.25, 1) forwards;
+  animation: cal-tear-left-stub 500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .cal-tear-half--right {
-  clip-path: url(#sct-tear-right);
-  transform-origin: 32% 18%;
-  filter: drop-shadow(-3px 6px 8px rgba(15, 23, 42, 0.18));
-  animation: cal-tear-right-sheet 610ms cubic-bezier(0.22, 0.68, 0.25, 1) forwards;
+  clip-path: polygon(30% 0%, 100% 0%, 100% 100%, 31% 100%, 28% 86%, 34% 72%, 29% 58%, 35% 43%, 28% 28%, 34% 14%);
+  transform-origin: 32% 20%;
+  animation: cal-tear-right-sheet 500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .cal-tear-card {
@@ -1388,6 +1380,10 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   background: var(--ev-soft, rgba(168, 28, 36, 0.12));
   border: 1px solid color-mix(in srgb, var(--ev-color, #a81c24) 24%, transparent);
   overflow: hidden;
+}
+
+.cal-tear-card--right {
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
 }
 
 .cal-tear-card.is-done {
@@ -1434,78 +1430,49 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
   white-space: nowrap;
 }
 
-.cal-tear-seam {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
 .cal-tear-curl-sheen {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background: linear-gradient(
-    102deg,
-    transparent 24%,
-    rgba(255, 255, 255, 0.72) 33%,
-    rgba(15, 23, 42, 0.12) 41%,
-    transparent 52%
+    98deg,
+    transparent 26%,
+    rgba(255, 255, 255, 0.78) 31%,
+    rgba(15, 23, 42, 0.1) 36%,
+    transparent 45%
   );
-  opacity: 0;
-  animation: cal-tear-sheen 600ms ease-out forwards;
 }
 
 @keyframes cal-tear-left-stub {
   0% {
-    transform: translate3d(0, 0, 0) rotateZ(0deg);
+    transform: translate3d(0, 0, 0) rotate(0deg);
     opacity: 1;
   }
-  20% {
-    transform: translate3d(-3px, 1px, 0) rotateZ(-2.5deg);
+  25% {
+    transform: translate3d(-4px, 1px, 0) rotate(-3deg);
     opacity: 1;
-  }
-  58% {
-    transform: translate3d(-8px, 6px, 0) rotateZ(-5.5deg);
-    opacity: 0.78;
   }
   100% {
-    transform: translate3d(-14px, 22px, 0) rotateZ(-11deg);
+    transform: translate3d(-14px, 18px, 0) rotate(-10deg);
     opacity: 0;
   }
 }
 
 @keyframes cal-tear-right-sheet {
   0% {
-    transform: translate3d(0, 0, 0) rotateZ(0deg) rotateY(0deg);
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
     opacity: 1;
   }
-  18% {
-    transform: translate3d(6px, -4px, 0) rotateZ(4.5deg) rotateY(-8deg);
+  24% {
+    transform: translate3d(10px, -6px, 0) rotate(7deg) scale(1.015);
     opacity: 1;
   }
-  52% {
-    transform: translate3d(20px, -11px, 0) rotateZ(14deg) rotateY(-22deg) scale(1.01);
-    opacity: 0.96;
+  60% {
+    transform: translate3d(26px, 6px, 0) rotate(17deg) scale(0.98);
+    opacity: 0.92;
   }
   100% {
-    transform: translate3d(46px, 42px, 0) rotateZ(30deg) rotateY(-34deg) scale(0.9);
-    opacity: 0;
-  }
-}
-
-@keyframes cal-tear-sheen {
-  0% {
-    opacity: 0;
-  }
-  22% {
-    opacity: 0.95;
-  }
-  70% {
-    opacity: 0.55;
-  }
-  100% {
+    transform: translate3d(48px, 40px, 0) rotate(28deg) scale(0.9);
     opacity: 0;
   }
 }
