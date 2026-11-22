@@ -10,6 +10,7 @@ import type { EventInput } from '@fullcalendar/core';
 import { nanoid } from '@sa/utils';
 import { nodesOfStage } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
+import { DEFAULT_POINT_RULES } from '@/constants/party-points';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
 import { formatMemberCode, generateNextMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import type { DuplicateStrategy, ImportPreviewRow } from '@/utils/member-import';
@@ -63,10 +64,24 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   const docTemplates = useDexieLive<Sct.DocTemplate[]>(() => db.docTemplates.toArray(), []);
   const docsList = useDexieLive<Sct.Doc[]>(() => db.docs.toArray(), []);
   const attendance = useDexieLive<Sct.Attendance[]>(() => db.attendance.toArray(), []);
+  const pointRecords = useDexieLive<Sct.PointRecord[]>(() => db.pointRecords.toArray(), []);
+  const pointVetoes = useDexieLive<Sct.PointVeto[]>(() => db.pointVetoes.toArray(), []);
+  const pointRulesRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('point-rules'),
+    undefined
+  );
   const branchNameRow = useDexieLive<{ key: string; value: unknown } | undefined>(
     () => db.meta.get('branch-name'),
     undefined
   );
+
+  const pointRules = computed<Sct.PointRuleItem[]>(() => {
+    const val = pointRulesRow.value?.value;
+    if (Array.isArray(val) && val.length > 0) {
+      return val as Sct.PointRuleItem[];
+    }
+    return DEFAULT_POINT_RULES;
+  });
 
   const branchName = computed(() => {
     const val = branchNameRow.value?.value;
@@ -376,10 +391,12 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   }
 
   async function deleteMember(id: string) {
-    await db.transaction('rw', [db.members, db.devStages, db.feeRecords], async () => {
+    await db.transaction('rw', [db.members, db.devStages, db.feeRecords, db.pointRecords, db.pointVetoes], async () => {
       await db.members.delete(id);
       await db.devStages.delete(id);
       await db.feeRecords.where('member_id').equals(id).delete();
+      await db.pointRecords.where('member_id').equals(id).delete();
+      await db.pointVetoes.where('member_id').equals(id).delete();
     });
   }
 
@@ -787,6 +804,57 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await db.docs.delete(id);
   }
 
+  // ---------------- 党员积分 ----------------
+  async function addPointRecord(
+    input: Omit<Sct.PointRecord, 'id' | 'created_at' | 'identity'> & { id?: string; created_at?: string }
+  ) {
+    const id = input.id ?? `pt-${nanoid(8)}`;
+    const row: Sct.PointRecord = {
+      ...input,
+      id,
+      created_at: input.created_at ?? dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      identity: 'secretary'
+    };
+    await guardWrite(db.pointRecords.put(plain(row)), '党员积分记录');
+    return id;
+  }
+
+  async function updatePointRecord(id: string, patch: Partial<Sct.PointRecord>) {
+    const existing = await db.pointRecords.get(id);
+    if (!existing) return;
+    await guardWrite(db.pointRecords.put(plain({ ...existing, ...patch, id })), '党员积分记录');
+  }
+
+  async function deletePointRecord(id: string) {
+    await guardWrite(db.pointRecords.delete(id), '删除积分记录');
+  }
+
+  async function setPointVeto(memberId: string, year: number, active: boolean, reason: string) {
+    const id = `${memberId}::${year}`;
+    if (!active) {
+      await guardWrite(db.pointVetoes.delete(id), '取消一票否决');
+      return;
+    }
+    const row: Sct.PointVeto = {
+      id,
+      member_id: memberId,
+      year,
+      active: true,
+      reason: reason.trim(),
+      updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      identity: 'secretary'
+    };
+    await guardWrite(db.pointVetoes.put(plain(row)), '设置一票否决');
+  }
+
+  async function savePointRules(rules: Sct.PointRuleItem[]) {
+    await guardWrite(db.meta.put({ key: 'point-rules', value: plain(rules) }), '积分考核标准');
+  }
+
+  async function resetPointRules() {
+    await guardWrite(db.meta.delete('point-rules'), '重置积分考核标准');
+  }
+
   return {
     members,
     seatMaps,
@@ -797,6 +865,9 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     docTemplates,
     docsList,
     attendance,
+    pointRecords,
+    pointVetoes,
+    pointRules,
     branchName,
     setBranchName,
     memberMonthlyFee,
@@ -811,6 +882,12 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     deleteTalk,
     addDoc,
     deleteDoc,
+    addPointRecord,
+    updatePointRecord,
+    deletePointRecord,
+    setPointVeto,
+    savePointRules,
+    resetPointRules,
     memberById,
     memberName,
     memberOf,

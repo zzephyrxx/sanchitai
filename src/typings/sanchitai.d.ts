@@ -173,6 +173,85 @@ declare namespace Sct {
     identity?: string;
   }
 
+  /** 党员积分四大类别：基础分（扣分项）/ 履职分（加分项）/ 附加分 / 减扣分 */
+  type PointCategory = 'base' | 'duty' | 'bonus' | 'penalty';
+
+  /** 党员积分封顶子项编码 */
+  type PointSubCategory =
+    | 'base_politics_study'
+    | 'base_politics_task'
+    | 'base_discipline_meeting'
+    | 'base_discipline_fee'
+    | 'base_morality'
+    | 'duty_study'
+    | 'duty_practice'
+    | 'duty_volunteer'
+    | 'bonus'
+    | 'penalty';
+
+  /** 积分条目认定状态（仅「已认定」计入年度总分） */
+  type PointVerifyStatus = '已认定' | '待核实' | '未通过';
+
+  /** 积分细则辅助计分模式 */
+  type PointCalcMode = 'fixed' | 'count' | 'role_half' | 'hours_20';
+
+  /** 党员积分考核细则项（支持预置计院标准与自定义微调） */
+  interface PointRuleItem {
+    id: string;
+    category: PointCategory;
+    sub_category: PointSubCategory;
+    label: string;
+    description: string;
+    /** 默认分值：基础分扣分与减扣分为负数（如 -1、-5），履职分与附加分为正数（如 0.5、2、5） */
+    default_score: number;
+    calc_mode: PointCalcMode;
+    unit_label?: string;
+    builtin?: boolean;
+    enabled?: boolean;
+  }
+
+  /** 单条党员积分记录（对照附件 2 申报表） */
+  interface PointRecord {
+    id: string;
+    member_id: string;
+    /** 统计年度，如 2026 */
+    year: number;
+    /** 活动/事项发生日期 YYYY-MM-DD */
+    date: string;
+    category: PointCategory;
+    sub_category: PointSubCategory;
+    rule_id?: string;
+    /** 所属细则名称（冗余存储，避免自定义改名后历史记录丢失语境） */
+    rule_label: string;
+    /** 活动内容/事项说明 */
+    content: string;
+    /** 最终认定分值（基础扣分与减扣分为负数，履职加分与附加分为正数） */
+    score: number;
+    status: PointVerifyStatus;
+    /** 辅助计算元数据（用于编辑回显） */
+    calc_meta?: {
+      count?: number;
+      role?: 'core' | 'member';
+      hours?: number;
+      base_score?: number;
+    };
+    note?: string;
+    created_at: string;
+    identity?: string;
+  }
+
+  /** 年度一票否决记录（开启后基础分归零） */
+  interface PointVeto {
+    /** 复合主键 `${member_id}::${year}` */
+    id: string;
+    member_id: string;
+    year: number;
+    active: boolean;
+    reason: string;
+    updated_at: string;
+    identity?: string;
+  }
+
   interface IdentityOption {
     id: string;
     name: string;

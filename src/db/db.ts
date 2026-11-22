@@ -29,6 +29,8 @@ class SanchitaiDB extends Dexie {
   declare docTemplates: Table<Sct.DocTemplate, string>;
   declare docs: Table<Sct.Doc, string>;
   declare attendance: Table<Sct.Attendance, string>;
+  declare pointRecords: Table<Sct.PointRecord, string>;
+  declare pointVetoes: Table<Sct.PointVeto, string>;
   declare meta: Table<MetaRow, string>;
 
   constructor() {
@@ -128,6 +130,12 @@ class SanchitaiDB extends Dexie {
           }
         }
       });
+
+    // v6：党员积分台账（年度积分明细表 + 一票否决表）
+    this.version(6).stores({
+      pointRecords: 'id, member_id, year, date, category, status, identity',
+      pointVetoes: 'id, member_id, year, identity'
+    });
   }
 }
 
@@ -159,27 +167,46 @@ export interface BackupShape {
   doc_templates: Sct.DocTemplate[];
   docs: Sct.Doc[];
   attendance?: Sct.Attendance[];
+  point_records?: Sct.PointRecord[];
+  point_vetoes?: Sct.PointVeto[];
+  point_rules?: Sct.PointRuleItem[];
 }
 
 const BACKUP_RING_SIZE = 5;
 
 /** 全库导出为统一备份格式 */
 export async function exportBackup(): Promise<BackupShape> {
-  const [members, seat_maps, cal_events, dev_stages, fee_records, talks, doc_templates, docs, attendance, branchName] =
-    await Promise.all([
-      db.members.toArray(),
-      db.seatMaps.toArray(),
-      db.calEvents.toArray(),
-      db.devStages.toArray(),
-      db.feeRecords.toArray(),
-      db.talks.toArray(),
-      db.docTemplates.toArray(),
-      db.docs.toArray(),
-      db.attendance.toArray(),
-      getMeta<string>('branch-name')
-    ]);
+  const [
+    members,
+    seat_maps,
+    cal_events,
+    dev_stages,
+    fee_records,
+    talks,
+    doc_templates,
+    docs,
+    attendance,
+    point_records,
+    point_vetoes,
+    branchName,
+    pointRules
+  ] = await Promise.all([
+    db.members.toArray(),
+    db.seatMaps.toArray(),
+    db.calEvents.toArray(),
+    db.devStages.toArray(),
+    db.feeRecords.toArray(),
+    db.talks.toArray(),
+    db.docTemplates.toArray(),
+    db.docs.toArray(),
+    db.attendance.toArray(),
+    db.pointRecords.toArray(),
+    db.pointVetoes.toArray(),
+    getMeta<string>('branch-name'),
+    getMeta<Sct.PointRuleItem[]>('point-rules')
+  ]);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     exported_at: new Date().toISOString(),
     branch_name: branchName || '智感硕博党支部',
     members,
@@ -190,7 +217,10 @@ export async function exportBackup(): Promise<BackupShape> {
     talks,
     doc_templates,
     docs,
-    attendance
+    attendance,
+    point_records,
+    point_vetoes,
+    point_rules: pointRules
   };
 }
 
@@ -281,7 +311,9 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
       db.talks,
       db.docTemplates,
       db.docs,
-      db.attendance
+      db.attendance,
+      db.pointRecords,
+      db.pointVetoes
     ],
     async () => {
       await Promise.all([
@@ -293,7 +325,9 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
         db.talks.clear(),
         db.docTemplates.clear(),
         db.docs.clear(),
-        db.attendance.clear()
+        db.attendance.clear(),
+        db.pointRecords.clear(),
+        db.pointVetoes.clear()
       ]);
       await Promise.all([
         db.members.bulkPut(normalizedMembers),
@@ -304,12 +338,17 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
         db.talks.bulkPut(shape.talks ?? []),
         db.docTemplates.bulkPut(shape.doc_templates ?? []),
         db.docs.bulkPut(shape.docs ?? []),
-        db.attendance.bulkPut(shape.attendance ?? [])
+        db.attendance.bulkPut(shape.attendance ?? []),
+        db.pointRecords.bulkPut(shape.point_records ?? []),
+        db.pointVetoes.bulkPut(shape.point_vetoes ?? [])
       ]);
     }
   );
   if (shape.branch_name && typeof shape.branch_name === 'string') {
     await setMeta('branch-name', shape.branch_name.trim());
+  }
+  if (Array.isArray(shape.point_rules)) {
+    await setMeta('point-rules', shape.point_rules);
   }
 }
 
@@ -332,7 +371,9 @@ export async function clearAllData(): Promise<void> {
       db.talks,
       db.docTemplates,
       db.docs,
-      db.attendance
+      db.attendance,
+      db.pointRecords,
+      db.pointVetoes
     ],
     async () => {
       await Promise.all([
@@ -344,7 +385,9 @@ export async function clearAllData(): Promise<void> {
         db.talks.clear(),
         db.docTemplates.clear(),
         db.docs.clear(),
-        db.attendance.clear()
+        db.attendance.clear(),
+        db.pointRecords.clear(),
+        db.pointVetoes.clear()
       ]);
     }
   );

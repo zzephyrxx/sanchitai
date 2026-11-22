@@ -130,6 +130,17 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
+        name: 'ledger_points',
+        path: '/ledger/points',
+        component: 'view.ledger_points',
+        meta: {
+          title: 'ledger_points',
+          i18nKey: 'route.ledger_points',
+          icon: 'lucide:award',
+          order: 6
+        }
+      },
+      {
         name: 'ledger_talks',
         path: '/ledger/talks',
         component: 'view.ledger_talks',

@@ -279,6 +279,7 @@ const local: App.I18n.Schema = {
     ledger_development: 'Member Development',
     ledger_fees: 'Dues Collection',
     ledger_talks: 'Heart-to-Heart Talks',
+    ledger_points: 'Party Points',
     library: 'Resources',
     library_knowledge: 'Knowledge',
     library_policy: 'Policy',
