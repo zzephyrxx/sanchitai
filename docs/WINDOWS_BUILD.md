@@ -1,4 +1,4 @@
-# 三尺台 v0.2.3 · Windows 安装包编译构建指南
+# 三尺台 v0.2.4 · Windows 安装包编译构建指南
 
 本文档用于指导在 **Windows 10 / 11 (x64)** 环境下，将三尺台源码打包构建为 Windows 安装程序（NSIS `.exe`）。
 
@@ -33,7 +33,8 @@
 
 ## 二、解压源码与安装依赖
 
-1. 将压缩包 `sanchitai-v0.2.3-src.zip` 解压到**纯英文、无空格的短路径**（避免 Windows 路径过长或中文路径导致 NSIS/Cargo 报错），例如：
+1. 将压缩包 `sanchitai-v0.2.4-src.zip` 解压到**纯英文、无空格的短路径**（避免 Windows 路径过长或中文路径导致 NSIS/Cargo 报错），例如：
+
    ```text
    D:\sanchitai
    ```
@@ -69,7 +70,7 @@ pnpm tauri build --bundles nsis
 构建成功后，在以下路径即可找到 Windows 安装包：
 
 ```text
-src-tauri\target\release\bundle\nsis\三尺台_0.2.3_x64-setup.exe
+src-tauri\target\release\bundle\nsis\三尺台_0.2.4_x64-setup.exe
 ```
 
 同时，绿色单文件可执行程序位于：
@@ -82,9 +83,9 @@ src-tauri\target\release\sanchitai.exe
 
 ## 五、常见问题排查
 
-| 现象 | 解决方案 |
-| --- | --- |
-| `cargo` 下载 crates.io 极慢或超时 | 在 `C:\Users\<你的用户名>\.cargo\config.toml` 中配置清华/字节 crates 镜像源 |
-| 报错 `link.exe not found` | 未安装 Visual Studio C++ Build Tools，请勾选「使用 C++ 的桌面开发」并重启终端 |
-| 首次打包 NSIS 下载工具失败 | Tauri 首次打包会自动下载 NSIS 工具链，请保持网络通畅或开启代理后重新运行 `pnpm tauri build --bundles nsis` |
-| `pnpm install` 提示版本不匹配 | 运行 `corepack enable` 或 `npm install -g pnpm@latest` 升级 pnpm |
+| 现象                              | 解决方案                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `cargo` 下载 crates.io 极慢或超时 | 在 `C:\Users\<你的用户名>\.cargo\config.toml` 中配置清华/字节 crates 镜像源                                |
+| 报错 `link.exe not found`         | 未安装 Visual Studio C++ Build Tools，请勾选「使用 C++ 的桌面开发」并重启终端                              |
+| 首次打包 NSIS 下载工具失败        | Tauri 首次打包会自动下载 NSIS 工具链，请保持网络通畅或开启代理后重新运行 `pnpm tauri build --bundles nsis` |
+| `pnpm install` 提示版本不匹配     | 运行 `corepack enable` 或 `npm install -g pnpm@latest` 升级 pnpm                                           |

@@ -26,7 +26,7 @@ const appLock = useAppLockStore();
 const workStore = useWorkDataStore();
 const { bi } = useSctI18n();
 const desktopBridge = useDesktopBridge();
-const APP_VERSION = 'v0.2.3';
+const APP_VERSION = 'v0.2.4';
 
 // ---------------- 默认打开方式（桌面端 / 浏览器） ----------------
 const runtimeStatusLabel = computed(() => {
@@ -583,8 +583,8 @@ onMounted(listSnapshots);
           <div class="text-13px leading-relaxed text-gray-600">
             {{
               bi(
-                '学工工作平台（v0.2.3）——党支部书记个人离线工作台。主视图台历，配套三会一课排期、党员发展、党费收缴、谈心谈话、知识库与政策文件库。数据纯本地，无账号、无网络请求。',
-                'Student & Party Affairs Workbench (v0.2.3) — Offline-first personal workspace for Party Branch Secretaries. Calendar-driven with full ledger, knowledge base, and policy archives.'
+                '学工工作平台（v0.2.4）——党支部书记个人离线工作台。主视图台历，配套三会一课排期、党员发展、党费收缴、谈心谈话、知识库与政策文件库。数据纯本地，无账号、无网络请求。',
+                'Student & Party Affairs Workbench (v0.2.4) — Offline-first personal workspace for Party Branch Secretaries. Calendar-driven with full ledger, knowledge base, and policy archives.'
               )
             }}
           </div>

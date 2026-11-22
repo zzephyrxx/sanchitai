@@ -1,6 +1,6 @@
 {
   "name": "sanchitai",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "三尺台 (SanChiTai) — 面向高校学工与党支部书记的纯本地离线优先个人工作台。Offline-first personal workbench for university student-affairs & party branch workflows.",
   "keywords": [
     "dexie",
