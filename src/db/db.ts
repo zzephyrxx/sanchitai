@@ -2,15 +2,28 @@ import dayjs from 'dayjs';
 /**
  * 三尺台 本地数据库（Dexie / IndexedDB）
  *
- * 单一 DB 工厂（借鉴 SP runDbUpgrade 教训：schema 集中、加法演进）。
- * 备份：环形快照 5 份（meta 表）+ BackupShape 统一导入导出管线。
+ * 单一 DB 工厂（schema 集中、加法演进，不轻率提升 Dexie 版本以兼容旧版回退）。
+ * 备份：环形快照自动 10 份 + 手动 10 份（meta 表 + 桌面端落盘）+ BackupShape 统一迁移与导入导出管线。
  */
 import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
+import { APP_VERSION } from '@/constants/changelog';
+import { computeNextDevNode, isStageFullyArchived } from '@/constants/dev-nodes';
 import { formatMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import { normalizeMemberRecord } from '@/utils/member-status';
+import seedJson from './seed/seed-data.json';
 
 export const DB_NAME = 'sanchitai-db';
+export const CURRENT_SCHEMA_VERSION = 5;
+export const BACKUP_RING_SIZE = 10;
+
+const BUILTIN_DOC_TEMPLATES: Sct.DocTemplate[] = (
+  (seedJson as unknown as { docTemplates?: Sct.DocTemplate[] }).docTemplates ?? []
+).map(tpl => ({ ...tpl, identity: 'secretary' }));
+
+export function getBuiltinDocTemplates(): Sct.DocTemplate[] {
+  return BUILTIN_DOC_TEMPLATES.map(tpl => JSON.parse(JSON.stringify(tpl)) as Sct.DocTemplate);
+}
 
 export interface MetaRow {
   key: string;
@@ -174,10 +187,11 @@ export async function setMeta(key: string, value: unknown): Promise<void> {
   await db.meta.put({ key, value });
 }
 
-// ---------------- 备份 ----------------
+// ---------------- 备份与迁移 ----------------
 
 export interface BackupShape {
   schemaVersion: number;
+  app_version?: string;
   exported_at: string;
   branch_name?: string;
   members: Sct.Member[];
@@ -194,6 +208,11 @@ export interface BackupShape {
   point_rules?: Sct.PointRuleItem[];
   party_groups?: string[];
   youth_committee_slots?: Sct.YouthCommitteeSlot[];
+  academy_flow?: unknown;
+  knowledge_custom_items?: unknown;
+  policy_cards?: unknown;
+  policy_files?: Record<string, unknown>;
+  [extra: string]: unknown;
 }
 
 export type SnapshotKind = 'auto' | 'manual';
@@ -205,9 +224,96 @@ export interface BackupSnapshotEntry {
   shape: BackupShape;
 }
 
-const BACKUP_RING_SIZE = 5;
+export interface DiskSnapshotHooks {
+  onPush?: (kind: SnapshotKind, key: string, shape: BackupShape) => Promise<void> | void;
+  onDelete?: (kind: SnapshotKind, key: string) => Promise<void> | void;
+  onListDisk?: () => Promise<BackupSnapshotEntry[]>;
+}
 
-/** 全库导出为统一备份格式 */
+let diskSnapshotHooks: DiskSnapshotHooks | null = null;
+
+export function registerDiskSnapshotHooks(hooks: DiskSnapshotHooks) {
+  diskSnapshotHooks = hooks;
+}
+
+/**
+ * 增量式版本迁移（v1~v5 向上兼容，不丢弃未知字段）：
+ * - 统一修正成员入党/转正身份
+ * - 修正已完成归档的正式党员残留「材料归档」next_node
+ * - 当材料模板为空时自动兜底内置 6 套默认模板
+ */
+export function migrateBackupShape(raw: unknown): BackupShape {
+  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const today = dayjs().format('YYYY-MM-DD');
+  const rawMembers = Array.isArray(src.members) ? (src.members as Sct.Member[]) : [];
+  const normalizedMembers = rawMembers.map(m => normalizeMemberRecord(m, today));
+
+  const rawStages = Array.isArray(src.dev_stages) ? (src.dev_stages as Sct.DevStage[]) : [];
+  const normalizedStages = rawStages.map(stage => {
+    const materials = Array.isArray(stage.materials) ? stage.materials : [];
+    const nextNode =
+      stage.stage === '正式党员' && isStageFullyArchived(stage.stage, materials)
+        ? ''
+        : stage.next_node === '材料归档' && isStageFullyArchived(stage.stage, materials)
+          ? ''
+          : (stage.next_node ?? computeNextDevNode(stage.stage, materials));
+    return {
+      ...stage,
+      materials,
+      next_node: nextNode
+    };
+  });
+
+  const rawTemplates = Array.isArray(src.doc_templates) ? (src.doc_templates as Sct.DocTemplate[]) : [];
+  const docTemplates = rawTemplates.length > 0 ? rawTemplates : getBuiltinDocTemplates();
+
+  const sourceSchema = typeof src.schemaVersion === 'number' ? src.schemaVersion : 1;
+
+  return {
+    ...src,
+    schemaVersion: Math.max(sourceSchema, CURRENT_SCHEMA_VERSION),
+    app_version: typeof src.app_version === 'string' ? src.app_version : APP_VERSION,
+    exported_at: typeof src.exported_at === 'string' ? src.exported_at : new Date().toISOString(),
+    branch_name:
+      typeof src.branch_name === 'string' && src.branch_name.trim() ? src.branch_name.trim() : '智感硕博党支部',
+    members: normalizedMembers,
+    seat_maps: Array.isArray(src.seat_maps) ? (src.seat_maps as Sct.SeatMap[]) : [],
+    cal_events: Array.isArray(src.cal_events) ? (src.cal_events as Sct.CalEvent[]) : [],
+    dev_stages: normalizedStages,
+    fee_records: Array.isArray(src.fee_records) ? (src.fee_records as Sct.FeeRecord[]) : [],
+    talks: Array.isArray(src.talks) ? (src.talks as Sct.Talk[]) : [],
+    doc_templates: docTemplates,
+    docs: Array.isArray(src.docs) ? (src.docs as Sct.Doc[]) : [],
+    attendance: Array.isArray(src.attendance) ? (src.attendance as Sct.Attendance[]) : [],
+    point_records: Array.isArray(src.point_records) ? (src.point_records as Sct.PointRecord[]) : [],
+    point_vetoes: Array.isArray(src.point_vetoes) ? (src.point_vetoes as Sct.PointVeto[]) : [],
+    point_rules: Array.isArray(src.point_rules) ? (src.point_rules as Sct.PointRuleItem[]) : undefined,
+    party_groups: Array.isArray(src.party_groups) ? (src.party_groups as string[]) : undefined,
+    youth_committee_slots: Array.isArray(src.youth_committee_slots)
+      ? (src.youth_committee_slots as Sct.YouthCommitteeSlot[])
+      : undefined,
+    academy_flow: src.academy_flow,
+    knowledge_custom_items: src.knowledge_custom_items,
+    policy_cards: src.policy_cards,
+    policy_files:
+      src.policy_files && typeof src.policy_files === 'object'
+        ? (src.policy_files as Record<string, unknown>)
+        : undefined
+  };
+}
+
+/** 确保材料库内置 6 套默认模板始终存在（若被清空则自动补回） */
+export async function ensureDefaultDocTemplates(): Promise<number> {
+  const count = await db.docTemplates.count();
+  if (count > 0) return 0;
+  const builtins = getBuiltinDocTemplates();
+  if (builtins.length) {
+    await db.docTemplates.bulkPut(builtins);
+  }
+  return builtins.length;
+}
+
+/** 全库导出为统一备份格式（schemaVersion = 5） */
 export async function exportBackup(): Promise<BackupShape> {
   const [
     members,
@@ -221,10 +327,7 @@ export async function exportBackup(): Promise<BackupShape> {
     attendance,
     point_records,
     point_vetoes,
-    branchName,
-    pointRules,
-    partyGroups,
-    youthSlots
+    allMetaRows
   ] = await Promise.all([
     db.members.toArray(),
     db.seatMaps.toArray(),
@@ -237,64 +340,106 @@ export async function exportBackup(): Promise<BackupShape> {
     db.attendance.toArray(),
     db.pointRecords.toArray(),
     db.pointVetoes.toArray(),
-    getMeta<string>('branch-name'),
-    getMeta<Sct.PointRuleItem[]>('point-rules'),
-    getMeta<string[]>('party-groups'),
-    getMeta<Sct.YouthCommitteeSlot[]>('youth-committee-slots')
+    db.meta.toArray()
   ]);
+
+  const metaMap = new Map<string, unknown>();
+  const policyFiles: Record<string, unknown> = {};
+  for (const row of allMetaRows) {
+    if (row.key.startsWith('policy-file-')) {
+      policyFiles[row.key] = row.value;
+    } else if (!row.key.startsWith('backup-')) {
+      metaMap.set(row.key, row.value);
+    }
+  }
+
   return {
-    schemaVersion: 4,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
     exported_at: new Date().toISOString(),
-    branch_name: branchName || '智感硕博党支部',
+    branch_name: (metaMap.get('branch-name') as string | undefined) || '智感硕博党支部',
     members,
     seat_maps,
     cal_events,
     dev_stages,
     fee_records,
     talks,
-    doc_templates,
+    doc_templates: doc_templates.length > 0 ? doc_templates : getBuiltinDocTemplates(),
     docs,
     attendance,
     point_records,
     point_vetoes,
-    point_rules: pointRules,
-    party_groups: partyGroups,
-    youth_committee_slots: youthSlots
+    point_rules: metaMap.get('point-rules') as Sct.PointRuleItem[] | undefined,
+    party_groups: metaMap.get('party-groups') as string[] | undefined,
+    youth_committee_slots: metaMap.get('youth-committee-slots') as Sct.YouthCommitteeSlot[] | undefined,
+    academy_flow: metaMap.get('academy-flow'),
+    knowledge_custom_items: metaMap.get('knowledge-custom-items'),
+    policy_cards: metaMap.get('policy-cards-v1'),
+    policy_files: Object.keys(policyFiles).length > 0 ? policyFiles : undefined
   };
 }
 
-/** 写入环形快照（自动与手动各独立保留最近 5 份） */
-export async function pushBackupRing(kind: SnapshotKind = 'auto'): Promise<void> {
+/** 写入环形快照（自动与手动各独立保留最近 10 份，并同步落盘到桌面端数据目录） */
+export async function pushBackupRing(kind: SnapshotKind = 'auto'): Promise<BackupSnapshotEntry> {
   const cursorKey = kind === 'manual' ? 'backup_ring_cursor_manual' : 'backup_ring_cursor_auto';
   const ring = (await getMeta<number>(cursorKey)) ?? 0;
+  const slot = ring % BACKUP_RING_SIZE;
+  const key = `backup-${kind}-${slot}`;
   const snapshot = await exportBackup();
-  await setMeta(`backup-${kind}-${ring}`, snapshot);
-  await setMeta(cursorKey, (ring + 1) % BACKUP_RING_SIZE);
+  await setMeta(key, snapshot);
+  await setMeta(cursorKey, (slot + 1) % BACKUP_RING_SIZE);
+  try {
+    await diskSnapshotHooks?.onPush?.(kind, key, snapshot);
+  } catch {
+    /* 落盘失败不影响本地快照 */
+  }
+  return { key, kind, ts: snapshot.exported_at, shape: snapshot };
 }
 
-/** 读取环形快照（按新→旧；可按 auto/manual 筛选，自动快照向下兼容旧版 backup-0..4） */
+/** 读取环形快照（按新→旧；自动合并 IndexedDB 与桌面端磁盘快照，向下兼容旧版 backup-0..4） */
 export async function listBackupRing(kind?: SnapshotKind): Promise<BackupSnapshotEntry[]> {
   const rows = await db.meta.filter(r => r.key.startsWith('backup-')).toArray();
   const legacyRe = /^backup-\d+$/;
-  return rows
-    .filter(r => !r.key.includes('cursor') && r.value)
-    .map(r => {
-      const shape = r.value as BackupShape;
-      const entryKind: SnapshotKind = r.key.startsWith('backup-manual-')
-        ? 'manual'
-        : r.key.startsWith('backup-auto-') || legacyRe.test(r.key)
-          ? 'auto'
-          : 'auto';
-      return { key: r.key, kind: entryKind, ts: shape.exported_at, shape };
-    })
+  const merged = new Map<string, BackupSnapshotEntry>();
+
+  for (const r of rows) {
+    if (r.key.includes('cursor') || !r.value) continue;
+    const shape = r.value as BackupShape;
+    const entryKind: SnapshotKind = r.key.startsWith('backup-manual-')
+      ? 'manual'
+      : r.key.startsWith('backup-auto-') || legacyRe.test(r.key)
+        ? 'auto'
+        : 'auto';
+    merged.set(r.key, { key: r.key, kind: entryKind, ts: shape.exported_at, shape });
+  }
+
+  try {
+    const diskEntries = (await diskSnapshotHooks?.onListDisk?.()) ?? [];
+    for (const d of diskEntries) {
+      const existing = merged.get(d.key);
+      if (!existing || d.ts > existing.ts) {
+        merged.set(d.key, d);
+      }
+    }
+  } catch {
+    /* ignore disk snapshot errors */
+  }
+
+  return Array.from(merged.values())
     .filter(entry => (!kind ? true : entry.kind === kind))
-    .sort((a, b) => b.ts.localeCompare(a.ts));
+    .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
 }
 
-/** 删除指定本地快照 */
+/** 删除指定本地快照（同步清理桌面磁盘副本） */
 export async function deleteBackupSnapshot(key: string): Promise<void> {
   if (!key.startsWith('backup-') || key.includes('cursor')) return;
+  const kind: SnapshotKind = key.startsWith('backup-manual-') ? 'manual' : 'auto';
   await db.meta.delete(key);
+  try {
+    await diskSnapshotHooks?.onDelete?.(kind, key);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** 按入党/转正时间自动同步党员身份（预备期届满自动转为正式党员，无需手动确认） */
@@ -319,13 +464,15 @@ export async function syncMemberPartyStatuses(): Promise<number> {
       await db.members.put(next);
       if (typeChanged) {
         const prevStage = await db.devStages.get(next.id);
+        const materials = prevStage?.materials ?? [];
+        const computedNext = computeNextDevNode(next.type, materials);
         await db.devStages.put({
           member_id: next.id,
           stage: next.type,
           stage_date: next.type === '正式党员' ? next.full_date || today : next.join_date || today,
-          next_node: next.type === '正式党员' ? '材料归档' : prevStage?.next_node,
+          next_node: computedNext,
           next_due: next.type === '预备党员' ? next.full_date || prevStage?.next_due : undefined,
-          materials: prevStage?.materials ?? [],
+          materials,
           timeline: [
             ...(prevStage?.timeline ?? []),
             {
@@ -343,10 +490,8 @@ export async function syncMemberPartyStatuses(): Promise<number> {
   return updates.filter(u => u.typeChanged).length;
 }
 
-/** 静默替换业务数据（供桌面端 ⇄ 浏览器本机微服务实时同步使用，不写入环形快照） */
-export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
-  const today = dayjs().format('YYYY-MM-DD');
-  const normalizedMembers = (shape.members ?? []).map(m => normalizeMemberRecord(m, today));
+/** 写入核心党务台账分组 */
+async function replaceCoreTables(shape: BackupShape): Promise<void> {
   await db.transaction(
     'rw',
     [
@@ -356,8 +501,6 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
       db.devStages,
       db.feeRecords,
       db.talks,
-      db.docTemplates,
-      db.docs,
       db.attendance,
       db.pointRecords,
       db.pointVetoes
@@ -370,21 +513,17 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
         db.devStages.clear(),
         db.feeRecords.clear(),
         db.talks.clear(),
-        db.docTemplates.clear(),
-        db.docs.clear(),
         db.attendance.clear(),
         db.pointRecords.clear(),
         db.pointVetoes.clear()
       ]);
       await Promise.all([
-        db.members.bulkPut(normalizedMembers),
+        db.members.bulkPut(shape.members ?? []),
         db.seatMaps.bulkPut(shape.seat_maps ?? []),
         db.calEvents.bulkPut(shape.cal_events ?? []),
         db.devStages.bulkPut(shape.dev_stages ?? []),
         db.feeRecords.bulkPut(shape.fee_records ?? []),
         db.talks.bulkPut(shape.talks ?? []),
-        db.docTemplates.bulkPut(shape.doc_templates ?? []),
-        db.docs.bulkPut(shape.docs ?? []),
         db.attendance.bulkPut(shape.attendance ?? []),
         db.pointRecords.bulkPut(shape.point_records ?? []),
         db.pointVetoes.bulkPut(shape.point_vetoes ?? [])
@@ -405,14 +544,68 @@ export async function replaceDataFromSync(shape: BackupShape): Promise<void> {
   }
 }
 
+/** 写入材料库、资料库与流程图分组 */
+async function replaceLibraryTables(shape: BackupShape): Promise<void> {
+  const templates =
+    Array.isArray(shape.doc_templates) && shape.doc_templates.length > 0
+      ? shape.doc_templates
+      : getBuiltinDocTemplates();
+  await db.transaction('rw', [db.docTemplates, db.docs], async () => {
+    await Promise.all([db.docTemplates.clear(), db.docs.clear()]);
+    await Promise.all([db.docTemplates.bulkPut(templates), db.docs.bulkPut(shape.docs ?? [])]);
+  });
+  if (shape.academy_flow !== undefined) {
+    await setMeta('academy-flow', shape.academy_flow);
+  }
+  if (shape.knowledge_custom_items !== undefined) {
+    await setMeta('knowledge-custom-items', shape.knowledge_custom_items);
+  }
+  if (shape.policy_cards !== undefined) {
+    await setMeta('policy-cards-v1', shape.policy_cards);
+  }
+  if (shape.policy_files && typeof shape.policy_files === 'object') {
+    const oldFileKeys = (await db.meta.filter(r => r.key.startsWith('policy-file-')).primaryKeys()) as string[];
+    if (oldFileKeys.length) {
+      await db.meta.bulkDelete(oldFileKeys);
+    }
+    const entries = Object.entries(shape.policy_files).map(([key, value]) => ({ key, value }));
+    if (entries.length) {
+      await db.meta.bulkPut(entries);
+    }
+  }
+}
+
+/** 静默替换业务数据（供桌面端 ⇄ 浏览器本机微服务实时同步使用，不写入环形快照） */
+export async function replaceDataFromSync(rawShape: BackupShape): Promise<void> {
+  const shape = migrateBackupShape(rawShape);
+  await replaceCoreTables(shape);
+  await replaceLibraryTables(shape);
+}
+
+/** 按模块选择性导入（导入前先自动快照当前库，仅替换所选分组） */
+export async function importSelectiveBackup(
+  rawShape: BackupShape,
+  modules: { core?: boolean; library?: boolean }
+): Promise<void> {
+  await pushBackupRing('auto');
+  const shape = migrateBackupShape(rawShape);
+  if (modules.core) {
+    await replaceCoreTables(shape);
+  }
+  if (modules.library) {
+    await replaceLibraryTables(shape);
+  }
+}
+
 /** 导入备份：先自动快照当前库，再整体替换 */
 export async function importBackup(shape: BackupShape): Promise<void> {
-  await pushBackupRing();
+  await pushBackupRing('auto');
   await replaceDataFromSync(shape);
 }
 
-/** 清空全部业务数据（保留 meta 备份与种子标记） */
+/** 清空全部业务数据（保留 meta 备份与种子标记，并保留材料库 6 套内置默认模板） */
 export async function clearAllData(): Promise<void> {
+  const builtins = getBuiltinDocTemplates();
   await db.transaction(
     'rw',
     [
@@ -442,6 +635,9 @@ export async function clearAllData(): Promise<void> {
         db.pointRecords.clear(),
         db.pointVetoes.clear()
       ]);
+      if (builtins.length) {
+        await db.docTemplates.bulkPut(builtins);
+      }
     }
   );
 }

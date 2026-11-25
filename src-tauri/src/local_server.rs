@@ -3,14 +3,16 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(target_os = "macos")]
+use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 const DEFAULT_PORT: u16 = 19527;
-const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const MAX_HEADERS: usize = 128;
 const MAX_HEADER_LINE_BYTES: usize = 65536;
 const MAX_CONCURRENT_CONNS: usize = 128;
@@ -72,14 +74,241 @@ struct OpenBrowserReq {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncEnvelope {
     pub updated_at: u64,
+    #[serde(default)]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub app_version: String,
     pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DataDirPointer {
+    custom_dir: String,
 }
 
 #[derive(Clone)]
 pub struct LocalServerState {
     pub port: u16,
-    pub data_dir: PathBuf,
+    pub default_data_dir: PathBuf,
+    pub data_dir: Arc<RwLock<PathBuf>>,
     io_lock: Arc<Mutex<()>>,
+}
+
+fn sanitize_snapshot_key(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+        .take(96)
+        .collect()
+}
+
+fn sanitize_snapshot_kind(kind: &str) -> &'static str {
+    if kind == "manual" {
+        "manual"
+    } else {
+        "auto"
+    }
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buf: u32 = 0;
+    let mut bits: u8 = 0;
+    for b in input.bytes() {
+        let val = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => break,
+            b'\r' | b'\n' | b' ' | b'\t' => continue,
+            _ => return Err("invalid base64 character".to_string()),
+        };
+        buf = (buf << 6) | u32::from(val);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((buf >> bits) & 0xff) as u8);
+        }
+    }
+    Ok(out)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
+        let path = entry.path();
+        let target = dst.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &target)?;
+        } else if path.is_file() {
+            fs::copy(&path, &target).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn count_files_in_dir(dir: &Path) -> usize {
+    fs::read_dir(dir)
+        .ok()
+        .map(|rd| rd.flatten().filter(|e| e.path().is_file()).count())
+        .unwrap_or(0)
+}
+
+pub fn inspect_data_dir(path: &Path) -> serde_json::Value {
+    let sync_path = path.join("sync-data.json");
+    let has_sync = sync_path.is_file();
+    let mut updated_at: u64 = 0;
+    let mut member_count: usize = 0;
+    let mut branch_name = String::new();
+    let mut schema_version: u32 = 0;
+
+    if has_sync {
+        if let Ok(text) = fs::read_to_string(&sync_path) {
+            if let Ok(env) = serde_json::from_str::<SyncEnvelope>(&text) {
+                updated_at = env.updated_at;
+                schema_version = env.schema_version;
+                if let Some(arr) = env.payload.get("members").and_then(|v| v.as_array()) {
+                    member_count = arr.len();
+                }
+                if let Some(bn) = env.payload.get("branch_name").and_then(|v| v.as_str()) {
+                    branch_name = bn.to_string();
+                }
+                if schema_version == 0 {
+                    schema_version = env
+                        .payload
+                        .get("schemaVersion")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32;
+                }
+            }
+        }
+    }
+
+    serde_json::json!({
+        "path": path.to_string_lossy().to_string(),
+        "exists": path.exists(),
+        "hasSyncData": has_sync,
+        "updatedAt": updated_at,
+        "memberCount": member_count,
+        "branchName": branch_name,
+        "schemaVersion": schema_version,
+        "autoSnapshotCount": count_files_in_dir(&path.join("snapshots").join("auto")),
+        "manualSnapshotCount": count_files_in_dir(&path.join("snapshots").join("manual")),
+        "protectedSnapshotCount": count_files_in_dir(&path.join("snapshots").join("protected"))
+    })
+}
+
+/// 跨平台系统原生目录选择弹窗（无需额外重型 crate）
+pub fn pick_folder_native() -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = Command::new("/usr/bin/osascript")
+            .args([
+                "-e",
+                r#"POSIX path of (choose folder with prompt "选择三尺台数据存储目录")"#,
+            ])
+            .output()
+            .map_err(|e| format!("无法打开文件夹选择器: {e}"))?;
+        if !out.status.success() {
+            // 用户取消选择时 osascript 返回非 0（-128）
+            return Ok(None);
+        }
+        let chosen = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if chosen.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(chosen.trim_end_matches('/').to_string()))
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+$dlg.Description = '选择三尺台数据存储目录'
+$dlg.ShowNewFolderButton = $true
+if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dlg.SelectedPath
+}
+"#;
+        let out = Command::new("powershell")
+            .args(["-NoProfile", "-STA", "-Command", script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("无法打开文件夹选择器: {e}"))?;
+        let chosen = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if chosen.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(chosen))
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let out = Command::new("zenity")
+            .args(["--file-selection", "--directory", "--title=选择三尺台数据存储目录"])
+            .output()
+            .or_else(|_| Command::new("kdialog").args(["--getexistingdirectory"]).output())
+            .map_err(|e| format!("无法打开文件夹选择器: {e}"))?;
+        if !out.status.success() {
+            return Ok(None);
+        }
+        let chosen = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if chosen.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(chosen))
+        }
+    }
+}
+
+/// 在系统文件管理器中打开目录或使用默认程序打开文件
+pub fn open_path_in_os(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("路径不存在: {}", path.display()));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("/usr/bin/open")
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if path.is_dir() {
+            Command::new("explorer")
+                .arg(path)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        } else {
+            Command::new("cmd")
+                .args(["/C", "start", "", &path.to_string_lossy()])
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
 /// 跨平台原子写文件（兼容 Windows：目标文件已存在时先移除再 rename）
@@ -227,12 +456,27 @@ impl LocalServerState {
         format!("http://127.0.0.1:{}", self.port)
     }
 
+    pub fn current_data_dir(&self) -> PathBuf {
+        self.data_dir
+            .read()
+            .map(|p| p.clone())
+            .unwrap_or_else(|_| self.default_data_dir.clone())
+    }
+
+    fn pointer_path(&self) -> PathBuf {
+        self.default_data_dir.join("data-dir.json")
+    }
+
     fn prefs_path(&self) -> PathBuf {
-        self.data_dir.join("launch-prefs.json")
+        self.current_data_dir().join("launch-prefs.json")
     }
 
     fn sync_data_path(&self) -> PathBuf {
-        self.data_dir.join("sync-data.json")
+        self.current_data_dir().join("sync-data.json")
+    }
+
+    fn personal_prefs_path(&self) -> PathBuf {
+        self.current_data_dir().join("preferences.json")
     }
 
     pub fn read_prefs(&self) -> LaunchPrefs {
@@ -253,7 +497,9 @@ impl LocalServerState {
 
     pub fn update_prefs(&self, patch: PrefsPatch) -> Result<LaunchPrefs, String> {
         let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
-        let mut prefs = fs::read_to_string(self.prefs_path())
+        let dir = self.current_data_dir();
+        let prefs_file = dir.join("launch-prefs.json");
+        let mut prefs = fs::read_to_string(&prefs_file)
             .ok()
             .and_then(|s| serde_json::from_str::<LaunchPrefs>(&s).ok())
             .unwrap_or_default();
@@ -273,7 +519,7 @@ impl LocalServerState {
         }
 
         let content = serde_json::to_vec_pretty(&prefs).map_err(|e| e.to_string())?;
-        atomic_write_file(&self.data_dir, &self.prefs_path(), "launch-prefs.json.tmp", &content)?;
+        atomic_write_file(&dir, &prefs_file, "launch-prefs.json.tmp", &content)?;
         Ok(prefs)
     }
 
@@ -282,8 +528,20 @@ impl LocalServerState {
         fs::read_to_string(self.sync_data_path())
             .ok()
             .and_then(|s| serde_json::from_str::<SyncEnvelope>(&s).ok())
+            .map(|mut env| {
+                if env.schema_version == 0 {
+                    env.schema_version = env
+                        .payload
+                        .get("schemaVersion")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32;
+                }
+                env
+            })
             .unwrap_or(SyncEnvelope {
                 updated_at: 0,
+                schema_version: 0,
+                app_version: String::new(),
                 payload: serde_json::Value::Null,
             })
     }
@@ -293,19 +551,252 @@ impl LocalServerState {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
+        let incoming_schema = payload
+            .get("schemaVersion")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let incoming_app_ver = payload
+            .get("app_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        let dir = self.current_data_dir();
+        let sync_path = dir.join("sync-data.json");
+
+        // 防护层 4：拒绝低版本客户端静默覆盖高版本磁盘数据
+        if incoming_schema > 0 {
+            if let Ok(existing_str) = fs::read_to_string(&sync_path) {
+                if let Ok(existing_env) = serde_json::from_str::<SyncEnvelope>(&existing_str) {
+                    let disk_schema = if existing_env.schema_version > 0 {
+                        existing_env.schema_version
+                    } else {
+                        existing_env
+                            .payload
+                            .get("schemaVersion")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as u32
+                    };
+                    if disk_schema > incoming_schema {
+                        return Err(format!(
+                            "disk_newer_schema:磁盘数据版本 (v{disk_schema}) 高于当前程序支持版本 (v{incoming_schema})，已拒绝覆盖"
+                        ));
+                    }
+                }
+            }
+        }
+
         let env = SyncEnvelope {
             updated_at: now_ms,
+            schema_version: incoming_schema,
+            app_version: incoming_app_ver,
             payload,
         };
-        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
         let bytes = serde_json::to_vec(&env).map_err(|e| e.to_string())?;
-        atomic_write_file(&self.data_dir, &self.sync_data_path(), "sync-data.json.tmp", &bytes)?;
+        atomic_write_file(&dir, &sync_path, "sync-data.json.tmp", &bytes)?;
         Ok(now_ms)
+    }
+
+    pub fn read_personal_prefs(&self) -> serde_json::Value {
+        let _guard = self.io_lock.lock().ok();
+        fs::read_to_string(self.personal_prefs_path())
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .unwrap_or(serde_json::Value::Null)
+    }
+
+    pub fn write_personal_prefs(&self, prefs: serde_json::Value) -> Result<u64, String> {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        let dir = self.current_data_dir();
+        let path = dir.join("preferences.json");
+        let envelope = serde_json::json!({
+            "updated_at": now_ms,
+            "preferences": prefs
+        });
+        let bytes = serde_json::to_vec_pretty(&envelope).map_err(|e| e.to_string())?;
+        atomic_write_file(&dir, &path, "preferences.json.tmp", &bytes)?;
+        Ok(now_ms)
+    }
+
+    pub fn write_disk_snapshot(
+        &self,
+        kind: &str,
+        key: &str,
+        shape: serde_json::Value,
+    ) -> Result<(), String> {
+        let safe_kind = sanitize_snapshot_kind(kind);
+        let safe_key = sanitize_snapshot_key(key);
+        if safe_key.is_empty() {
+            return Err("invalid snapshot key".to_string());
+        }
+        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        let snap_dir = self.current_data_dir().join("snapshots").join(safe_kind);
+        let target = snap_dir.join(format!("{safe_key}.json"));
+        let bytes = serde_json::to_vec(&shape).map_err(|e| e.to_string())?;
+        atomic_write_file(&snap_dir, &target, &format!("{safe_key}.json.tmp"), &bytes)
+    }
+
+    pub fn delete_disk_snapshot(&self, kind: &str, key: &str) -> Result<(), String> {
+        let safe_kind = sanitize_snapshot_kind(kind);
+        let safe_key = sanitize_snapshot_key(key);
+        if safe_key.is_empty() {
+            return Ok(());
+        }
+        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        let target = self
+            .current_data_dir()
+            .join("snapshots")
+            .join(safe_kind)
+            .join(format!("{safe_key}.json"));
+        if target.exists() {
+            let _ = fs::remove_file(target);
+        }
+        Ok(())
+    }
+
+    pub fn list_disk_snapshots(&self) -> Vec<serde_json::Value> {
+        let _guard = self.io_lock.lock().ok();
+        let base = self.current_data_dir().join("snapshots");
+        let mut results = Vec::new();
+        for kind in ["auto", "manual"] {
+            let dir = base.join(kind);
+            let Ok(rd) = fs::read_dir(&dir) else { continue };
+            for entry in rd.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                if let Ok(text) = fs::read_to_string(&path) {
+                    if let Ok(shape) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let ts = shape
+                            .get("exported_at")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        results.push(serde_json::json!({
+                            "key": stem,
+                            "kind": kind,
+                            "ts": ts,
+                            "shape": shape
+                        }));
+                    }
+                }
+            }
+        }
+        results
+    }
+
+    pub fn save_protected_snapshot(&self, filename: &str, base64_bytes: &str) -> Result<String, String> {
+        let safe_name = sanitize_snapshot_key(filename);
+        if safe_name.is_empty() {
+            return Err("invalid protected snapshot filename".to_string());
+        }
+        let raw = decode_base64(base64_bytes)?;
+        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        let dir = self.current_data_dir().join("snapshots").join("protected");
+        let target = dir.join(&safe_name);
+        atomic_write_file(&dir, &target, &format!("{safe_name}.tmp"), &raw)?;
+        Ok(target.to_string_lossy().to_string())
+    }
+
+    pub fn get_data_dir_info(&self) -> serde_json::Value {
+        let current = self.current_data_dir();
+        let is_custom = current != self.default_data_dir;
+        let info = inspect_data_dir(&current);
+        serde_json::json!({
+            "ok": true,
+            "currentDir": current.to_string_lossy().to_string(),
+            "defaultDir": self.default_data_dir.to_string_lossy().to_string(),
+            "isCustom": is_custom,
+            "hasSyncData": info["hasSyncData"],
+            "memberCount": info["memberCount"],
+            "autoSnapshotCount": info["autoSnapshotCount"],
+            "manualSnapshotCount": info["manualSnapshotCount"],
+            "protectedSnapshotCount": info["protectedSnapshotCount"]
+        })
+    }
+
+    pub fn change_data_dir(&self, target: PathBuf, mode: &str) -> Result<serde_json::Value, String> {
+        let _guard = self.io_lock.lock().map_err(|_| "lock poisoned".to_string())?;
+        fs::create_dir_all(&target).map_err(|e| format!("无法创建目标目录: {e}"))?;
+
+        // 可写性探测
+        let probe = target.join(".sct-write-probe.tmp");
+        fs::write(&probe, b"ok").map_err(|e| format!("目标目录不可写: {e}"))?;
+        let _ = fs::remove_file(&probe);
+
+        let old_dir = self.current_data_dir();
+        if old_dir != target && mode == "migrate" {
+            let old_canon = fs::canonicalize(&old_dir).unwrap_or_else(|_| old_dir.clone());
+            let target_canon = fs::canonicalize(&target).unwrap_or_else(|_| target.clone());
+            if target_canon.starts_with(&old_canon) && target_canon != old_canon {
+                return Err("不能将新数据目录设在当前数据目录的子文件夹内，请重新选择独立目录".to_string());
+            }
+            // 若目标目录已有旧 sync-data.json，先做一份保护备份防止误覆盖
+            let dst_sync = target.join("sync-data.json");
+            if dst_sync.is_file() {
+                let ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let protected_dir = target.join("snapshots").join("protected");
+                let _ = fs::create_dir_all(&protected_dir);
+                let _ = fs::copy(&dst_sync, protected_dir.join(format!("pre-migrate-{ts}.json")));
+            }
+            for fname in ["sync-data.json", "launch-prefs.json", "preferences.json"] {
+                let src = old_dir.join(fname);
+                if src.is_file() {
+                    fs::copy(&src, target.join(fname))
+                        .map_err(|e| format!("迁移文件 {fname} 失败: {e}"))?;
+                }
+            }
+            copy_dir_recursive(&old_dir.join("snapshots"), &target.join("snapshots"))?;
+        }
+
+        // 更新默认目录下的路径指针
+        if target == self.default_data_dir {
+            let ptr = self.pointer_path();
+            if ptr.exists() {
+                let _ = fs::remove_file(ptr);
+            }
+        } else {
+            let ptr = DataDirPointer {
+                custom_dir: target.to_string_lossy().to_string(),
+            };
+            let bytes = serde_json::to_vec_pretty(&ptr).map_err(|e| e.to_string())?;
+            atomic_write_file(
+                &self.default_data_dir,
+                &self.pointer_path(),
+                "data-dir.json.tmp",
+                &bytes,
+            )?;
+        }
+
+        if let Ok(mut w) = self.data_dir.write() {
+            *w = target.clone();
+        }
+
+        Ok(serde_json::json!({
+            "ok": true,
+            "currentDir": target.to_string_lossy().to_string(),
+            "defaultDir": self.default_data_dir.to_string_lossy().to_string(),
+            "isCustom": target != self.default_data_dir,
+            "mode": mode
+        }))
     }
 
     pub fn build_info_json(&self) -> serde_json::Value {
         let prefs = self.read_prefs();
         let browsers = detect_installed_browsers();
+        let current = self.current_data_dir();
         serde_json::json!({
             "ok": true,
             "port": self.port,
@@ -314,7 +805,10 @@ impl LocalServerState {
             "preferredBrowser": prefs.preferred_browser,
             "closeBehavior": prefs.close_behavior,
             "browsers": browsers,
-            "desktopAvailable": true
+            "desktopAvailable": true,
+            "dataDir": current.to_string_lossy().to_string(),
+            "defaultDataDir": self.default_data_dir.to_string_lossy().to_string(),
+            "isCustomDataDir": current != self.default_data_dir
         })
     }
 }
@@ -813,6 +1307,137 @@ fn handle_client(mut stream: TcpStream, app: AppHandle, state: LocalServerState)
         return;
     }
 
+    if path_only == "/__sct_api/data-dir" && method == "GET" {
+        let resp = state.get_data_dir_info();
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/data-dir/pick" && method == "POST" {
+        let resp = match pick_folder_native() {
+            Ok(Some(path_str)) => {
+                let inspected = inspect_data_dir(Path::new(&path_str));
+                serde_json::json!({ "ok": true, "cancelled": false, "info": inspected })
+            }
+            Ok(None) => serde_json::json!({ "ok": true, "cancelled": true }),
+            Err(e) => serde_json::json!({ "ok": false, "error": e }),
+        };
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/data-dir/change" && method == "POST" {
+        let resp = match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(v) => {
+                let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("migrate");
+                let target = if mode == "reset_default" {
+                    state.default_data_dir.clone()
+                } else {
+                    match v.get("targetDir").and_then(|x| x.as_str()) {
+                        Some(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
+                        _ => {
+                            let bytes = br#"{"ok":false,"error":"missing targetDir"}"#;
+                            write_http_response(&mut stream, "400 Bad Request", "application/json; charset=utf-8", bytes, cors, false);
+                            return;
+                        }
+                    }
+                };
+                let effective_mode = if mode == "load_existing" { "load_existing" } else { "migrate" };
+                match state.change_data_dir(target, effective_mode) {
+                    Ok(res) => res,
+                    Err(e) => serde_json::json!({ "ok": false, "error": e }),
+                }
+            }
+            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        };
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/data-dir/open" && method == "POST" {
+        let dir = state.current_data_dir();
+        let resp = match open_path_in_os(&dir) {
+            Ok(_) => serde_json::json!({ "ok": true }),
+            Err(e) => serde_json::json!({ "ok": false, "error": e }),
+        };
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/preferences" && method == "GET" {
+        let val = state.read_personal_prefs();
+        let bytes = serde_json::to_vec(&val).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/preferences" && method == "POST" {
+        let resp = match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(val) => match state.write_personal_prefs(val) {
+                Ok(updated_at) => serde_json::json!({ "ok": true, "updated_at": updated_at }),
+                Err(e) => serde_json::json!({ "ok": false, "error": e }),
+            },
+            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        };
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/snapshots" && method == "GET" {
+        let list = state.list_disk_snapshots();
+        let bytes = serde_json::to_vec(&serde_json::json!({ "ok": true, "items": list })).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/snapshots" && method == "POST" {
+        let resp = match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(v) => {
+                let action = v.get("action").and_then(|x| x.as_str()).unwrap_or("write");
+                let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("auto");
+                let key = v.get("key").and_then(|x| x.as_str()).unwrap_or("");
+                if action == "delete" {
+                    match state.delete_disk_snapshot(kind, key) {
+                        Ok(_) => serde_json::json!({ "ok": true }),
+                        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+                    }
+                } else {
+                    let shape = v.get("shape").cloned().unwrap_or(serde_json::Value::Null);
+                    match state.write_disk_snapshot(kind, key, shape) {
+                        Ok(_) => serde_json::json!({ "ok": true }),
+                        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+                    }
+                }
+            }
+            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        };
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
+    if path_only == "/__sct_api/protected-snapshot" && method == "POST" {
+        let resp = match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(v) => {
+                let filename = v.get("filename").and_then(|x| x.as_str()).unwrap_or("pre-update.sctpack");
+                let base64_bytes = v.get("base64").and_then(|x| x.as_str()).unwrap_or("");
+                match state.save_protected_snapshot(filename, base64_bytes) {
+                    Ok(saved) => serde_json::json!({ "ok": true, "path": saved }),
+                    Err(e) => serde_json::json!({ "ok": false, "error": e }),
+                }
+            }
+            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        };
+        let bytes = serde_json::to_vec(&resp).unwrap_or_default();
+        write_http_response(&mut stream, "200 OK", "application/json; charset=utf-8", &bytes, cors, false);
+        return;
+    }
+
     // ---------------- Static Embedded Frontend Assets ----------------
     if method != "GET" && method != "HEAD" {
         write_http_response(&mut stream, "405 Method Not Allowed", "text/plain", b"Method Not Allowed", cors, false);
@@ -849,15 +1474,24 @@ pub fn start_local_server(app: AppHandle) -> Result<LocalServerState, String> {
         .map_err(|e| e.to_string())?
         .port();
 
-    let data_dir = app
+    let default_data_dir = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from(".sanchitai-data"));
-    let _ = fs::create_dir_all(&data_dir);
+    let _ = fs::create_dir_all(&default_data_dir);
+
+    let active_data_dir = fs::read_to_string(default_data_dir.join("data-dir.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<DataDirPointer>(&s).ok())
+        .map(|p| PathBuf::from(p.custom_dir))
+        .filter(|p| p.exists() || fs::create_dir_all(p).is_ok())
+        .unwrap_or_else(|| default_data_dir.clone());
+    let _ = fs::create_dir_all(&active_data_dir);
 
     let state = LocalServerState {
         port,
-        data_dir,
+        default_data_dir,
+        data_dir: Arc::new(RwLock::new(active_data_dir)),
         io_lock: Arc::new(Mutex::new(())),
     };
 

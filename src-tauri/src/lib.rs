@@ -1,9 +1,12 @@
 mod local_server;
+mod updater;
 
 use local_server::{
-    focus_main_window, hide_or_minimize_main_window, minimize_main_window, open_system_browser,
-    start_local_server, LocalServerState, PrefsPatch, SyncEnvelope,
+    focus_main_window, hide_or_minimize_main_window, inspect_data_dir, minimize_main_window,
+    open_path_in_os, open_system_browser, pick_folder_native, start_local_server, LocalServerState,
+    PrefsPatch, SyncEnvelope,
 };
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 
@@ -87,6 +90,130 @@ fn apply_close_action(
     Ok(())
 }
 
+#[tauri::command]
+fn get_data_dir_info(state: State<'_, LocalServerState>) -> serde_json::Value {
+    state.get_data_dir_info()
+}
+
+#[tauri::command]
+async fn pick_data_dir() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| match pick_folder_native()? {
+        Some(path_str) => {
+            let inspected = inspect_data_dir(Path::new(&path_str));
+            Ok(serde_json::json!({ "ok": true, "cancelled": false, "info": inspected }))
+        }
+        None => Ok(serde_json::json!({ "ok": true, "cancelled": true })),
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn change_data_dir(
+    state: State<'_, LocalServerState>,
+    target_dir: Option<String>,
+    mode: String,
+) -> Result<serde_json::Value, String> {
+    let target = if mode == "reset_default" {
+        state.default_data_dir.clone()
+    } else {
+        let p = target_dir.unwrap_or_default();
+        if p.trim().is_empty() {
+            return Err("目标路径不能为空".to_string());
+        }
+        PathBuf::from(p.trim())
+    };
+    let effective_mode = if mode == "load_existing" {
+        "load_existing"
+    } else {
+        "migrate"
+    };
+    state.change_data_dir(target, effective_mode)
+}
+
+#[tauri::command]
+fn open_data_dir(state: State<'_, LocalServerState>) -> Result<(), String> {
+    open_path_in_os(&state.current_data_dir())
+}
+
+#[tauri::command]
+fn pull_personal_prefs(state: State<'_, LocalServerState>) -> serde_json::Value {
+    state.read_personal_prefs()
+}
+
+#[tauri::command]
+fn push_personal_prefs(
+    state: State<'_, LocalServerState>,
+    prefs: serde_json::Value,
+) -> Result<u64, String> {
+    state.write_personal_prefs(prefs)
+}
+
+#[tauri::command]
+fn write_disk_snapshot(
+    state: State<'_, LocalServerState>,
+    kind: String,
+    key: String,
+    shape: serde_json::Value,
+) -> Result<(), String> {
+    state.write_disk_snapshot(&kind, &key, shape)
+}
+
+#[tauri::command]
+fn delete_disk_snapshot(
+    state: State<'_, LocalServerState>,
+    kind: String,
+    key: String,
+) -> Result<(), String> {
+    state.delete_disk_snapshot(&kind, &key)
+}
+
+#[tauri::command]
+fn list_disk_snapshots(state: State<'_, LocalServerState>) -> Vec<serde_json::Value> {
+    state.list_disk_snapshots()
+}
+
+#[tauri::command]
+fn save_protected_snapshot(
+    state: State<'_, LocalServerState>,
+    filename: String,
+    base64: String,
+) -> Result<String, String> {
+    state.save_protected_snapshot(&filename, &base64)
+}
+
+#[tauri::command]
+async fn check_github_update(
+    current_version: String,
+    use_mirror: Option<bool>,
+) -> Result<updater::UpdateCheckResult, String> {
+    let mirror = use_mirror.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || updater::check_github_update(&current_version, mirror))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn download_update_asset(
+    app: AppHandle,
+    download_url: String,
+    asset_name: String,
+    expected_size: u64,
+    use_mirror: Option<bool>,
+) -> Result<String, String> {
+    let mirror = use_mirror.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || {
+        updater::download_update_asset(&app, &download_url, &asset_name, expected_size, mirror)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn open_downloaded_installer(file_path: String) -> Result<(), String> {
+    updater::open_downloaded_installer(&file_path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -138,7 +265,20 @@ pub fn run() {
             open_in_browser,
             focus_desktop_window,
             set_launch_prefs,
-            apply_close_action
+            apply_close_action,
+            get_data_dir_info,
+            pick_data_dir,
+            change_data_dir,
+            open_data_dir,
+            pull_personal_prefs,
+            push_personal_prefs,
+            write_disk_snapshot,
+            delete_disk_snapshot,
+            list_disk_snapshots,
+            save_protected_snapshot,
+            check_github_update,
+            download_update_asset,
+            open_downloaded_installer
         ])
         .build(tauri::generate_context!())
         .expect("error while building 三尺台");

@@ -5,7 +5,7 @@
 import dayjs from 'dayjs';
 import { formatMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import { normalizeMemberRecord } from '@/utils/member-status';
-import { db, getMeta, setMeta } from './db';
+import { db, ensureDefaultDocTemplates, getMeta, setMeta } from './db';
 import seedJson from './seed/seed-data.json';
 
 const SEED_VERSION = 'v0.2.0';
@@ -31,7 +31,10 @@ function withIdentity<T>(rows: T[]): (T & { identity: string })[] {
 /** 启动时调用：版本不符则 upsert 重播种（保留用户自增数据），打标记 */
 export async function ensureSeeded(): Promise<void> {
   const flag = await getMeta<string>(SEED_FLAG);
-  if (flag === SEED_VERSION) return;
+  if (flag === SEED_VERSION) {
+    await ensureDefaultDocTemplates();
+    return;
+  }
 
   const today = dayjs().format('YYYY-MM-DD');
   const savedBranch = await getMeta<string>('branch-name');
