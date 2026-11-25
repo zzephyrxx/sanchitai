@@ -27,26 +27,80 @@ const year = dayjs().format('YYYY');
 
 const TALK_TYPES = ['日常谈话', '思想动态', '发展节点谈话', '积极分子培养谈话', '转正征求意见'];
 
-/** 覆盖矩阵：每人今年最近一次谈话（A17） */
-const coverage = computed(() =>
-  workStore.members.map(m => {
-    const talks = workStore.talks
-      .filter(t => t.member_ids.includes(m.id) && t.date.startsWith(year))
-      .sort((a, b) => b.date.localeCompare(a.date));
-    return { member: m, talks, latest: talks[0] };
-  })
+/** 覆盖矩阵仅统计预备党员与正式党员（单次 O(T) 建索引，避免 O(M×T) 嵌套扫描） */
+const coverageFilter = ref<'all' | 'uncovered'>('all');
+const showAllCoverage = ref(false);
+const COVERAGE_INITIAL_LIMIT = 42;
+
+const partyMembersForCoverage = computed(() =>
+  workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员')
 );
 
+const latestYearTalkByMember = computed(() => {
+  const map = new Map<string, Sct.Talk>();
+  for (const t of workStore.talks) {
+    if (!t.date.startsWith(year)) continue;
+    for (const mid of t.member_ids) {
+      const prev = map.get(mid);
+      if (!prev || t.date > prev.date) {
+        map.set(mid, t);
+      }
+    }
+  }
+  return map;
+});
+
+const latestAnyTalkDateByMember = computed(() => {
+  const map = new Map<string, string>();
+  for (const t of workStore.talks) {
+    for (const mid of t.member_ids) {
+      const prev = map.get(mid);
+      if (!prev || t.date > prev) {
+        map.set(mid, t.date);
+      }
+    }
+  }
+  return map;
+});
+
+/** 覆盖矩阵：仅覆盖预备/正式党员，每人今年最近一次谈话（A17） */
+const coverage = computed(() => {
+  const idxMap = latestYearTalkByMember.value;
+  return partyMembersForCoverage.value.map(m => ({
+    member: m,
+    latest: idxMap.get(m.id)
+  }));
+});
+
+const coveredCount = computed(() => coverage.value.filter(c => Boolean(c.latest)).length);
 const uncovered = computed(() => coverage.value.filter(c => !c.latest).map(c => c.member.name));
 
-/** 未布点提醒：申请人递交 1 个月内须谈话 */
-const applicantAlert = computed(() =>
-  workStore.members
-    .filter(m => m.type === '申请人' && m.key_dates?.applied_at)
-    .filter(m => dayjs().diff(dayjs(m.key_dates!.applied_at!), 'day') <= 30)
-    .filter(m => !workStore.talks.some(t => t.member_ids.includes(m.id) && t.date >= m.key_dates!.applied_at!))
-    .map(m => `${m.name}（${m.key_dates!.applied_at} 递交申请书，1 个月内须安排谈话）`)
-);
+const visibleCoverage = computed(() => {
+  const base = coverageFilter.value === 'uncovered' ? coverage.value.filter(c => !c.latest) : coverage.value;
+  if (showAllCoverage.value || base.length <= COVERAGE_INITIAL_LIMIT) return base;
+  return base.slice(0, COVERAGE_INITIAL_LIMIT);
+});
+
+const hiddenCoverageCount = computed(() => {
+  const total = coverageFilter.value === 'uncovered' ? uncovered.value.length : coverage.value.length;
+  return Math.max(0, total - visibleCoverage.value.length);
+});
+
+/** 未布点提醒：申请人递交 1 个月内须谈话（O(M) 查表） */
+const applicantAlert = computed(() => {
+  const today = dayjs();
+  const latestMap = latestAnyTalkDateByMember.value;
+  const list: string[] = [];
+  for (const m of workStore.members) {
+    if (m.type !== '申请人' || !m.key_dates?.applied_at) continue;
+    if (today.diff(dayjs(m.key_dates.applied_at), 'day') > 30) continue;
+    const lastTalkDate = latestMap.get(m.id);
+    if (!lastTalkDate || lastTalkDate < m.key_dates.applied_at) {
+      list.push(`${m.name}（${m.key_dates.applied_at} 递交申请书，1 个月内须安排谈话）`);
+    }
+  }
+  return list;
+});
 
 // ---------------- 记录列表（支持搜索、分页、列宽拖拽、排序、图标表头） ----------------
 const searchKeyword = ref('');
@@ -213,6 +267,20 @@ function openCreate() {
   addShow.value = true;
 }
 
+/** 点击覆盖矩阵中的党员卡片：直接弹出新建谈心谈话弹窗并预填该党员 */
+function openQuickCreateForMember(member: Sct.Member) {
+  editingTalkId.value = null;
+  Object.assign(addForm, {
+    member_ids: [member.id],
+    type: '日常谈话',
+    date: dayjs().format('YYYY-MM-DD'),
+    location: '',
+    content: '',
+    follow_up: ''
+  });
+  addShow.value = true;
+}
+
 function openEdit(row: Sct.Talk) {
   editingTalkId.value = row.id;
   Object.assign(addForm, {
@@ -265,23 +333,29 @@ async function handleAdd() {
   <div class="min-h-500px">
     <NCard :bordered="false">
       <template #header>
-        <div class="flex items-center gap-12px">
+        <div class="flex flex-wrap items-center gap-12px">
           <span class="text-16px font-bold">{{ bi('谈心谈话', 'Heart-to-Heart Talks') }}</span>
           <span class="text-12px text-gray-400">
             {{
               bi(
-                `支委与党员每年 ≥1 次（条例第十九条）· ${year} 年覆盖 ${coverage.filter(c => c.latest).length}/${coverage.length}`,
-                `≥1 talk per member annually (Art. 19) · ${year} Covered ${coverage.filter(c => c.latest).length}/${coverage.length}`
+                `仅覆盖预备/正式党员（条例第十九条）· ${year} 年覆盖 ${coveredCount}/${coverage.length}`,
+                `Probationary & Full Members only (Art. 19) · ${year} Covered ${coveredCount}/${coverage.length}`
               )
             }}
           </span>
         </div>
       </template>
       <template #header-extra>
-        <NButton type="primary" size="small" @click="openCreate">
-          <template #icon><SvgIcon icon="lucide:message-square-plus" /></template>
-          {{ bi('新建谈话', 'New Talk Record') }}
-        </NButton>
+        <div class="flex items-center gap-8px">
+          <NRadioGroup v-model:value="coverageFilter" size="small">
+            <NRadioButton value="all">全部党员（{{ coverage.length }}）</NRadioButton>
+            <NRadioButton value="uncovered">未覆盖（{{ uncovered.length }}）</NRadioButton>
+          </NRadioGroup>
+          <NButton type="primary" size="small" @click="openCreate">
+            <template #icon><SvgIcon icon="lucide:message-square-plus" /></template>
+            {{ bi('新建谈话', 'New Talk Record') }}
+          </NButton>
+        </div>
       </template>
 
       <!-- 硬提醒 -->
@@ -289,19 +363,23 @@ async function handleAdd() {
         <div v-for="a in applicantAlert" :key="a">{{ a }}</div>
       </NAlert>
       <NAlert v-if="uncovered.length" type="info" class="mb-12px" :show-icon="false">
-        {{ bi(`今年未覆盖（${uncovered.length}）`, `Uncovered this year (${uncovered.length})`) }}：{{
-          uncovered.join('、')
-        }}
+        {{ bi(`今年未覆盖预备/正式党员（${uncovered.length}）`, `Uncovered party members (${uncovered.length})`) }}：{{
+          uncovered.slice(0, 30).join('、')
+        }}{{ uncovered.length > 30 ? ` 等 ${uncovered.length} 人` : '' }}
       </NAlert>
 
-      <!-- 覆盖矩阵（宽屏每行 7 人，超过 5 行（35 人）自动内部纵向滚动） -->
-      <div class="talks-coverage-wrap mb-14px" :class="{ 'talks-coverage-wrap--scroll': coverage.length > 35 }">
+      <!-- 覆盖矩阵（仅覆盖预备/正式党员，大样本下支持按需展开防卡顿） -->
+      <div class="talks-coverage-wrap mb-14px" :class="{ 'talks-coverage-wrap--scroll': visibleCoverage.length > 35 }">
         <div class="grid grid-cols-2 gap-8px sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7">
           <div
-            v-for="c in coverage"
+            v-for="c in visibleCoverage"
             :key="c.member.id"
-            class="flex items-center gap-7px rounded-8px px-8px py-7px"
+            class="group flex cursor-pointer items-center gap-7px rounded-8px border border-transparent px-8px py-7px transition hover:border-[#A81C24] hover:shadow-xs"
             :style="{ background: c.latest ? 'var(--sct-ok-soft)' : 'var(--sct-soft)' }"
+            :title="
+              bi(`点击为「${c.member.name}」新建谈心谈话记录`, `Click to record a new talk with ${c.member.name}`)
+            "
+            @click="openQuickCreateForMember(c.member)"
           >
             <IconSolarUserRoundedBoldDuotone
               class="shrink-0 text-20px"
@@ -309,31 +387,32 @@ async function handleAdd() {
             />
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-4px">
-                <span class="truncate text-13px font-bold">{{ c.member.name }}</span>
+                <span class="truncate text-13px font-bold group-hover:text-[#A81C24]">{{ c.member.name }}</span>
                 <span
                   class="inline-flex shrink-0 items-center gap-2px text-11px font-medium"
                   :style="{ color: c.latest ? '#3f9d63' : '#8a8f99' }"
-                  :title="
-                    c.latest
-                      ? bi('今年已覆盖谈心谈话', 'Covered this year')
-                      : bi('今年尚未覆盖谈心谈话', 'Not covered yet')
-                  "
                 >
                   <SvgIcon
-                    :icon="c.latest ? 'lucide:message-circle-check' : 'lucide:message-circle-dashed'"
+                    :icon="c.latest ? 'lucide:message-circle-check' : 'lucide:message-circle-plus'"
                     class="text-13px"
                   />
-                  <span>{{ c.latest ? bi('已覆盖', 'Done') : bi('未覆盖', 'None') }}</span>
+                  <span class="group-hover:hidden">{{ c.latest ? bi('已覆盖', 'Done') : bi('未覆盖', 'None') }}</span>
+                  <span class="hidden text-[#A81C24] font-bold group-hover:inline">{{ bi('+谈话', '+Talk') }}</span>
                 </span>
               </div>
               <div
                 class="mt-2px truncate text-11px text-gray-500"
                 :title="c.latest ? `${c.latest.date} · ${c.latest.type}` : ''"
               >
-                {{ c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('今年未谈话', 'No talk yet') }}
+                {{ c.latest ? `${c.latest.date} · ${c.latest.type}` : bi('点击登记谈话', 'Click to add talk') }}
               </div>
             </div>
           </div>
+        </div>
+        <div v-if="hiddenCoverageCount > 0" class="mt-8px flex justify-center">
+          <NButton size="tiny" dashed @click="showAllCoverage = true">
+            展开其余 {{ hiddenCoverageCount }} 名党员
+          </NButton>
         </div>
       </div>
 

@@ -3,6 +3,7 @@ import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { FEE_STANDARD, MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 import { saveFileWithPicker } from '@/utils/save-file';
+import { useThemeStore } from '@/store/modules/theme';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import { db } from '@/db/db';
@@ -10,6 +11,7 @@ import { db } from '@/db/db';
 defineOptions({ name: 'FeesPage' });
 
 const workStore = useWorkDataStore();
+const themeStore = useThemeStore();
 const { bi, tFeeStatus, tFeeCategory } = useSctI18n();
 
 /** 缴费人员：正式+预备党员（党费名单来源随类型自动同步，A13 联动） */
@@ -56,6 +58,12 @@ const months = computed(() => {
   const arr: string[] = [];
   for (let i = 5; i >= 0; i -= 1) arr.push(dayjs().subtract(i, 'month').format('YYYY-MM'));
   return arr;
+});
+
+/** 全局字号缩放增强系数（对党费表格放大/缩小响应额外增强 ~10%） */
+const tableScaleBoost = computed(() => {
+  const raw = Math.min(150, Math.max(85, themeStore.fontConfig?.scale ?? 100)) / 100;
+  return raw === 1 ? 1 : Number((1 + (raw - 1) * 1.1).toFixed(3));
 });
 
 // ---------------- 党费表列顺序与列宽记忆 + 重置 ----------------
@@ -120,9 +128,10 @@ function resetFeeLayout() {
 }
 
 function defaultFeeColWidth(colKey: string): number {
-  if (colKey === 'name') return 148;
-  if (colKey === 'standard') return 166;
-  return 112;
+  const factor = tableScaleBoost.value;
+  if (colKey === 'name') return Math.round(154 * factor);
+  if (colKey === 'standard') return Math.round(176 * factor);
+  return Math.round(126 * factor);
 }
 
 function feeColStyle(colKey: string) {
@@ -138,7 +147,7 @@ function startFeeColResize(e: MouseEvent, colKey: string) {
 
   const thEl = (e.currentTarget as HTMLElement | null)?.closest('th');
   const measured = thEl ? Math.round(thEl.getBoundingClientRect().width) : defaultFeeColWidth(colKey);
-  const startW = Math.max(72, feeColWidths.value[colKey] ?? measured);
+  const startW = Math.max(80, feeColWidths.value[colKey] ?? measured);
   const startX = e.clientX;
   feeResizingCol.value = colKey;
   feeColWidths.value = { ...feeColWidths.value, [colKey]: startW };
@@ -149,7 +158,7 @@ function startFeeColResize(e: MouseEvent, colKey: string) {
   document.body.style.userSelect = 'none';
 
   const onMove = (ev: MouseEvent) => {
-    const nextW = Math.max(72, Math.min(480, Math.round(startW + (ev.clientX - startX))));
+    const nextW = Math.max(80, Math.min(520, Math.round(startW + (ev.clientX - startX))));
     feeColWidths.value = { ...feeColWidths.value, [colKey]: nextW };
   };
   const onUp = () => cleanup();
@@ -245,7 +254,132 @@ async function generateMonth() {
   );
 }
 
-// ---------------- 单元格下拉/浮层编辑（告别误触点击即切换） ----------------
+// ---------------- 混合批量标记已缴（工具栏弹窗 + 表头单月全员已缴快捷入口） ----------------
+const batchPaidModalShow = ref(false);
+const batchPaidMonth = ref(currentMonth);
+const batchPaidDate = ref<string>(dayjs().format('YYYY-MM-DD'));
+const batchPaidSearch = ref('');
+const batchPaidCheckedIds = ref<string[]>([]);
+const batchPaidSaving = ref(false);
+
+interface BatchMemberRow {
+  member: Sct.Member;
+  currentStatus: Sct.FeeStatus | '未生成';
+  amount: number;
+  needsPayment: boolean;
+}
+
+const batchMonthRows = computed<BatchMemberRow[]>(() => {
+  const ym = batchPaidMonth.value;
+  return feeMembers.value.map(m => {
+    const rec = cellOf(m.id, ym);
+    const status: Sct.FeeStatus | '未生成' = rec?.status ?? '未生成';
+    const amount = rec ? rec.amount : workStore.memberMonthlyFee(m);
+    const needsPayment = status === '欠缴' || status === '未生成';
+    return { member: m, currentStatus: status, amount, needsPayment };
+  });
+});
+
+const filteredBatchMonthRows = computed(() => {
+  const kw = batchPaidSearch.value.trim().toLowerCase();
+  if (!kw) return batchMonthRows.value;
+  return batchMonthRows.value.filter(r =>
+    [r.member.name, r.member.code, r.member.group, r.currentStatus]
+      .filter(Boolean)
+      .some(v => String(v).toLowerCase().includes(kw))
+  );
+});
+
+function preselectUnpaidForBatch() {
+  batchPaidCheckedIds.value = batchMonthRows.value.filter(r => r.needsPayment).map(r => r.member.id);
+}
+
+function openBatchPaidModal(targetYm?: string) {
+  batchPaidMonth.value = targetYm || currentMonth;
+  batchPaidDate.value = dayjs().format('YYYY-MM-DD');
+  batchPaidSearch.value = '';
+  preselectUnpaidForBatch();
+  batchPaidModalShow.value = true;
+}
+
+watch(batchPaidMonth, () => {
+  if (batchPaidModalShow.value) {
+    preselectUnpaidForBatch();
+  }
+});
+
+const batchSelectedTotalAmount = computed(() => {
+  const idSet = new Set(batchPaidCheckedIds.value);
+  return batchMonthRows.value
+    .filter(r => idSet.has(r.member.id))
+    .reduce((sum, r) => sum + r.amount, 0)
+    .toFixed(1);
+});
+
+async function confirmBatchMarkPaid() {
+  const idSet = new Set(batchPaidCheckedIds.value);
+  const targets = batchMonthRows.value.filter(r => idSet.has(r.member.id));
+  if (!targets.length) {
+    window.$message?.warning('请至少勾选一位需要设为已缴的党员');
+    return;
+  }
+  batchPaidSaving.value = true;
+  try {
+    const paidDate = batchPaidDate.value || dayjs().format('YYYY-MM-DD');
+    const records: Sct.FeeRecord[] = targets.map(r => ({
+      member_id: r.member.id,
+      year_month: batchPaidMonth.value,
+      amount: r.amount,
+      status: '已缴',
+      paid_date: paidDate,
+      identity: 'secretary'
+    }));
+    await db.feeRecords.bulkPut(records);
+    batchPaidModalShow.value = false;
+    window.$message?.success(
+      `已将 ${batchPaidMonth.value} 的 ${records.length} 名党员批量设为「已缴」（合计 ¥${batchSelectedTotalAmount.value}）`
+    );
+  } finally {
+    batchPaidSaving.value = false;
+  }
+}
+
+/** 统计指定月份待缴（欠缴 + 未生成）人数 */
+function unpaidCountOfMonth(ym: string): number {
+  let cnt = 0;
+  for (const m of feeMembers.value) {
+    const st = cellOf(m.id, ym)?.status;
+    if (!st || st === '欠缴') cnt += 1;
+  }
+  return cnt;
+}
+
+/** 表头快捷操作：将某月所有欠缴/未生成人员一键设为已缴 */
+async function markWholeMonthPaid(ym: string) {
+  const today = dayjs().format('YYYY-MM-DD');
+  const rows: Sct.FeeRecord[] = [];
+  for (const m of feeMembers.value) {
+    const cur = cellOf(m.id, ym);
+    if (!cur || cur.status === '欠缴') {
+      rows.push({
+        member_id: m.id,
+        year_month: ym,
+        amount: cur ? cur.amount : workStore.memberMonthlyFee(m),
+        status: '已缴',
+        paid_date: today,
+        identity: 'secretary'
+      });
+    }
+  }
+  if (!rows.length) {
+    window.$message?.info(`${ym} 暂无欠缴或未生成人员`);
+    return;
+  }
+  await db.feeRecords.bulkPut(rows);
+  window.$message?.success(`已将 ${ym} 其余 ${rows.length} 名党员一键设为「已缴」`);
+}
+
+// ---------------- 共享单元格编辑弹窗（替换每格独立 Popover，大幅提升 500 人性能） ----------------
 const STATUS_OPTIONS: Array<{ label: string; value: Sct.FeeStatus; color: string }> = [
   { label: '已缴', value: '已缴', color: '#3f9d63' },
   { label: '欠缴', value: '欠缴', color: '#d43030' },
@@ -258,7 +392,7 @@ const FEE_CATEGORY_OPTIONS: Array<{ label: string; value: Sct.FeeCategory }> = [
   { label: '在职党员（自定义金额）', value: '在职党员' }
 ];
 
-const activeCellKey = ref<string | null>(null);
+const cellModalShow = ref(false);
 const cellDraft = reactive<{
   memberId: string;
   memberName: string;
@@ -266,6 +400,7 @@ const cellDraft = reactive<{
   status: Sct.FeeStatus;
   amount: number;
   feeCategory: Sct.FeeCategory;
+  paidDate: string;
   syncMemberStandard: boolean;
 }>({
   memberId: '',
@@ -274,10 +409,11 @@ const cellDraft = reactive<{
   status: '已缴',
   amount: FEE_STANDARD.studentMonthly,
   feeCategory: '学生党员',
+  paidDate: dayjs().format('YYYY-MM-DD'),
   syncMemberStandard: false
 });
 
-function openCellPopover(member: Sct.Member, ym: string) {
+function openCellEditor(member: Sct.Member, ym: string) {
   const cur = cellOf(member.id, ym);
   const stdAmount = workStore.memberMonthlyFee(member);
   cellDraft.memberId = member.id;
@@ -286,8 +422,9 @@ function openCellPopover(member: Sct.Member, ym: string) {
   cellDraft.status = cur?.status ?? '已缴';
   cellDraft.amount = cur ? cur.amount : stdAmount;
   cellDraft.feeCategory = member.fee_category ?? (stdAmount > FEE_STANDARD.studentMonthly ? '在职党员' : '学生党员');
+  cellDraft.paidDate = cur?.paid_date || dayjs().format('YYYY-MM-DD');
   cellDraft.syncMemberStandard = false;
-  activeCellKey.value = `${member.id}|${ym}`;
+  cellModalShow.value = true;
 }
 
 function onCellCategoryChange(cat: Sct.FeeCategory) {
@@ -312,7 +449,7 @@ async function saveCellEdit() {
     year_month: cellDraft.ym,
     amount,
     status: cellDraft.status,
-    paid_date: cellDraft.status === '已缴' ? dayjs().format('YYYY-MM-DD') : undefined,
+    paid_date: cellDraft.status === '已缴' ? cellDraft.paidDate || dayjs().format('YYYY-MM-DD') : undefined,
     identity: 'secretary'
   });
 
@@ -325,7 +462,7 @@ async function saveCellEdit() {
     });
   }
 
-  activeCellKey.value = null;
+  cellModalShow.value = false;
   window.$message?.success(`已更新 ${cellDraft.memberName}（${cellDraft.ym}）党费状态为「${cellDraft.status}」`);
 }
 
@@ -462,10 +599,16 @@ function feeColor(status?: Sct.FeeStatus): string {
   }
 }
 
-const owedBadges = computed(() => {
-  const map: Record<string, boolean> = {};
-  workStore.feeRecords.filter(f => f.status === '欠缴').forEach(f => (map[f.member_id] = true));
-  return map;
+const owedMemberNames = computed(() => {
+  const owedSet = new Set<string>();
+  for (const f of workStore.feeRecords) {
+    if (f.status === '欠缴') owedSet.add(f.member_id);
+  }
+  const names: string[] = [];
+  for (const m of feeMembers.value) {
+    if (owedSet.has(m.id)) names.push(m.name);
+  }
+  return names;
 });
 </script>
 
@@ -486,10 +629,14 @@ const owedBadges = computed(() => {
         </div>
       </template>
       <template #header-extra>
-        <div class="flex items-center gap-8px">
+        <div class="flex flex-wrap items-center gap-8px">
           <NButton size="small" secondary @click="exportMatrix">
             <template #icon><SvgIcon icon="lucide:download" /></template>
             {{ bi('导出逐月矩阵', 'Export Matrix CSV') }}
+          </NButton>
+          <NButton size="small" type="success" secondary @click="openBatchPaidModal()">
+            <template #icon><SvgIcon icon="lucide:check-check" /></template>
+            {{ bi('批量标记已缴', 'Batch Mark Paid') }}
           </NButton>
           <NButton type="primary" size="small" @click="generateMonth">
             <template #icon><SvgIcon icon="lucide:user-check" /></template>
@@ -526,15 +673,15 @@ const owedBadges = computed(() => {
         </div>
       </div>
 
-      <!-- 搜索与提示栏 -->
+      <!-- 搜索与提示栏（搜索框加宽至 290px 确保完整显示占位文字） -->
       <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
-        <div class="flex flex-nowrap items-center gap-8px">
-          <div class="w-210px shrink-0">
+        <div class="flex flex-wrap items-center gap-8px">
+          <div class="fee-search-box shrink-0">
             <NInput
               v-model:value="searchKeyword"
               size="small"
               clearable
-              :placeholder="bi('搜索党员姓名、编号、类别…', 'Search member name, code…')"
+              :placeholder="bi('搜索党员姓名、编号、类别或党小组…', 'Search member name, code, category…')"
             >
               <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
             </NInput>
@@ -547,14 +694,14 @@ const owedBadges = computed(() => {
         <span class="text-12px text-gray-400">
           {{
             bi(
-              '拖拽表头可调列顺序 · 拖右侧边线可调列宽（自动记忆） · 点击单元格改缴费状态',
-              'Drag headers to reorder · Drag edge to resize · Click cell to edit status'
+              '拖拽表头调列顺序 · 拖边线调列宽 · 月份表头支持「全员已缴」快捷操作',
+              'Drag headers to reorder · Resize edges · Quick mark-all-paid on month headers'
             )
           }}
         </span>
       </div>
 
-      <!-- 人×月矩阵（支持列顺序拖拽 + 列宽调整 + 记忆） -->
+      <!-- 人×月矩阵（支持列顺序拖拽 + 列宽调整 + 记忆 + 月表头一键全员已缴） -->
       <div class="fee-matrix">
         <table>
           <thead>
@@ -579,7 +726,7 @@ const owedBadges = computed(() => {
                   feeDragOverCol = null;
                 "
               >
-                <span class="inline-flex cursor-grab items-center gap-4px select-none">
+                <div class="inline-flex items-center justify-center gap-4px select-none">
                   <template v-if="colKey === 'name'">
                     <SvgIcon icon="lucide:user" class="text-13px opacity-80" />
                     <span>{{ bi('姓名', 'Name') }}</span>
@@ -591,8 +738,22 @@ const owedBadges = computed(() => {
                   <template v-else>
                     <SvgIcon icon="lucide:calendar" class="text-12px opacity-75" />
                     <span>{{ colKey }}</span>
+                    <NPopconfirm v-if="unpaidCountOfMonth(colKey) > 0" @positive-click="markWholeMonthPaid(colKey)">
+                      <template #trigger>
+                        <button
+                          type="button"
+                          class="fee-th__quick"
+                          :class="colKey === currentMonth ? 'fee-th__quick--dark' : ''"
+                          :title="`将 ${colKey} 全部未缴人员一键设为已缴`"
+                          @click.stop
+                        >
+                          <SvgIcon icon="lucide:check-check" class="text-12px" />
+                        </button>
+                      </template>
+                      确认将 {{ colKey }} 尚待缴费的 {{ unpaidCountOfMonth(colKey) }} 名党员全部设为「已缴」？
+                    </NPopconfirm>
                   </template>
-                </span>
+                </div>
                 <span
                   class="sct-col-resizer"
                   :class="{ 'sct-col-resizer--active': feeResizingCol === colKey }"
@@ -621,7 +782,7 @@ const owedBadges = computed(() => {
                 <td v-else-if="colKey === 'standard'" class="fee-td" :style="feeColStyle(colKey)">
                   <button
                     type="button"
-                    class="inline-flex items-center gap-5px rounded-6px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-8px py-3px text-12px transition hover:border-[#A81C24]"
+                    class="fee-std-btn inline-flex items-center gap-5px rounded-6px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-8px py-3px transition hover:border-[#A81C24]"
                     :title="bi('点击设置该党员的党费类别与月应缴标准', 'Click to set dues category & monthly rate')"
                     @click="openStandardModal(m)"
                   >
@@ -640,84 +801,15 @@ const owedBadges = computed(() => {
                   :class="{ 'fee-cell--cur': colKey === currentMonth }"
                   :style="feeColStyle(colKey)"
                 >
-                  <NPopover
-                    :show="activeCellKey === `${m.id}|${colKey}`"
-                    trigger="click"
-                    placement="bottom"
-                    :show-arrow="true"
-                    @update:show="v => (activeCellKey = v ? `${m.id}|${colKey}` : null)"
+                  <button
+                    type="button"
+                    class="fee-cell__btn"
+                    :style="{ color: feeColor(cellOf(m.id, colKey)?.status) }"
+                    @click="openCellEditor(m, colKey)"
                   >
-                    <template #trigger>
-                      <button
-                        type="button"
-                        class="fee-cell__btn"
-                        :style="{ color: feeColor(cellOf(m.id, colKey)?.status) }"
-                        @click="openCellPopover(m, colKey)"
-                      >
-                        <span>{{ feeCellText(m.id, colKey) }}</span>
-                        <SvgIcon icon="lucide:chevron-down" class="fee-cell__chevron text-11px opacity-45" />
-                      </button>
-                    </template>
-
-                    <div class="w-260px p-4px">
-                      <div class="mb-8px flex items-center justify-between border-b border-[var(--sct-border)] pb-6px">
-                        <span class="text-13px font-bold text-[var(--sct-ink)]">{{ m.name }} · {{ colKey }}</span>
-                        <NTag size="tiny" :bordered="false">{{ m.fee_category ?? '学生党员' }}</NTag>
-                      </div>
-
-                      <div class="flex flex-col gap-10px">
-                        <div>
-                          <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
-                            <SvgIcon icon="lucide:check-circle-2" class="text-12px text-[#A81C24]" />
-                            <span>缴费状态</span>
-                          </div>
-                          <NSelect v-model:value="cellDraft.status" :options="STATUS_OPTIONS" size="small" />
-                        </div>
-
-                        <div>
-                          <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
-                            <SvgIcon icon="lucide:wallet" class="text-12px text-[#A81C24]" />
-                            <span>党费类别</span>
-                          </div>
-                          <NSelect
-                            :value="cellDraft.feeCategory"
-                            :options="FEE_CATEGORY_OPTIONS"
-                            size="small"
-                            @update:value="onCellCategoryChange"
-                          />
-                        </div>
-
-                        <div>
-                          <div class="mb-4px flex items-center gap-4px text-11px font-semibold text-gray-500">
-                            <SvgIcon icon="lucide:coins" class="text-12px text-[#A81C24]" />
-                            <span>本月金额（元，支持自定义）</span>
-                          </div>
-                          <NInputNumber
-                            v-model:value="cellDraft.amount"
-                            size="small"
-                            :min="0"
-                            :step="0.5"
-                            :precision="1"
-                            class="w-full"
-                          >
-                            <template #suffix>元</template>
-                          </NInputNumber>
-                        </div>
-
-                        <NCheckbox v-model:checked="cellDraft.syncMemberStandard" size="small">
-                          <span class="text-11px text-gray-500">同步设为该党员默认月应缴标准</span>
-                        </NCheckbox>
-
-                        <div class="flex justify-end gap-6px pt-2px">
-                          <NButton size="tiny" @click="activeCellKey = null">取消</NButton>
-                          <NButton size="tiny" type="primary" @click="saveCellEdit">
-                            <template #icon><SvgIcon icon="lucide:check" /></template>
-                            确定
-                          </NButton>
-                        </div>
-                      </div>
-                    </div>
-                  </NPopover>
+                    <span>{{ feeCellText(m.id, colKey) }}</span>
+                    <SvgIcon icon="lucide:chevron-down" class="fee-cell__chevron text-11px opacity-45" />
+                  </button>
                 </td>
               </template>
             </tr>
@@ -726,12 +818,9 @@ const owedBadges = computed(() => {
       </div>
       <div class="mt-12px flex flex-wrap items-center justify-between gap-10px">
         <div class="text-12px text-gray-400">
-          全期欠缴人员（含历史月份，共 {{ Object.keys(owedBadges).length }} 人）：{{
-            feeMembers
-              .filter(m => owedBadges[m.id])
-              .map(m => m.name)
-              .join('、') || '无'
-          }}
+          全期欠缴人员（含历史月份，共 {{ owedMemberNames.length }} 人）：{{
+            owedMemberNames.slice(0, 30).join('、') || '无'
+          }}{{ owedMemberNames.length > 30 ? ` 等 ${owedMemberNames.length} 人` : '' }}
         </div>
         <NPagination
           v-model:page="feePagination.page"
@@ -747,6 +836,150 @@ const owedBadges = computed(() => {
         </NPagination>
       </div>
     </NCard>
+
+    <!-- 共享单元格党费状态编辑弹窗 -->
+    <NModal
+      v-model:show="cellModalShow"
+      preset="card"
+      :title="`修改缴费状态：${cellDraft.memberName} · ${cellDraft.ym}`"
+      class="w-420px"
+    >
+      <NForm label-placement="left" label-width="96" size="small">
+        <NFormItem label="缴费状态" required>
+          <NSelect v-model:value="cellDraft.status" :options="STATUS_OPTIONS" />
+        </NFormItem>
+        <NFormItem v-if="cellDraft.status === '已缴'" label="实缴日期">
+          <NDatePicker
+            v-model:formatted-value="cellDraft.paidDate"
+            type="date"
+            value-format="yyyy-MM-dd"
+            class="w-full"
+          />
+        </NFormItem>
+        <NFormItem label="党费类别">
+          <NSelect
+            :value="cellDraft.feeCategory"
+            :options="FEE_CATEGORY_OPTIONS"
+            @update:value="onCellCategoryChange"
+          />
+        </NFormItem>
+        <NFormItem label="本月金额">
+          <NInputNumber v-model:value="cellDraft.amount" :min="0" :step="0.5" :precision="1" class="w-full">
+            <template #suffix>元</template>
+          </NInputNumber>
+        </NFormItem>
+        <NFormItem label="同步标准">
+          <NCheckbox v-model:checked="cellDraft.syncMemberStandard">同步设为该党员默认月应缴标准</NCheckbox>
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="cellModalShow = false">取消</NButton>
+          <NButton size="small" type="primary" @click="saveCellEdit">
+            <template #icon><SvgIcon icon="lucide:check" /></template>
+            确认保存
+          </NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <!-- 批量标记党费已缴弹窗 -->
+    <NModal
+      v-model:show="batchPaidModalShow"
+      preset="card"
+      title="批量设置党费已缴"
+      class="w-600px"
+      :mask-closable="false"
+    >
+      <div class="flex flex-col gap-12px">
+        <div class="grid grid-cols-1 gap-10px sm:grid-cols-2">
+          <div>
+            <div class="mb-4px text-12px font-semibold text-gray-500">选择月份</div>
+            <NSelect
+              v-model:value="batchPaidMonth"
+              size="small"
+              :options="months.map(m => ({ label: `${m}（待缴 ${unpaidCountOfMonth(m)} 人）`, value: m }))"
+            />
+          </div>
+          <div>
+            <div class="mb-4px text-12px font-semibold text-gray-500">统一实缴日期</div>
+            <NDatePicker
+              v-model:formatted-value="batchPaidDate"
+              type="date"
+              value-format="yyyy-MM-dd"
+              size="small"
+              class="w-full"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-8px">
+          <div class="w-240px">
+            <NInput v-model:value="batchPaidSearch" size="small" clearable placeholder="筛选姓名、编号或党小组…">
+              <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+            </NInput>
+          </div>
+          <div class="flex items-center gap-6px">
+            <NButton size="tiny" secondary @click="preselectUnpaidForBatch">勾选未缴/未生成</NButton>
+            <NButton size="tiny" secondary @click="batchPaidCheckedIds = batchMonthRows.map(r => r.member.id)">
+              全选
+            </NButton>
+            <NButton size="tiny" quaternary @click="batchPaidCheckedIds = []">清空</NButton>
+          </div>
+        </div>
+
+        <NCheckboxGroup
+          v-model:value="batchPaidCheckedIds"
+          class="max-h-320px flex flex-col gap-6px overflow-y-auto rounded-8px border border-[var(--sct-border)] p-8px"
+        >
+          <div
+            v-for="row in filteredBatchMonthRows"
+            :key="row.member.id"
+            class="flex items-center justify-between gap-8px rounded-6px px-8px py-5px transition hover:bg-[var(--sct-soft)]"
+          >
+            <div class="flex items-center gap-8px">
+              <NCheckbox :value="row.member.id" />
+              <span class="text-13px font-medium text-[var(--sct-ink)]">{{ row.member.name }}</span>
+              <span v-if="row.member.group" class="text-11px text-gray-400">{{ row.member.group }}</span>
+            </div>
+            <div class="flex items-center gap-8px">
+              <span class="font-mono text-12px font-semibold">¥{{ row.amount.toFixed(1) }}</span>
+              <NTag
+                size="tiny"
+                :bordered="false"
+                :type="row.currentStatus === '已缴' ? 'success' : row.currentStatus === '欠缴' ? 'error' : 'default'"
+              >
+                {{ row.currentStatus }}
+              </NTag>
+            </div>
+          </div>
+        </NCheckboxGroup>
+      </div>
+
+      <template #footer>
+        <div class="flex items-center justify-between">
+          <span class="text-12px text-gray-500">
+            已勾选
+            <strong>{{ batchPaidCheckedIds.length }}</strong>
+            人 · 合计
+            <strong class="text-[#16a34a]">¥{{ batchSelectedTotalAmount }}</strong>
+          </span>
+          <div class="flex gap-8px">
+            <NButton size="small" @click="batchPaidModalShow = false">取消</NButton>
+            <NButton
+              size="small"
+              type="primary"
+              :loading="batchPaidSaving"
+              :disabled="!batchPaidCheckedIds.length"
+              @click="confirmBatchMarkPaid"
+            >
+              <template #icon><SvgIcon icon="lucide:check-check" /></template>
+              确认批量设为已缴
+            </NButton>
+          </div>
+        </div>
+      </template>
+    </NModal>
 
     <!-- 修改党员党费标准弹窗（与人员信息表双向同步） -->
     <NModal v-model:show="stdModalShow" preset="card" :title="`设置党费标准：${stdForm.memberName}`" class="w-460px">
@@ -797,6 +1030,9 @@ const owedBadges = computed(() => {
 </template>
 
 <style scoped>
+.fee-search-box {
+  width: clamp(270px, calc(285px * var(--sct-font-scale-boost, 1)), 420px);
+}
 .fee-matrix {
   overflow-x: auto;
 }
@@ -807,8 +1043,8 @@ const owedBadges = computed(() => {
   border-collapse: collapse;
 }
 .fee-th {
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: calc(8px * var(--sct-density-scale, 1)) calc(10px * var(--sct-density-scale, 1));
+  font-size: calc(12.5px * var(--sct-font-scale-boost, 1));
   font-weight: 600;
   color: var(--sct-muted);
   background: var(--sct-soft);
@@ -820,9 +1056,28 @@ const owedBadges = computed(() => {
   background: #2b2926;
   color: #fff;
 }
+.fee-th__quick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 3px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.fee-th__quick:hover {
+  background: rgba(22, 163, 74, 0.24);
+}
+.fee-th__quick--dark {
+  color: #86efac;
+  background: rgba(134, 239, 172, 0.16);
+}
 .fee-td {
-  padding: 5px 8px;
-  font-size: 13px;
+  padding: calc(6px * var(--sct-density-scale, 1)) calc(8px * var(--sct-density-scale, 1));
+  font-size: calc(13.5px * var(--sct-font-scale-boost, 1));
   border: 1px solid var(--sct-border);
   text-align: center;
 }
@@ -831,8 +1086,11 @@ const owedBadges = computed(() => {
   color: var(--sct-ink);
   white-space: nowrap;
 }
+.fee-std-btn {
+  font-size: calc(12.5px * var(--sct-font-scale-boost, 1));
+}
 .fee-cell {
-  padding: 3px 4px;
+  padding: calc(3px * var(--sct-density-scale, 1)) 4px;
 }
 .fee-cell--cur {
   background: rgba(168, 28, 36, 0.04);
@@ -843,10 +1101,10 @@ const owedBadges = computed(() => {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 4px 8px;
+  padding: calc(5px * var(--sct-density-scale, 1)) 8px;
   border-radius: 6px;
   font-weight: 600;
-  font-size: 12px;
+  font-size: calc(12.5px * var(--sct-font-scale-boost, 1));
   background: transparent;
   transition: background-color 0.15s ease;
 }

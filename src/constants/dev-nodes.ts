@@ -19,31 +19,241 @@ export interface DevNodeDef {
 }
 
 export const DEV_NODES: DevNodeDef[] = [
-  { no: '1', stage: '申请人', node: '递交入党申请书', materials: ['入党申请书（本人手写）'], obj: '年满18周岁的中国公民，承认党的纲领和章程，愿意参加党的组织并积极工作', req: '本人自愿递交；一般应亲自书写', note: '申请书内容包括对党的认识、入党动机、本人经历等' },
-  { no: '2', stage: '申请人', node: '党组织派人谈话', materials: ['入党申请谈话通知书', '入党申请人谈话记录'], obj: '入党申请人', req: '收到申请书后1个月内派人谈话', note: '谈话记录存档；介绍党的基本知识，提出希望与要求', deadline: '收到申请书后 1 个月内' },
-  { no: '3', stage: '入党积极分子', node: '推荐并确定入党积极分子', materials: ['党员推荐/群团组织推优材料', '支委会（或支部大会）记录'], obj: '已递交申请书且符合条件的申请人', req: '采取党员推荐、群团组织推优等方式产生人选', note: '由支部委员会（不设支委会的由支部大会）研究决定' },
-  { no: '4', stage: '入党积极分子', node: '上级党委备案', materials: ['积极分子备案表', '本人简历及家庭主要成员情况'], obj: '新确定的入党积极分子', req: '确定后及时报上级党委备案', note: '备案后方可列为积极分子；档案材料同步报送' },
-  { no: '5', stage: '入党积极分子', node: '指定培养联系人', materials: ['培养联系人指定记录（1-2 名正式党员）'], obj: '入党积极分子', req: '指定1-2名正式党员作培养联系人', note: '培养联系人负责帮助教育、考察了解、提出建议' },
-  { no: '6', stage: '入党积极分子', node: '培养教育考察', materials: ['入党积极分子考察登记表（每半年一次）', '思想汇报（每季度）', '校级党课结业证书'], obj: '入党积极分子', req: '考察期1年以上，每半年考察一次；每季度交思想汇报', note: '考察不合格的及时调整；参加校级党课学习并取得结业', deadline: '考察期 1 年以上' },
-  { no: '7', stage: '发展对象', node: '确定发展对象', materials: ['征求意见记录', '确定为发展对象公示', '支委会讨论记录'], obj: '经过1年以上培养考察的积极分子', req: '听取培养联系人、党员和群众意见的基础上确定', note: '公示（一般5个工作日）后由支委会讨论确定' },
-  { no: '8', stage: '发展对象', node: '报上级党委备案', materials: ['发展对象备案报告', '确定为发展对象批复'], obj: '拟确定的发展对象', req: '报上级党委备案', note: '备案同意后方可进入发展对象环节；未备案不得发展' },
-  { no: '9', stage: '发展对象', node: '确定入党介绍人', materials: ['入党介绍人指定记录（2 名正式党员）'], obj: '发展对象', req: '确定2名正式党员作入党介绍人', note: '一般由培养联系人担任；介绍人负责指导填写志愿书、如实反映情况' },
-  { no: '10', stage: '发展对象', node: '政治审查', materials: ['综合性政审报告', '函调/外调材料', '个人自传', '与本人谈话记录'], obj: '发展对象', req: '必须严格政治审查，未政审或政审不合格不得发展', note: '形成政审综合报告；函调/外调、自传、谈话记录齐全', deadline: '未政审或政审不合格不得发展' },
-  { no: '11', stage: '发展对象', node: '短期集中培训', materials: ['培训通知/名单/考勤', '结业证书'], obj: '发展对象', req: '集中培训不少于3天（或24学时）', note: '未经培训（特殊情况除外）不能发展；考核合格取得结业', deadline: '不少于 3 天（或 24 学时）' },
-  { no: '12', stage: '发展对象', node: '发展对象考核四件套', materials: ['集中考试', '志愿时长核验', '谈心谈话', '个人答辩'], obj: '发展对象', req: '考试+志愿时长+谈话+答辩四件套', note: '学院统一组织，成绩作为发展依据之一' },
-  { no: '13', stage: '发展对象', node: '支委会拟接收审查+党委预审', materials: ['支委会拟接收预备党员审查会议记录', '党委预审批复'], obj: '政审合格的发展对象', req: '支委会审查后报上级党委预审', note: '预审通过方可领取《入党志愿书》' },
-  { no: '14', stage: '发展对象', node: '领取并填写《入党志愿书》', materials: ['入党志愿书（钢笔/毛笔，不得涂改）'], obj: '预审通过的发展对象', req: '在介绍人指导下用钢笔/毛笔填写，不得涂改', note: '志愿书填写情况报党委审阅' },
-  { no: '15', stage: '预备党员', node: '支部大会讨论接收表决', materials: ['支部大会会议记录', '表决票决结果', '志愿书决议页'], obj: '预审合格的发展对象', req: '到会有表决权人数超过应到会人数半数方可开会', note: '无记名投票表决；赞成票超过半数方为通过；形成决议', deadline: '到会有表决权人数须超过应到会半数' },
-  { no: '16', stage: '预备党员', node: '上级党委派人谈话', materials: ['谈话人意见（填入志愿书）'], obj: '支部大会通过后的发展对象', req: '党委派人同本人谈话', note: '谈话人将意见填入志愿书，不作同意与否的表态' },
-  { no: '17', stage: '预备党员', node: '上级党委审批', materials: ['党委审批意见', '接收预备党员批复'], obj: '谈话完成后的发展对象', req: '党委集体审议、逐个表决', note: '3个月内审批；批复注明预备期起止时间', deadline: '党委 3 个月内审批' },
-  { no: '18', stage: '预备党员', node: '宣布与材料报送', materials: ['宣布记录', '审批请示与备案材料'], obj: '审批通过后', req: '及时宣布并组织宣誓', note: '材料按档案要求报送归档' },
-  { no: '19', stage: '预备党员', node: '编入党小组/告知党费规定', materials: ['支部安排记录'], obj: '新接收的预备党员', req: '编入党支部（党小组）参加组织生活', note: '告知党费缴纳规定与标准' },
-  { no: '20', stage: '预备党员', node: '入党宣誓', materials: ['宣誓仪式记录/照片'], obj: '新接收的预备党员', req: '一般及时举行入党宣誓仪式', note: '面向党旗，举右手握拳过肩，宣读誓词' },
-  { no: '21', stage: '预备党员', node: '预备期教育考察', materials: ['预备党员考察表', '预备期思想汇报（每季度）'], obj: '预备党员', req: '预备期1年，每季度书面汇报；每半年考察一次', note: '考察不合格可延长预备期（不超过1年）或取消预备党员资格', deadline: '预备期 1 年（自支部大会通过之日算）' },
-  { no: '22', stage: '预备党员', node: '转正申请与公示审查', materials: ['转正申请书（预备期满前一周递交）', '支部考察报告', '公示记录'], obj: '预备期满的预备党员', req: '预备期满前一周本人书面提出转正申请', note: '支部公示审查（一般5个工作日）', deadline: '预备期满前本人书面提出' },
-  { no: '23', stage: '预备党员', node: '支部大会讨论转正表决', materials: ['支部大会会议记录', '票决结果', '公示情况'], obj: '预备期满的预备党员', req: '支部大会讨论表决，程序同接收大会', note: '决议填入志愿书；可注明延长期或取消资格情形' },
-  { no: '24', stage: '预备党员', node: '转正前征求意见', materials: ['征求党内外群众意见谈话记录'], obj: '支部大会通过后', req: '征求党内外群众意见并形成谈话记录', note: '转正大会前完成', deadline: '转正大会前' },
-  { no: '25', stage: '正式党员', node: '材料归档', materials: ['入党志愿书', '入党申请书', '政审材料', '转正申请书', '培养教育考察材料'], obj: '转为正式党员后', req: '全部发展材料归档', note: '存入本人人事档案；档案材料须完整规范一致', deadline: '转正后存入人事档案' }
+  {
+    no: '1',
+    stage: '申请人',
+    node: '递交入党申请书',
+    materials: ['入党申请书（本人手写）'],
+    obj: '年满18周岁的中国公民，承认党的纲领和章程，愿意参加党的组织并积极工作',
+    req: '本人自愿递交；一般应亲自书写',
+    note: '申请书内容包括对党的认识、入党动机、本人经历等'
+  },
+  {
+    no: '2',
+    stage: '申请人',
+    node: '党组织派人谈话',
+    materials: ['入党申请谈话通知书', '入党申请人谈话记录'],
+    obj: '入党申请人',
+    req: '收到申请书后1个月内派人谈话',
+    note: '谈话记录存档；介绍党的基本知识，提出希望与要求',
+    deadline: '收到申请书后 1 个月内'
+  },
+  {
+    no: '3',
+    stage: '入党积极分子',
+    node: '推荐并确定入党积极分子',
+    materials: ['党员推荐/群团组织推优材料', '支委会（或支部大会）记录'],
+    obj: '已递交申请书且符合条件的申请人',
+    req: '采取党员推荐、群团组织推优等方式产生人选',
+    note: '由支部委员会（不设支委会的由支部大会）研究决定'
+  },
+  {
+    no: '4',
+    stage: '入党积极分子',
+    node: '上级党委备案',
+    materials: ['积极分子备案表', '本人简历及家庭主要成员情况'],
+    obj: '新确定的入党积极分子',
+    req: '确定后及时报上级党委备案',
+    note: '备案后方可列为积极分子；档案材料同步报送'
+  },
+  {
+    no: '5',
+    stage: '入党积极分子',
+    node: '指定培养联系人',
+    materials: ['培养联系人指定记录（1-2 名正式党员）'],
+    obj: '入党积极分子',
+    req: '指定1-2名正式党员作培养联系人',
+    note: '培养联系人负责帮助教育、考察了解、提出建议'
+  },
+  {
+    no: '6',
+    stage: '入党积极分子',
+    node: '培养教育考察',
+    materials: ['入党积极分子考察登记表（每半年一次）', '思想汇报（每季度）', '校级党课结业证书'],
+    obj: '入党积极分子',
+    req: '考察期1年以上，每半年考察一次；每季度交思想汇报',
+    note: '考察不合格的及时调整；参加校级党课学习并取得结业',
+    deadline: '考察期 1 年以上'
+  },
+  {
+    no: '7',
+    stage: '发展对象',
+    node: '确定发展对象',
+    materials: ['征求意见记录', '确定为发展对象公示', '支委会讨论记录'],
+    obj: '经过1年以上培养考察的积极分子',
+    req: '听取培养联系人、党员和群众意见的基础上确定',
+    note: '公示（一般5个工作日）后由支委会讨论确定'
+  },
+  {
+    no: '8',
+    stage: '发展对象',
+    node: '报上级党委备案',
+    materials: ['发展对象备案报告', '确定为发展对象批复'],
+    obj: '拟确定的发展对象',
+    req: '报上级党委备案',
+    note: '备案同意后方可进入发展对象环节；未备案不得发展'
+  },
+  {
+    no: '9',
+    stage: '发展对象',
+    node: '确定入党介绍人',
+    materials: ['入党介绍人指定记录（2 名正式党员）'],
+    obj: '发展对象',
+    req: '确定2名正式党员作入党介绍人',
+    note: '一般由培养联系人担任；介绍人负责指导填写志愿书、如实反映情况'
+  },
+  {
+    no: '10',
+    stage: '发展对象',
+    node: '政治审查',
+    materials: ['综合性政审报告', '函调/外调材料', '个人自传', '与本人谈话记录'],
+    obj: '发展对象',
+    req: '必须严格政治审查，未政审或政审不合格不得发展',
+    note: '形成政审综合报告；函调/外调、自传、谈话记录齐全',
+    deadline: '未政审或政审不合格不得发展'
+  },
+  {
+    no: '11',
+    stage: '发展对象',
+    node: '短期集中培训',
+    materials: ['培训通知/名单/考勤', '结业证书'],
+    obj: '发展对象',
+    req: '集中培训不少于3天（或24学时）',
+    note: '未经培训（特殊情况除外）不能发展；考核合格取得结业',
+    deadline: '不少于 3 天（或 24 学时）'
+  },
+  {
+    no: '12',
+    stage: '发展对象',
+    node: '发展对象考核四件套',
+    materials: ['集中考试', '志愿时长核验', '谈心谈话', '个人答辩'],
+    obj: '发展对象',
+    req: '考试+志愿时长+谈话+答辩四件套',
+    note: '学院统一组织，成绩作为发展依据之一'
+  },
+  {
+    no: '13',
+    stage: '发展对象',
+    node: '支委会拟接收审查+党委预审',
+    materials: ['支委会拟接收预备党员审查会议记录', '党委预审批复'],
+    obj: '政审合格的发展对象',
+    req: '支委会审查后报上级党委预审',
+    note: '预审通过方可领取《入党志愿书》'
+  },
+  {
+    no: '14',
+    stage: '发展对象',
+    node: '领取并填写《入党志愿书》',
+    materials: ['入党志愿书（钢笔/毛笔，不得涂改）'],
+    obj: '预审通过的发展对象',
+    req: '在介绍人指导下用钢笔/毛笔填写，不得涂改',
+    note: '志愿书填写情况报党委审阅'
+  },
+  {
+    no: '15',
+    stage: '预备党员',
+    node: '支部大会讨论接收表决',
+    materials: ['支部大会会议记录', '表决票决结果', '志愿书决议页'],
+    obj: '预审合格的发展对象',
+    req: '到会有表决权人数超过应到会人数半数方可开会',
+    note: '无记名投票表决；赞成票超过半数方为通过；形成决议',
+    deadline: '到会有表决权人数须超过应到会半数'
+  },
+  {
+    no: '16',
+    stage: '预备党员',
+    node: '上级党委派人谈话',
+    materials: ['谈话人意见（填入志愿书）'],
+    obj: '支部大会通过后的发展对象',
+    req: '党委派人同本人谈话',
+    note: '谈话人将意见填入志愿书，不作同意与否的表态'
+  },
+  {
+    no: '17',
+    stage: '预备党员',
+    node: '上级党委审批',
+    materials: ['党委审批意见', '接收预备党员批复'],
+    obj: '谈话完成后的发展对象',
+    req: '党委集体审议、逐个表决',
+    note: '3个月内审批；批复注明预备期起止时间',
+    deadline: '党委 3 个月内审批'
+  },
+  {
+    no: '18',
+    stage: '预备党员',
+    node: '宣布与材料报送',
+    materials: ['宣布记录', '审批请示与备案材料'],
+    obj: '审批通过后',
+    req: '及时宣布并组织宣誓',
+    note: '材料按档案要求报送归档'
+  },
+  {
+    no: '19',
+    stage: '预备党员',
+    node: '编入党小组/告知党费规定',
+    materials: ['支部安排记录'],
+    obj: '新接收的预备党员',
+    req: '编入党支部（党小组）参加组织生活',
+    note: '告知党费缴纳规定与标准'
+  },
+  {
+    no: '20',
+    stage: '预备党员',
+    node: '入党宣誓',
+    materials: ['宣誓仪式记录/照片'],
+    obj: '新接收的预备党员',
+    req: '一般及时举行入党宣誓仪式',
+    note: '面向党旗，举右手握拳过肩，宣读誓词'
+  },
+  {
+    no: '21',
+    stage: '预备党员',
+    node: '预备期教育考察',
+    materials: ['预备党员考察表', '预备期思想汇报（每季度）'],
+    obj: '预备党员',
+    req: '预备期1年，每季度书面汇报；每半年考察一次',
+    note: '考察不合格可延长预备期（不超过1年）或取消预备党员资格',
+    deadline: '预备期 1 年（自支部大会通过之日算）'
+  },
+  {
+    no: '22',
+    stage: '预备党员',
+    node: '转正申请与公示审查',
+    materials: ['转正申请书（预备期满前一周递交）', '支部考察报告', '公示记录'],
+    obj: '预备期满的预备党员',
+    req: '预备期满前一周本人书面提出转正申请',
+    note: '支部公示审查（一般5个工作日）',
+    deadline: '预备期满前本人书面提出'
+  },
+  {
+    no: '23',
+    stage: '预备党员',
+    node: '支部大会讨论转正表决',
+    materials: ['支部大会会议记录', '票决结果', '公示情况'],
+    obj: '预备期满的预备党员',
+    req: '支部大会讨论表决，程序同接收大会',
+    note: '决议填入志愿书；可注明延长期或取消资格情形'
+  },
+  {
+    no: '24',
+    stage: '预备党员',
+    node: '转正前征求意见',
+    materials: ['征求党内外群众意见谈话记录'],
+    obj: '支部大会通过后',
+    req: '征求党内外群众意见并形成谈话记录',
+    note: '转正大会前完成',
+    deadline: '转正大会前'
+  },
+  {
+    no: '25',
+    stage: '正式党员',
+    node: '材料归档',
+    materials: ['入党志愿书', '入党申请书', '政审材料', '转正申请书', '培养教育考察材料'],
+    obj: '转为正式党员后',
+    req: '全部发展材料归档',
+    note: '存入本人人事档案；档案材料须完整规范一致',
+    deadline: '转正后存入人事档案'
+  }
 ];
 
 /** 五阶段顺序（泳道展示顺序） */
@@ -55,9 +265,34 @@ export const DEV_STAGE_ORDER: Array<'申请人' | '入党积极分子' | '发展
   '正式党员'
 ];
 
+export type DevStageName = (typeof DEV_STAGE_ORDER)[number];
+
+/** 精简发展时间线关键里程碑节点编号（12 个核心节点，覆盖五阶段全流程） */
+export const KEY_MILESTONE_NOS: readonly string[] = [
+  '1', // 递交入党申请书
+  '2', // 党组织派人谈话
+  '3', // 推荐并确定入党积极分子
+  '6', // 培养教育考察
+  '7', // 确定发展对象
+  '10', // 政治审查
+  '13', // 支委会拟接收审查+党委预审
+  '14', // 领取并填写《入党志愿书》
+  '15', // 支部大会讨论接收表决
+  '21', // 预备期教育考察
+  '23', // 支部大会讨论转正表决
+  '25' // 材料归档
+];
+
+/** 上一阶段 */
+export function prevStage(stage: string): DevStageName | null {
+  const idx = DEV_STAGE_ORDER.indexOf(stage as DevStageName);
+  if (idx <= 0) return null;
+  return DEV_STAGE_ORDER[idx - 1];
+}
+
 /** 下一阶段 */
-export function nextStage(stage: string): (typeof DEV_STAGE_ORDER)[number] | null {
-  const idx = DEV_STAGE_ORDER.indexOf(stage as (typeof DEV_STAGE_ORDER)[number]);
+export function nextStage(stage: string): DevStageName | null {
+  const idx = DEV_STAGE_ORDER.indexOf(stage as DevStageName);
   if (idx < 0 || idx >= DEV_STAGE_ORDER.length - 1) return null;
   return DEV_STAGE_ORDER[idx + 1];
 }
@@ -65,4 +300,123 @@ export function nextStage(stage: string): (typeof DEV_STAGE_ORDER)[number] | nul
 /** 该阶段的节点清单 */
 export function nodesOfStage(stage: string): DevNodeDef[] {
   return DEV_NODES.filter(n => n.stage === stage);
+}
+
+/** 规范化材料名称（去除括号补充说明及空格，避免「入党申请书」匹配不上「入党申请书（本人手写）」） */
+export function normalizeMaterialName(name: string): string {
+  return (name || '')
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/[《》\s]/g, '')
+    .trim();
+}
+
+/** 在成员已有 materials 中匹配指定节点的某项材料 */
+export function findMatchedMaterial(
+  materials: Sct.DevMaterial[] | undefined,
+  nodeNo: string,
+  expectedName: string
+): Sct.DevMaterial | undefined {
+  if (!Array.isArray(materials) || !materials.length) return undefined;
+  const targetNorm = normalizeMaterialName(expectedName);
+  const exactKey = `${nodeNo}-${expectedName}`;
+
+  // 1. 精确匹配（同节点号 + 名称一致）
+  const byExact = materials.find(
+    m => `${m.no}-${m.name}` === exactKey || (m.no === nodeNo && normalizeMaterialName(m.name) === targetNorm)
+  );
+  if (byExact) return byExact;
+
+  // 2. 跨历史格式：按规范化名称包含匹配（兼容旧种子数据无节点号或前缀略有差异）
+  const byNorm = materials.find(m => {
+    const mn = normalizeMaterialName(m.name);
+    if (!mn || !targetNorm) return false;
+    return mn === targetNorm || mn.includes(targetNorm) || targetNorm.includes(mn);
+  });
+  if (byNorm) return byNorm;
+
+  // 3. 兼容旧版前 4~6 字前缀匹配
+  const prefix = targetNorm.slice(0, Math.min(5, targetNorm.length));
+  if (prefix.length >= 3) {
+    return materials.find(m => normalizeMaterialName(m.name).includes(prefix));
+  }
+  return undefined;
+}
+
+/** 生成指定节点对应的交互材料列表（未初始化的材料按默认「未开始」补全，供展示与补录） */
+export function resolveNodeMaterials(
+  node: DevNodeDef,
+  existingMaterials: Sct.DevMaterial[] | undefined
+): Sct.DevMaterial[] {
+  return node.materials.map((matName, idx) => {
+    const matched = findMatchedMaterial(existingMaterials, node.no, matName);
+    if (matched) {
+      return {
+        ...matched,
+        no: matched.no || `${node.no}.${idx + 1}`,
+        name: matched.name || matName,
+        status: matched.status || '未开始',
+        date: matched.date ?? ''
+      };
+    }
+    return {
+      no: `${node.no}.${idx + 1}`,
+      name: matName,
+      status: '未开始',
+      date: ''
+    };
+  });
+}
+
+/** 根据当前阶段与材料归档状态重算「下一步待办」；全部已归档时返回空字符串 */
+export function computeNextDevNode(stage: string, materials: Sct.DevMaterial[] | undefined): string {
+  const nodes = nodesOfStage(stage);
+  if (!nodes.length) return '';
+
+  for (const node of nodes) {
+    const items = resolveNodeMaterials(node, materials);
+    const allArchived = items.length > 0 && items.every(item => item.status === '已归档');
+    if (!allArchived) {
+      return node.node;
+    }
+  }
+  return '';
+}
+
+/** 判断指定阶段的全部材料是否均已归档 */
+export function isStageFullyArchived(stage: string, materials: Sct.DevMaterial[] | undefined): boolean {
+  const nodes = nodesOfStage(stage);
+  if (!nodes.length) return false;
+  return nodes.every(node => {
+    const items = resolveNodeMaterials(node, materials);
+    return items.length > 0 && items.every(item => item.status === '已归档');
+  });
+}
+
+/** 判断「之前所有阶段 + 当前阶段」的材料是否全部已归档 */
+export function areStagesUpToFullyArchived(stage: string, materials: Sct.DevMaterial[] | undefined): boolean {
+  const idx = DEV_STAGE_ORDER.indexOf(stage as (typeof DEV_STAGE_ORDER)[number]);
+  if (idx < 0) return false;
+  for (let i = 0; i <= idx; i += 1) {
+    if (!isStageFullyArchived(DEV_STAGE_ORDER[i], materials)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 查找当前阶段之前首个尚未全部归档的节点（用于提示补录前序阶段材料） */
+export function findFirstMissingPriorNode(
+  stage: string,
+  materials: Sct.DevMaterial[] | undefined
+): { stage: string; node: string } | null {
+  const idx = DEV_STAGE_ORDER.indexOf(stage as (typeof DEV_STAGE_ORDER)[number]);
+  if (idx <= 0) return null;
+  for (let i = 0; i < idx; i += 1) {
+    const priorStage = DEV_STAGE_ORDER[i];
+    const missing = computeNextDevNode(priorStage, materials);
+    if (missing) {
+      return { stage: priorStage, node: missing };
+    }
+  }
+  return null;
 }

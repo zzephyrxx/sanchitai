@@ -8,7 +8,7 @@ import { defineStore } from 'pinia';
 import dayjs from 'dayjs';
 import type { EventInput } from '@fullcalendar/core';
 import { nanoid } from '@sa/utils';
-import { nodesOfStage } from '@/constants/dev-nodes';
+import { computeNextDevNode, findMatchedMaterial, nodesOfStage } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
 import { DEFAULT_POINT_RULES } from '@/constants/party-points';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
@@ -783,15 +783,16 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
     await guardWrite(
       db.transaction('rw', [db.members, db.devStages], async () => {
+        const mergedMaterials = buildStageMaterials(targetStage, stage?.materials ?? []);
         await db.members.update(memberId, plain(datePatch));
         await db.devStages.put(
           plain({
             member_id: memberId,
             stage: targetStage,
             stage_date: todayStr,
-            next_node: targetStage === '正式党员' ? '材料归档' : stage?.next_node,
+            next_node: computeNextDevNode(targetStage, mergedMaterials),
             next_due: targetStage === '预备党员' ? (datePatch.full_date ?? stage?.next_due) : undefined,
-            materials: buildStageMaterials(targetStage, stage?.materials ?? []),
+            materials: mergedMaterials,
             timeline: [...(stage?.timeline ?? []), { node: `确定为${targetStage}`, date: todayStr, note: '阶段流转' }],
             identity: 'secretary'
           })
@@ -817,9 +818,86 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await moveStageTo(memberId, order[idx + 1]);
   }
 
-  /** 更新发展台账字段（节点推进等） */
+  /** 更新发展台账字段（节点推进等；变更材料时自动重算 next_node） */
   async function updateDevStage(memberId: string, patch: Partial<Sct.DevStage>) {
-    await guardWrite(db.devStages.update(memberId, plain(patch)), '发展台账');
+    const existing = devStages.value.find(d => d.member_id === memberId) ?? (await db.devStages.get(memberId));
+    const finalPatch: Partial<Sct.DevStage> = { ...patch };
+    if (patch.materials && existing && patch.next_node === undefined) {
+      const targetStage = patch.stage ?? existing.stage;
+      finalPatch.next_node = computeNextDevNode(targetStage, patch.materials);
+    }
+    await guardWrite(db.devStages.update(memberId, plain(finalPatch)), '发展台账');
+  }
+
+  /** 更新或补录任意阶段节点的某项发展材料（支持归档日期为「无」/空字符串，自动重算下一步待办） */
+  async function upsertStageMaterial(
+    memberId: string,
+    nodeNo: string,
+    mat: { no: string; name: string; status: string; date: string }
+  ) {
+    const existing = devStages.value.find(d => d.member_id === memberId) ?? (await db.devStages.get(memberId));
+    if (!existing) return;
+    const list = [...(existing.materials ?? [])];
+    const matched = findMatchedMaterial(list, nodeNo, mat.name);
+    const cleanDate = mat.status === '已归档' ? mat.date.trim() : '';
+
+    if (matched) {
+      const idx = list.indexOf(matched);
+      if (idx >= 0) {
+        list[idx] = {
+          ...matched,
+          status: mat.status,
+          date: cleanDate
+        };
+      }
+    } else {
+      list.push({
+        no: mat.no,
+        name: mat.name,
+        status: mat.status,
+        date: cleanDate
+      });
+    }
+
+    const nextNode = computeNextDevNode(existing.stage, list);
+    await guardWrite(db.devStages.update(memberId, plain({ materials: list, next_node: nextNode })), '材料归档状态');
+  }
+
+  /** 批量一键归档多条发展材料（单次原子写入，支持逐条不同日期或留空为「无」，自动重算下一步待办） */
+  async function batchArchiveStageMaterials(
+    memberId: string,
+    items: Array<{ nodeNo: string; no: string; name: string; date: string }>
+  ) {
+    if (!items.length) return 0;
+    const existing = devStages.value.find(d => d.member_id === memberId) ?? (await db.devStages.get(memberId));
+    if (!existing) return 0;
+    const list = [...(existing.materials ?? [])];
+
+    for (const item of items) {
+      const cleanDate = (item.date || '').trim();
+      const matched = findMatchedMaterial(list, item.nodeNo, item.name);
+      if (matched) {
+        const idx = list.indexOf(matched);
+        if (idx >= 0) {
+          list[idx] = {
+            ...matched,
+            status: '已归档',
+            date: cleanDate
+          };
+        }
+      } else {
+        list.push({
+          no: item.no,
+          name: item.name,
+          status: '已归档',
+          date: cleanDate
+        });
+      }
+    }
+
+    const nextNode = computeNextDevNode(existing.stage, list);
+    await guardWrite(db.devStages.update(memberId, plain({ materials: list, next_node: nextNode })), '批量归档材料');
+    return items.length;
   }
 
   // ---------------- 谈心谈话 ----------------
@@ -1099,6 +1177,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     advanceStage,
     moveStageTo,
     updateDevStage,
+    upsertStageMaterial,
+    batchArchiveStageMaterials,
     addTalk,
     deleteTalk,
     saveDocTemplate,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { NPopconfirm } from 'naive-ui';
 import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 
@@ -43,49 +43,76 @@ const showGroups = ref(true);
 const zoom = ref(100);
 const editGroupsMode = ref(false);
 const draggingMemberId = ref<string | null>(null);
+const draggingMemberName = ref('');
 const dragOverGroupId = ref<string | null>(null);
+const dragPointer = reactive({ x: 0, y: 0 });
+let groupDragOrigin: { x: number; y: number; member: Sct.Member } | null = null;
+let suppressMemberClick = false;
 
-function handleMemberDragStart(e: DragEvent, member: Sct.Member) {
-  if (!editGroupsMode.value) return;
-  draggingMemberId.value = member.id;
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', member.id);
-  }
+function hitTestPartyGroup(x: number, y: number): { id: string; name: string; isUngrouped: boolean } | null {
+  const el = document.elementFromPoint(x, y);
+  const card = el?.closest?.('[data-party-group-id]') as HTMLElement | null;
+  const gid = card?.dataset?.partyGroupId;
+  if (!gid) return null;
+  const found = partyGroupsView.value.find(g => g.id === gid);
+  return found ? { id: found.id, name: found.name, isUngrouped: found.isUngrouped } : null;
 }
 
-function handleMemberDragEnd() {
+function cleanupGroupDrag() {
+  groupDragOrigin = null;
   draggingMemberId.value = null;
+  draggingMemberName.value = '';
   dragOverGroupId.value = null;
+  window.removeEventListener('pointermove', onGroupPointerMove);
+  window.removeEventListener('pointerup', onGroupPointerUp);
+  window.removeEventListener('pointercancel', cleanupGroupDrag);
+  window.removeEventListener('keydown', onGroupDragKeydown);
 }
 
-function handleGroupDragOver(e: DragEvent, groupId: string) {
-  if (!editGroupsMode.value || !draggingMemberId.value) return;
-  e.preventDefault();
-  if (e.dataTransfer) {
-    e.dataTransfer.dropEffect = 'move';
+function onGroupPointerMove(e: PointerEvent) {
+  if (!groupDragOrigin) return;
+  if (!draggingMemberId.value && Math.hypot(e.clientX - groupDragOrigin.x, e.clientY - groupDragOrigin.y) < 5) {
+    return;
   }
-  dragOverGroupId.value = groupId;
+  if (!draggingMemberId.value) {
+    draggingMemberId.value = groupDragOrigin.member.id;
+    draggingMemberName.value = groupDragOrigin.member.name;
+    suppressMemberClick = true;
+  }
+  dragPointer.x = e.clientX;
+  dragPointer.y = e.clientY;
+  dragOverGroupId.value = hitTestPartyGroup(e.clientX, e.clientY)?.id ?? null;
 }
 
-function handleGroupDragLeave(e: DragEvent, groupId: string) {
-  const current = e.currentTarget as HTMLElement | null;
-  const related = e.relatedTarget as Node | null;
-  if (current && related && current.contains(related)) return;
-  if (dragOverGroupId.value === groupId) {
-    dragOverGroupId.value = null;
+function onGroupPointerUp(e: PointerEvent) {
+  const memberId = draggingMemberId.value;
+  const targetGrp = memberId ? hitTestPartyGroup(e.clientX, e.clientY) : null;
+  cleanupGroupDrag();
+  if (memberId && targetGrp) {
+    emit('moveMemberGroup', memberId, targetGrp.isUngrouped ? '' : targetGrp.name);
+  }
+  if (suppressMemberClick) {
+    setTimeout(() => {
+      suppressMemberClick = false;
+    }, 60);
   }
 }
 
-function handleGroupDrop(e: DragEvent, grp: { id: string; name: string; isUngrouped: boolean }) {
-  if (!editGroupsMode.value) return;
-  e.preventDefault();
-  const memberId = draggingMemberId.value || e.dataTransfer?.getData('text/plain') || '';
-  draggingMemberId.value = null;
-  dragOverGroupId.value = null;
-  if (!memberId) return;
-  emit('moveMemberGroup', memberId, grp.isUngrouped ? '' : grp.name);
+function onGroupDragKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') cleanupGroupDrag();
 }
+
+function handleMemberPointerDown(e: PointerEvent, member: Sct.Member) {
+  if (!editGroupsMode.value || e.button !== 0) return;
+  e.preventDefault();
+  groupDragOrigin = { x: e.clientX, y: e.clientY, member };
+  window.addEventListener('pointermove', onGroupPointerMove);
+  window.addEventListener('pointerup', onGroupPointerUp);
+  window.addEventListener('pointercancel', cleanupGroupDrag);
+  window.addEventListener('keydown', onGroupDragKeydown);
+}
+
+onBeforeUnmount(cleanupGroupDrag);
 
 function memberOfRole(role: string): Sct.Member | undefined {
   return props.members.find(m => m.role === role);
@@ -579,14 +606,12 @@ watch(
         <div
           v-for="grp in partyGroupsView"
           :key="grp.id"
+          :data-party-group-id="grp.id"
           class="mm-group-card"
           :class="{
             'mm-group-card--editing': editGroupsMode,
             'mm-group-card--drop-active': editGroupsMode && dragOverGroupId === grp.id
           }"
-          @dragover="handleGroupDragOver($event, grp.id)"
-          @dragleave="handleGroupDragLeave($event, grp.id)"
-          @drop="handleGroupDrop($event, grp)"
         >
           <div class="mm-group-card__header">
             <span class="flex min-w-0 items-center gap-6px text-13px font-bold text-[var(--sct-ink)]">
@@ -643,15 +668,13 @@ watch(
                 'mm-member-chip--draggable': editGroupsMode,
                 'mm-member-chip--dragging': draggingMemberId === m.id
               }"
-              :draggable="editGroupsMode"
               :title="
                 editGroupsMode
                   ? `按住拖动「${m.name}」到目标党小组`
                   : `${m.name}（${m.type}${m.role ? ` · ${m.role}` : ''}）`
               "
-              @dragstart="handleMemberDragStart($event, m)"
-              @dragend="handleMemberDragEnd"
-              @click="!editGroupsMode && emit('selectMember', m)"
+              @pointerdown="handleMemberPointerDown($event, m)"
+              @click="!editGroupsMode && !suppressMemberClick && emit('selectMember', m)"
             >
               <SvgIcon v-if="editGroupsMode" icon="lucide:grip-vertical" class="text-12px text-gray-400" />
               <span
@@ -666,6 +689,18 @@ watch(
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="draggingMemberId"
+        class="pointer-events-none fixed z-9999 inline-flex items-center gap-6px rounded-8px border border-[#A81C24] bg-[var(--sct-container)] px-12px py-6px text-12px font-bold text-[var(--sct-ink)] shadow-lg"
+        :style="{ left: `${dragPointer.x + 12}px`, top: `${dragPointer.y + 12}px` }"
+      >
+        <SvgIcon icon="lucide:grip-vertical" class="text-13px text-[#A81C24]" />
+        <span>{{ draggingMemberName }}</span>
+        <span class="text-11px font-normal text-gray-400">拖入目标党小组松手</span>
+      </div>
+    </Teleport>
   </div>
 </template>
 

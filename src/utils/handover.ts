@@ -2,6 +2,7 @@
  * 一键交接包：任期大事记 / 待办 / 台账摘要 → 可打印 HTML + 全量数据 JSON
  */
 import dayjs from 'dayjs';
+import { computeNextDevNode } from '@/constants/dev-nodes';
 import type { BackupShape } from '@/db/db';
 
 /** HTML 文本转义（OCR 规则：插值安全） */
@@ -13,14 +14,20 @@ export function buildHandoverHtml(shape: BackupShape, branchName: string): strin
   const doneEvents = shape.cal_events
     .filter(e => e.status === '已完成' || e.status === '进行中')
     .sort((a, b) => a.date.localeCompare(b.date));
-  const planEvents = shape.cal_events.filter(e => e.status === '计划' && !e.merged_into).sort((a, b) => a.date.localeCompare(b.date));
+  const planEvents = shape.cal_events
+    .filter(e => e.status === '计划' && !e.merged_into)
+    .sort((a, b) => a.date.localeCompare(b.date));
   const upcomingDev = shape.dev_stages
-    .filter(d => d.next_due)
-    .sort((a, b) => (a.next_due ?? '').localeCompare(b.next_due ?? ''));
+    .map(d => ({ d, nextNode: computeNextDevNode(d.stage, d.materials) }))
+    .filter(({ d, nextNode }) => Boolean(nextNode && d.next_due))
+    .sort((a, b) => (a.d.next_due ?? '').localeCompare(b.d.next_due ?? ''));
   const owed = shape.fee_records.filter(f => f.status === '欠缴');
 
   const evRows = doneEvents
-    .map(e => `<tr><td class="c">${esc(e.date)}</td><td>${esc(e.kind ?? '')}</td><td>${esc(e.title)}</td><td class="c">${esc(e.location ?? '')}</td></tr>`)
+    .map(
+      e =>
+        `<tr><td class="c">${esc(e.date)}</td><td>${esc(e.kind ?? '')}</td><td>${esc(e.title)}</td><td class="c">${esc(e.location ?? '')}</td></tr>`
+    )
     .join('');
 
   const planRows = planEvents
@@ -28,9 +35,9 @@ export function buildHandoverHtml(shape: BackupShape, branchName: string): strin
     .join('');
 
   const devRows = upcomingDev
-    .map(d => {
+    .map(({ d, nextNode }) => {
       const m = shape.members.find(x => x.id === d.member_id);
-      return `<tr><td class="c">${esc(d.next_due ?? '')}</td><td>${esc(m?.name ?? d.member_id)}</td><td>${esc(d.stage)}</td><td>${esc(d.next_node ?? '')}</td></tr>`;
+      return `<tr><td class="c">${esc(d.next_due ?? '')}</td><td>${esc(m?.name ?? d.member_id)}</td><td>${esc(d.stage)}</td><td>${esc(nextNode)}</td></tr>`;
     })
     .join('');
 
@@ -75,7 +82,7 @@ export function buildHandoverHtml(shape: BackupShape, branchName: string): strin
 <tr><td class="c">${shape.members.length}</td><td class="c">${shape.cal_events.length}</td><td class="c">${shape.fee_records.length}</td><td class="c">${shape.talks.length}</td><td class="c">${shape.dev_stages.length}</td></tr></table>
 
 <div class="note">
- 交接说明：① 全量数据以「交接数据包.json」为准，接任人在学工工作平台「设置 → 从备份恢复」导入即可接续全部台账；
+ 交接说明：① 全量数据以专属加密格式「三尺台交接包_YYYY-MM-DD.sctpack」为准，接任人在学工工作平台「设置 → 导入交接包（或导入数据包）」选择该文件并按需勾选模块即可接续台账；
  ② 应用锁由前任设置时，请在交接前于「设置 → 应用锁」关闭或告知密码与密保答案；
  ③ 纸质档案按学院归档要求另行移交。
 </div>

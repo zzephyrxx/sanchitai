@@ -133,23 +133,148 @@ function setThumbRef(id: string, el: unknown) {
   }
 }
 
-// ---------------- 在册党员联动 ----------------
-const currentMonthMm = dayjs().format('MM');
+// ---------------- 在册党员联动（近 30 / 60 天政治生日计算与按需快选） ----------------
+const upcomingWindowDays = ref<30 | 60>(30);
+const upcomingModalShow = ref(false);
+const upcomingCheckedIds = ref<string[]>([]);
 
 const partyMembers = computed(() => workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员'));
 
-const thisMonthBirthdayMembers = computed(() =>
-  partyMembers.value.filter(m => {
-    const jd = m.join_date || m.key_dates?.accepted_at || '';
-    return jd.length >= 7 && jd.slice(5, 7) === currentMonthMm;
-  })
-);
+/** 计算距离下一次政治生日的剩余天数（0 = 今天，支持跨年与闰年 2/29 安全回退） */
+function daysUntilPoliticalBirthday(joinDateStr: string): number | null {
+  if (!joinDateStr || joinDateStr.length < 10) return null;
+  const month = Number(joinDateStr.slice(5, 7));
+  const day = Number(joinDateStr.slice(8, 10));
+  if (!Number.isInteger(month) || !Number.isInteger(day) || month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+  const today = dayjs().startOf('day');
+  const buildForYear = (y: number) => {
+    const isLeap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    const safeDay = month === 2 && day === 29 && !isLeap ? 28 : day;
+    return dayjs(`${y}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`).startOf('day');
+  };
+  let target = buildForYear(today.year());
+  if (target.isBefore(today, 'day')) {
+    target = buildForYear(today.year() + 1);
+  }
+  return target.diff(today, 'day');
+}
+
+interface UpcomingBirthdayItem {
+  member: Sct.Member;
+  joinDate: string;
+  daysLeft: number;
+  inRoster: boolean;
+}
+
+const rosterIdentitySet = computed(() => {
+  const set = new Set<string>();
+  for (const r of roster.value) {
+    const n = r.name.trim();
+    if (n) set.add(`${n}|${r.joinDate.trim()}`);
+  }
+  return set;
+});
+
+const upcomingBirthdayMembers = computed<UpcomingBirthdayItem[]>(() => {
+  const win = upcomingWindowDays.value;
+  const list: UpcomingBirthdayItem[] = [];
+  for (const m of partyMembers.value) {
+    const jd = (m.join_date || m.key_dates?.accepted_at || '').trim();
+    const diff = daysUntilPoliticalBirthday(jd);
+    if (diff !== null && diff >= 0 && diff <= win) {
+      list.push({
+        member: m,
+        joinDate: jd,
+        daysLeft: diff,
+        inRoster: rosterIdentitySet.value.has(`${m.name}|${jd}`)
+      });
+    }
+  }
+  return list.sort((a, b) => a.daysLeft - b.daysLeft || a.member.name.localeCompare(b.member.name));
+});
+
+function openUpcomingPicker() {
+  upcomingCheckedIds.value = upcomingBirthdayMembers.value.filter(item => !item.inRoster).map(item => item.member.id);
+  upcomingModalShow.value = true;
+}
+
+watch(upcomingWindowDays, () => {
+  if (!upcomingModalShow.value) return;
+  upcomingCheckedIds.value = upcomingBirthdayMembers.value.filter(item => !item.inRoster).map(item => item.member.id);
+});
+
+function selectAllUpcoming(onlyNotAdded: boolean) {
+  upcomingCheckedIds.value = upcomingBirthdayMembers.value
+    .filter(item => (onlyNotAdded ? !item.inRoster : true))
+    .map(item => item.member.id);
+}
+
+function appendSelectedUpcomingToRoster() {
+  const chosenSet = new Set(upcomingCheckedIds.value);
+  const toAdd = upcomingBirthdayMembers.value.filter(item => chosenSet.has(item.member.id) && !item.inRoster);
+  if (!toAdd.length) {
+    window.$message?.info('所选党员均已在批量名单中，或未勾选新增对象');
+    return;
+  }
+  const appended: PbcRosterRow[] = toAdd.map(item => ({
+    name: item.member.name,
+    joinDate: item.joinDate || state.joinDate,
+    wishes: '',
+    branch: '',
+    signDate: '',
+    partyAge: ''
+  }));
+  roster.value = [...roster.value, ...appended];
+  activeTab.value = 'roster';
+  previewRowIdx.value = roster.value.length - appended.length;
+  upcomingModalShow.value = false;
+  persistNow();
+  scheduleRender();
+  window.$message?.success(`已按需追加 ${appended.length} 名近期政治生日党员到批量名单`);
+}
+
+function quickAddSingleMemberToRoster(item: UpcomingBirthdayItem) {
+  if (item.inRoster) {
+    window.$message?.info(`「${item.member.name}」已在批量名单中`);
+    return;
+  }
+  roster.value = [
+    ...roster.value,
+    {
+      name: item.member.name,
+      joinDate: item.joinDate || state.joinDate,
+      wishes: '',
+      branch: '',
+      signDate: '',
+      partyAge: ''
+    }
+  ];
+  persistNow();
+  scheduleRender();
+  window.$message?.success(`已将「${item.member.name}」加入批量名单`);
+}
+
+/** 聚焦某行专属寄语时自动同步右侧预览为该同志内页，所写即所见 */
+function focusRosterWishes(idx: number) {
+  previewRowIdx.value = idx;
+  if (viewMode.value !== 'inner') {
+    viewMode.value = 'inner';
+  }
+  scheduleRender();
+}
 
 const memberSelectOptions = computed(() =>
   partyMembers.value.map(m => {
     const jd = m.join_date || m.key_dates?.accepted_at || '';
-    const isThisMonth = jd.length >= 7 && jd.slice(5, 7) === currentMonthMm;
-    const suffix = isThisMonth ? ' 🎂本月政治生日' : '';
+    const diff = daysUntilPoliticalBirthday(jd);
+    const suffix =
+      diff === 0
+        ? ' 🎂今日政治生日'
+        : diff !== null && diff <= upcomingWindowDays.value
+          ? ` 🎂${diff}天后政治生日`
+          : '';
     return {
       label: `${m.name}（${m.type}${jd ? ` · 入党 ${jd}` : ''}${suffix}）`,
       value: m.id
@@ -171,10 +296,10 @@ function applyMemberToForm(memberId: string | null) {
   window.$message?.success(`已载入「${m.name}」同志的入党信息`);
 }
 
-function importAllMembersToRoster(onlyThisMonth = false) {
-  const source = onlyThisMonth ? thisMonthBirthdayMembers.value : partyMembers.value;
+function importAllMembersToRoster() {
+  const source = partyMembers.value;
   if (!source.length) {
-    window.$message?.info(onlyThisMonth ? '本月暂无政治生日（入党月份匹配）的在册党员' : '暂无在册党员数据');
+    window.$message?.info('暂无在册党员数据');
     return;
   }
   roster.value = source.map(m => ({
@@ -604,16 +729,23 @@ async function handleBatchExport() {
           </div>
         </div>
 
-        <!-- 从在册党员快速选人 -->
+        <!-- 从在册党员快速选人 + 近 30/60 天政治生日快速按需添加 -->
         <div class="rounded-10px bg-[var(--sct-soft)] p-10px">
-          <div class="mb-6px flex items-center justify-between text-12px">
+          <div class="mb-6px flex flex-wrap items-center justify-between gap-6px text-12px">
             <span class="flex items-center gap-5px font-bold text-[var(--sct-ink)]">
               <SvgIcon icon="lucide:user-check" class="text-14px text-[#A81C24]" />
               从支部在册党员快选
             </span>
-            <NTag v-if="thisMonthBirthdayMembers.length" size="tiny" type="error" :bordered="false" round>
-              本月政治生日 {{ thisMonthBirthdayMembers.length }} 人
-            </NTag>
+            <div class="flex items-center gap-6px">
+              <NRadioGroup v-model:value="upcomingWindowDays" size="small">
+                <NRadioButton :value="30">近30天</NRadioButton>
+                <NRadioButton :value="60">近60天</NRadioButton>
+              </NRadioGroup>
+              <NButton size="tiny" type="error" secondary @click="openUpcomingPicker">
+                <template #icon><SvgIcon icon="lucide:cake" /></template>
+                近{{ upcomingWindowDays }}天 {{ upcomingBirthdayMembers.length }} 人 · 快加
+              </NButton>
+            </div>
           </div>
           <NSelect
             :value="selectedMemberId"
@@ -783,13 +915,13 @@ async function handleBatchExport() {
         </div>
 
         <div class="flex flex-wrap gap-6px">
-          <NButton size="tiny" type="primary" secondary @click="importAllMembersToRoster(false)">
+          <NButton size="tiny" type="primary" secondary @click="importAllMembersToRoster()">
             <template #icon><SvgIcon icon="lucide:users" /></template>
             载入全部在册党员
           </NButton>
-          <NButton size="tiny" type="error" secondary @click="importAllMembersToRoster(true)">
+          <NButton size="tiny" type="error" secondary @click="openUpcomingPicker">
             <template #icon><SvgIcon icon="lucide:cake" /></template>
-            载入本月政治生日
+            近{{ upcomingWindowDays }}天政治生日快选（{{ upcomingBirthdayMembers.length }}）
           </NButton>
           <NButton size="tiny" secondary @click="addRosterRow">
             <template #icon><SvgIcon icon="lucide:plus" /></template>
@@ -814,23 +946,23 @@ async function handleBatchExport() {
           </NPopconfirm>
         </div>
 
-        <div class="max-h-360px flex flex-col gap-8px overflow-auto pr-2px">
+        <div class="max-h-520px flex flex-col gap-10px overflow-auto pr-2px">
           <div
             v-if="!roster.length"
             class="rounded-8px border border-dashed border-[var(--sct-border)] py-20px text-center text-12px text-gray-400"
           >
             {{
               bi(
-                '暂无名单，点击上方「载入全部在册党员」或「添加一行」开始编辑',
-                'No entries yet — click Load Members or Add Row above'
+                '暂无名单，点击上方「近30/60天政治生日快选」或「添加一行」开始编辑',
+                'No entries yet — click Upcoming Birthdays or Add Row above'
               )
             }}
           </div>
           <div
             v-for="(row, idx) in roster"
             :key="idx"
-            class="rounded-10px border border-[var(--sct-border)] bg-[var(--sct-container)] p-9px transition"
-            :class="{ 'border-[#A81C24] bg-[#A81C24]/5': previewRowIdx === idx }"
+            class="rounded-10px border border-[var(--sct-border)] bg-[var(--sct-container)] p-10px transition"
+            :class="{ 'border-[#A81C24] bg-[#A81C24]/5 shadow-xs': previewRowIdx === idx }"
           >
             <!-- 第 1 行：预览序号 + 姓名 + 入党日期 + 删除 -->
             <div class="flex items-center gap-6px">
@@ -858,12 +990,21 @@ async function handleBatchExport() {
               </NButton>
             </div>
 
-            <!-- 第 2 行：独占整行宽度的专属寄语编辑区 -->
-            <div class="mt-7px flex flex-col gap-4px">
-              <div class="flex items-center justify-between text-11px text-gray-500">
-                <span class="inline-flex items-center gap-4px font-medium">
+            <!-- 第 2 行：专属寄语编辑区（醒目标明当前撰写对象，聚焦自动切换右侧内页预览） -->
+            <div class="mt-8px flex flex-col gap-5px">
+              <div
+                class="flex flex-wrap items-center justify-between gap-4px rounded-6px bg-[var(--sct-soft)] px-8px py-4px text-11px"
+              >
+                <span class="inline-flex items-center gap-5px font-semibold text-[var(--sct-ink)]">
                   <SvgIcon icon="lucide:pen-line" class="text-12px text-[#A81C24]" />
-                  <span>{{ bi('专属寄语', 'Custom Wishes') }}</span>
+                  <span>
+                    {{ bi('给', 'To') }}
+                    <strong class="text-[#A81C24]">{{ row.name.trim() || `第 ${idx + 1} 位党员` }}</strong>
+                    {{ bi('的专属寄语', "'s Custom Wishes") }}
+                  </span>
+                  <span v-if="row.joinDate.trim()" class="font-mono text-10px text-gray-400">
+                    （入党 {{ row.joinDate.trim() }}）
+                  </span>
                 </span>
                 <span class="text-10px text-gray-400">
                   {{ row.wishes.trim() ? `${Array.from(row.wishes.trim()).length} 字` : '留空继承默认寄语' }}
@@ -874,7 +1015,8 @@ async function handleBatchExport() {
                 type="textarea"
                 size="tiny"
                 :autosize="{ minRows: 2, maxRows: 4 }"
-                placeholder="输入该同志专属政治生日寄语（留空自动继承「内容与模板」中的默认寄语）…"
+                :placeholder="`为「${row.name.trim() || '该同志'}」撰写专属政治生日寄语（聚焦时右侧自动切至内页预览）…`"
+                @focus="focusRosterWishes(idx)"
               />
             </div>
           </div>
@@ -1033,6 +1175,89 @@ async function handleBatchExport() {
         </div>
       </div>
     </NCard>
+
+    <!-- 近 30 / 60 天政治生日快速按需添加弹窗 -->
+    <NModal v-model:show="upcomingModalShow" preset="card" title="近期政治生日 · 按需快速添加" class="w-560px">
+      <div class="flex flex-col gap-12px">
+        <div class="flex flex-wrap items-center justify-between gap-8px">
+          <NRadioGroup v-model:value="upcomingWindowDays" size="small">
+            <NRadioButton :value="30">未来 30 天</NRadioButton>
+            <NRadioButton :value="60">未来 60 天</NRadioButton>
+          </NRadioGroup>
+          <div class="flex items-center gap-6px">
+            <NButton size="tiny" secondary @click="selectAllUpcoming(true)">全选未加入</NButton>
+            <NButton size="tiny" quaternary @click="upcomingCheckedIds = []">清空勾选</NButton>
+          </div>
+        </div>
+
+        <div
+          v-if="!upcomingBirthdayMembers.length"
+          class="rounded-8px border border-dashed border-[var(--sct-border)] py-24px text-center text-13px text-gray-400"
+        >
+          未来 {{ upcomingWindowDays }} 天内暂无过政治生日的在册党员
+        </div>
+
+        <NCheckboxGroup
+          v-else
+          v-model:value="upcomingCheckedIds"
+          class="max-h-340px flex flex-col gap-6px overflow-y-auto pr-2px"
+        >
+          <div
+            v-for="item in upcomingBirthdayMembers"
+            :key="item.member.id"
+            class="flex items-center justify-between gap-8px rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-10px py-7px"
+          >
+            <div class="flex min-w-0 items-center gap-8px">
+              <NCheckbox :value="item.member.id" :disabled="item.inRoster" />
+              <div class="min-w-0">
+                <div class="flex items-center gap-6px text-13px font-semibold text-[var(--sct-ink)]">
+                  <span>{{ item.member.name }}</span>
+                  <NTag size="tiny" :bordered="false">{{ item.member.type }}</NTag>
+                  <NTag v-if="item.inRoster" size="tiny" type="success" :bordered="false">已在名单</NTag>
+                </div>
+                <div class="mt-2px text-11px text-gray-500">入党日期：{{ item.joinDate }}</div>
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-6px">
+              <NTag
+                size="tiny"
+                :type="item.daysLeft === 0 ? 'error' : item.daysLeft <= 7 ? 'warning' : 'info'"
+                :bordered="false"
+                round
+              >
+                {{ item.daysLeft === 0 ? '今天' : `${item.daysLeft} 天后` }}
+              </NTag>
+              <NButton
+                v-if="!item.inRoster"
+                size="tiny"
+                secondary
+                type="primary"
+                @click="quickAddSingleMemberToRoster(item)"
+              >
+                加入
+              </NButton>
+            </div>
+          </div>
+        </NCheckboxGroup>
+      </div>
+      <template #footer>
+        <div class="flex items-center justify-between">
+          <span class="text-12px text-gray-500">已勾选 {{ upcomingCheckedIds.length }} 人（不覆盖已有批量名单）</span>
+          <div class="flex gap-8px">
+            <NButton size="small" @click="upcomingModalShow = false">取消</NButton>
+            <NButton
+              size="small"
+              type="primary"
+              :disabled="!upcomingCheckedIds.length"
+              @click="appendSelectedUpcomingToRoster"
+            >
+              <template #icon><SvgIcon icon="lucide:user-plus" /></template>
+              追加到批量名单
+            </NButton>
+          </div>
+        </div>
+      </template>
+    </NModal>
 
     <!-- 粘贴导入弹窗 -->
     <NModal v-model:show="importShow" preset="card" title="粘贴导入政治生日名单" class="w-600px">

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useTransition } from '@vueuse/core';
 import VChart from 'vue-echarts';
 import dayjs from 'dayjs';
-import { DEV_STAGE_ORDER } from '@/constants/dev-nodes';
+import { DEV_STAGE_ORDER, computeNextDevNode } from '@/constants/dev-nodes';
 import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
 import { setupEcharts } from '@/plugins/echarts';
 import { useThemeStore } from '@/store/modules/theme';
@@ -101,6 +101,76 @@ function loadWidgetOrder(): string[] {
 const widgetOrder = ref<string[]>(loadWidgetOrder());
 const widgetsEditable = ref(false);
 const dragWidgetId = ref<string | null>(null);
+const dragOverWidgetId = ref<string | null>(null);
+const dragWidgetTitle = ref('');
+const dragPointer = reactive({ x: 0, y: 0 });
+let dashDragOrigin: { x: number; y: number; id: string; title: string } | null = null;
+
+function hitTestDashWidget(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y);
+  const wrap = el?.closest?.('[data-dash-widget]') as HTMLElement | null;
+  return wrap?.dataset?.dashWidget ?? null;
+}
+
+function cleanupDashDrag() {
+  dashDragOrigin = null;
+  dragWidgetId.value = null;
+  dragOverWidgetId.value = null;
+  dragWidgetTitle.value = '';
+  window.removeEventListener('pointermove', onDashPointerMove);
+  window.removeEventListener('pointerup', onDashPointerUp);
+  window.removeEventListener('pointercancel', cleanupDashDrag);
+  window.removeEventListener('keydown', onDashDragKeydown);
+}
+
+function onDashPointerMove(e: PointerEvent) {
+  if (!dashDragOrigin) return;
+  if (!dragWidgetId.value && Math.hypot(e.clientX - dashDragOrigin.x, e.clientY - dashDragOrigin.y) < 6) {
+    return;
+  }
+  if (!dragWidgetId.value) {
+    dragWidgetId.value = dashDragOrigin.id;
+    dragWidgetTitle.value = dashDragOrigin.title;
+  }
+  dragPointer.x = e.clientX;
+  dragPointer.y = e.clientY;
+  dragOverWidgetId.value = hitTestDashWidget(e.clientX, e.clientY);
+}
+
+function onDashPointerUp(e: PointerEvent) {
+  const fromId = dragWidgetId.value;
+  const targetId = fromId ? hitTestDashWidget(e.clientX, e.clientY) : null;
+  cleanupDashDrag();
+  if (fromId && targetId && fromId !== targetId) {
+    const arr = [...widgetOrder.value];
+    const fi = arr.indexOf(fromId);
+    const ti = arr.indexOf(targetId);
+    if (fi >= 0 && ti >= 0) {
+      const [moved] = arr.splice(fi, 1);
+      arr.splice(ti, 0, moved);
+      widgetOrder.value = arr;
+      persistWidgets();
+    }
+  }
+}
+
+function onDashDragKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') cleanupDashDrag();
+}
+
+function onWidgetPointerDown(w: WidgetDef, e: PointerEvent) {
+  if (!widgetsEditable.value || e.button !== 0) return;
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('button, a, input, select, textarea')) return;
+  e.preventDefault();
+  dashDragOrigin = { x: e.clientX, y: e.clientY, id: w.id, title: w.title };
+  window.addEventListener('pointermove', onDashPointerMove);
+  window.addEventListener('pointerup', onDashPointerUp);
+  window.addEventListener('pointercancel', cleanupDashDrag);
+  window.addEventListener('keydown', onDashDragKeydown);
+}
+
+onBeforeUnmount(cleanupDashDrag);
 
 const activeWidgets = computed(
   () => widgetOrder.value.map(id => WIDGET_DEFS.value.find(d => d.id === id)).filter(Boolean) as WidgetDef[]
@@ -133,17 +203,6 @@ function moveWidget(id: string, dir: -1 | 1) {
   persistWidgets();
 }
 
-function onWidgetDrop(targetId: string) {
-  if (!dragWidgetId.value || dragWidgetId.value === targetId) return;
-  const arr = [...widgetOrder.value];
-  const from = arr.indexOf(dragWidgetId.value);
-  const to = arr.indexOf(targetId);
-  arr.splice(to, 0, arr.splice(from, 1)[0]);
-  widgetOrder.value = arr;
-  dragWidgetId.value = null;
-  persistWidgets();
-}
-
 function resetWidgets() {
   widgetOrder.value = [...DEFAULT_ORDER];
   persistWidgets();
@@ -161,9 +220,10 @@ const yearStr = dayjs().format('YYYY');
 
 const overdueItems = computed(() =>
   workStore.devStages
-    .filter(d => d.next_due && d.next_due < todayStr)
-    .map(d => ({
-      text: `${workStore.memberName(d.member_id)}：${d.next_node ?? bi('下一步节点', 'Next Milestone')}（${bi('应办', 'Due')} ${d.next_due}）`
+    .map(d => ({ d, nextNode: computeNextDevNode(d.stage, d.materials) }))
+    .filter(({ d, nextNode }) => Boolean(nextNode && d.next_due && d.next_due < todayStr))
+    .map(({ d, nextNode }) => ({
+      text: `${workStore.memberName(d.member_id)}：${nextNode}（${bi('应办', 'Due')} ${d.next_due}）`
     }))
 );
 
@@ -181,16 +241,19 @@ const owedItems = computed(() => {
 
 const uncoveredTalks = computed(() => {
   const covered = new Set(workStore.talks.filter(t => t.date.startsWith(yearStr)).flatMap(t => t.member_ids));
-  const names = workStore.members.filter(m => !covered.has(m.id)).map(m => m.name);
+  const names = workStore.members
+    .filter(m => (m.type === '正式党员' || m.type === '预备党员') && !covered.has(m.id))
+    .map(m => m.name);
   return { count: names.length, names };
 });
 
 const weekItems = computed(() => {
   const nodes = workStore.devStages
-    .filter(d => d.next_due && d.next_due >= todayStr && d.next_due <= weekEndStr)
-    .map(d => ({
+    .map(d => ({ d, nextNode: computeNextDevNode(d.stage, d.materials) }))
+    .filter(({ d, nextNode }) => Boolean(nextNode && d.next_due && d.next_due >= todayStr && d.next_due <= weekEndStr))
+    .map(({ d, nextNode }) => ({
       tag: bi('节点', 'Milestone'),
-      text: `${workStore.memberName(d.member_id)}：${d.next_node ?? ''}（${d.next_due}）`
+      text: `${workStore.memberName(d.member_id)}：${nextNode}（${d.next_due}）`
     }));
   const events = workStore
     .eventsInRange(todayStr, weekEndStr)
@@ -405,23 +468,22 @@ const weekCategoryCount = computed(() => {
       <div
         v-for="(w, wIdx) in activeWidgets"
         :key="w.id"
+        :data-dash-widget="w.id"
         class="dash-widget-item"
         :class="[
           w.fullRow ? 'col-span-full' : 'flex flex-col',
           {
-            'opacity-50': dragWidgetId === w.id,
-            'dash-widget-item--editing outline outline-1 outline-dashed outline-gray-300 rounded-14px p-8px':
+            'opacity-45': dragWidgetId === w.id,
+            'ring-2 ring-[#A81C24]':
+              widgetsEditable && dragOverWidgetId === w.id && dragWidgetId && dragWidgetId !== w.id,
+            'dash-widget-item--editing outline outline-1 outline-dashed outline-gray-300 rounded-14px p-8px select-none':
               widgetsEditable,
             'dash-widget-item--wide': widgetsEditable && w.fullRow,
             'dash-widget-item--alt': widgetsEditable && wIdx % 2 === 1
           }
         ]"
-        :style="widgetsEditable ? { animationDelay: `${(wIdx % 4) * -0.11}s` } : undefined"
-        :draggable="widgetsEditable"
-        @dragstart="dragWidgetId = w.id"
-        @dragend="dragWidgetId = null"
-        @dragover.prevent
-        @drop="onWidgetDrop(w.id)"
+        :style="widgetsEditable && !dragWidgetId ? { animationDelay: `${(wIdx % 4) * -0.11}s` } : undefined"
+        @pointerdown="onWidgetPointerDown(w, $event)"
       >
         <div v-if="widgetsEditable" class="mb-8px flex items-center justify-between gap-8px text-11px text-gray-400">
           <span class="cursor-move font-semibold">⠿ {{ w.title }}（{{ bi('拖拽排序', 'Drag to reorder') }}）</span>
@@ -803,6 +865,18 @@ const weekCategoryCount = computed(() => {
         </NCard>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="dragWidgetId"
+        class="pointer-events-none fixed z-9999 inline-flex items-center gap-6px rounded-8px border border-[#A81C24] bg-[var(--sct-container)] px-12px py-6px text-12px font-bold text-[var(--sct-ink)] shadow-lg"
+        :style="{ left: `${dragPointer.x + 12}px`, top: `${dragPointer.y + 12}px` }"
+      >
+        <SvgIcon icon="lucide:grip-vertical" class="text-13px text-[#A81C24]" />
+        <span>{{ dragWidgetTitle }}</span>
+        <span class="text-11px font-normal text-gray-400">拖到目标位置松手排序</span>
+      </div>
+    </Teleport>
   </div>
 </template>
 

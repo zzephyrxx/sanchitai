@@ -5,6 +5,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import dayjs from 'dayjs';
+import { computeNextDevNode } from '@/constants/dev-nodes';
 import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 import { maskIdCard } from '@/utils/member-code';
 import { resolveEffectiveFullDate } from '@/utils/member-status';
@@ -66,6 +67,10 @@ const member = computed(() => (props.memberId ? workStore.memberOf(props.memberI
 
 const devStage = computed(() =>
   props.memberId ? workStore.devStages.find(d => d.member_id === props.memberId) : undefined
+);
+
+const effectiveNextNode = computed(() =>
+  devStage.value ? computeNextDevNode(devStage.value.stage, devStage.value.materials) : ''
 );
 
 const talksThisYear = computed(() => {
@@ -167,11 +172,11 @@ const dormText = computed(() => {
           <NDescriptionsItem v-if="member.note" label="备注">{{ member.note }}</NDescriptionsItem>
         </NDescriptions>
 
-        <div v-if="devStage?.next_node">
+        <div v-if="effectiveNextNode">
           <div class="mb-6px text-13px font-bold">下一步</div>
           <div class="rounded-8px bg-[var(--sct-soft)] p-10px text-13px leading-relaxed">
-            {{ devStage.next_node }}
-            <div v-if="devStage.next_due" class="mt-4px text-12px text-[#d97706]">预计：{{ devStage.next_due }}</div>
+            {{ effectiveNextNode }}
+            <div v-if="devStage?.next_due" class="mt-4px text-12px text-[#d97706]">预计：{{ devStage.next_due }}</div>
           </div>
         </div>
       </NSpace>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, nextTick, reactive, ref } from 'vue';
+import { computed, h, nextTick, onMounted, reactive, ref } from 'vue';
 import { NButton, NDropdown, NPopconfirm, NTag } from 'naive-ui';
 import type { DataTableColumns, DropdownOption } from 'naive-ui';
 import dayjs from 'dayjs';
@@ -8,12 +8,17 @@ import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import EmptyFancy from '@/components/custom/empty-fancy.vue';
+import { ensureDefaultDocTemplates } from '@/db/db';
 
 defineOptions({ name: 'DocsPage' });
 
 const workStore = useWorkDataStore();
 const { SvgIconVNode } = useSvgIcon();
 const { bi } = useSctI18n();
+
+onMounted(() => {
+  void ensureDefaultDocTemplates();
+});
 
 const BASE_CATEGORIES = ['会议', '活动', '总结', '发展', '谈心谈话', '其他'] as const;
 

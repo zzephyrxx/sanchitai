@@ -52,13 +52,30 @@ const vetoMap = computed(() => {
   return m;
 });
 
-const allSummaries = computed<MemberYearPointSummary[]>(() =>
-  partyMembers.value
+/** 先按年度做单次 O(R) 分组，避免对每位党员重复扫描全量积分流水（500 人场景提速 1~2 个数量级） */
+const yearRecordsByMember = computed(() => {
+  const map = new Map<string, Sct.PointRecord[]>();
+  const targetYear = selectedYear.value;
+  for (const r of workStore.pointRecords) {
+    if (r.year !== targetYear) continue;
+    const bucket = map.get(r.member_id);
+    if (bucket) {
+      bucket.push(r);
+    } else {
+      map.set(r.member_id, [r]);
+    }
+  }
+  return map;
+});
+
+const allSummaries = computed<MemberYearPointSummary[]>(() => {
+  const recMap = yearRecordsByMember.value;
+  return partyMembers.value
     .map(member =>
-      computeMemberYearPoints(member, selectedYear.value, workStore.pointRecords, vetoMap.value.get(member.id))
+      computeMemberYearPoints(member, selectedYear.value, recMap.get(member.id) ?? [], vetoMap.value.get(member.id))
     )
-    .sort((a, b) => b.totalScore - a.totalScore || a.member.name.localeCompare(b.member.name, 'zh-CN'))
-);
+    .sort((a, b) => b.totalScore - a.totalScore || a.member.name.localeCompare(b.member.name, 'zh-CN'));
+});
 
 // ---------------- 顶部统计 ----------------
 const kpiStats = computed(() => {
@@ -315,8 +332,9 @@ const columnMap = computed(() => ({
       ])
   },
   op: {
-    defaultWidth: 96,
-    minWidth: 90,
+    defaultWidth: 148,
+    minWidth: 136,
+    fixed: 'right' as const,
     align: 'center' as const,
     resizable: false,
     reorderable: false,
@@ -325,15 +343,21 @@ const columnMap = computed(() => ({
       h(
         NButton,
         {
-          size: 'tiny',
+          size: 'small',
           type: 'primary',
-          secondary: true,
+          class: 'sct-op-btn sct-op-btn--primary',
           onClick: (e: MouseEvent) => {
             e.stopPropagation();
             openMemberDrawer(row.member.id);
           }
         },
-        { default: () => (row.totalRecordCount > 0 ? `登记/审核(${row.totalRecordCount})` : '登记积分') }
+        {
+          icon: SvgIconVNode({
+            icon: row.totalRecordCount > 0 ? 'lucide:clipboard-check' : 'lucide:plus-circle',
+            fontSize: 14
+          }),
+          default: () => (row.totalRecordCount > 0 ? `登记/审核(${row.totalRecordCount})` : '登记积分')
+        }
       )
   }
 }));

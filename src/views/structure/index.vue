@@ -276,8 +276,8 @@ const ACADEMY_STAGES: AcademyStageMeta[] = [
   {
     index: 1,
     title: '一、申请入党阶段',
-    color: '#475569',
-    soft: 'rgba(71, 85, 105, 0.10)',
+    color: '#64748b',
+    soft: 'rgba(100, 116, 139, 0.14)',
     rowDirections: ['ltr'],
     exitSide: 'right'
   },

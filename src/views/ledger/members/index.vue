@@ -766,7 +766,7 @@ const allColumnMap = computed(() => ({
   },
   op: {
     key: 'op',
-    defaultWidth: 196,
+    defaultWidth: 224,
     fixed: 'right' as const,
     resizable: false,
     reorderable: false,
@@ -777,8 +777,7 @@ const allColumnMap = computed(() => ({
           NButton,
           {
             size: 'tiny',
-            secondary: true,
-            type: 'primary',
+            class: 'sct-op-btn sct-op-btn--info',
             onClick: () => openCard(row.id)
           },
           {
@@ -790,7 +789,7 @@ const allColumnMap = computed(() => ({
           NButton,
           {
             size: 'tiny',
-            secondary: true,
+            class: 'sct-op-btn sct-op-btn--neutral',
             onClick: () => openEditMember(row)
           },
           {
@@ -807,8 +806,7 @@ const allColumnMap = computed(() => ({
                 NButton,
                 {
                   size: 'tiny',
-                  secondary: true,
-                  type: 'error'
+                  class: 'sct-op-btn sct-op-btn--danger'
                 },
                 {
                   icon: SvgIconVNode({ icon: 'lucide:trash-2', fontSize: 13 }),

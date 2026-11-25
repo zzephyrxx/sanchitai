@@ -11,7 +11,6 @@ import {
   POINT_PASS_LINE
 } from '@/constants/party-points';
 import { esc } from '@/utils/print';
-import { saveFileWithPicker } from '@/utils/save-file';
 
 export interface BucketScoreDetail {
   key: Sct.PointSubCategory;
@@ -331,6 +330,7 @@ export async function exportBranchPointsExcel(opts: {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   });
 
+  const { saveFileWithPicker } = await import('@/utils/save-file');
   const res = await saveFileWithPicker(blob, {
     suggestedName: `${opts.branchName}_${opts.year}年度党员积分支部记录表_${dayjs().format('YYYYMMDD')}.xlsx`,
     types: [
