@@ -1,4 +1,4 @@
-# 三尺台 v0.2.4 · Windows 安装包编译构建指南
+# 三尺台 v0.2.6 · Windows 安装包编译构建指南
 
 本文档用于指导在 **Windows 10 / 11 (x64)** 环境下，将三尺台源码打包构建为 Windows 安装程序（NSIS `.exe`）。
 
@@ -33,17 +33,17 @@
 
 ## 二、解压源码与安装依赖
 
-1. 将压缩包 `sanchitai-v0.2.4-src.zip` 解压到一个**全新的纯英文、无空格短路径**（**不要覆盖解压到旧版 v0.2.3 目录**，避免新旧目录嵌套导致仍编译旧版代码），例如：
+1. 将压缩包 `sanchitai-v0.2.6-src.zip` 解压到一个**全新的纯英文、无空格短路径**（**不要覆盖解压到旧版 v0.2.5 目录**，避免新旧目录嵌套导致仍编译旧版代码），例如：
 
    ```text
-   D:\sanchitai-0.2.4
+   D:\sanchitai-0.2.6
    ```
 
-   > 解压后进入包含 `package.json` 的目录（若压缩包内带一层 `sanchitai-v0.2.4` 文件夹，请进入该子目录），可运行 `Select-String '"version"' package.json` 确认显示 `"version": "0.2.4"`。
+   > 解压后进入包含 `package.json` 的目录（若压缩包内带一层 `sanchitai-v0.2.6` 文件夹，请进入该子目录），可运行 `Select-String '"version"' package.json` 确认显示 `"version": "0.2.6"`。
 
 2. 在包含 `package.json` 的目录打开 **PowerShell**（或终端），安装前端依赖：
    ```powershell
-   cd D:\sanchitai-0.2.4
+   cd D:\sanchitai-0.2.6
    pnpm install
    ```
    > 如国内下载较慢，可先设置镜像：`pnpm config set registry https://registry.npmmirror.com`
@@ -72,7 +72,7 @@ pnpm tauri build --bundles nsis
 构建成功后，在以下路径即可找到 Windows 安装包：
 
 ```text
-src-tauri\target\release\bundle\nsis\三尺台_0.2.4_x64-setup.exe
+src-tauri\target\release\bundle\nsis\三尺台_0.2.6_x64-setup.exe
 ```
 
 同时，绿色单文件可执行程序位于：

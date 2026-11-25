@@ -62,7 +62,7 @@ function handleUpdateShow(val: boolean) {
     :show="show"
     trigger="click"
     placement="bottom-end"
-    :width="408"
+    :width="468"
     :show-arrow="true"
     @update:show="handleUpdateShow"
   >
@@ -122,26 +122,74 @@ function handleUpdateShow(val: boolean) {
         </div>
       </div>
 
-      <!-- 版本更新条目 -->
-      <div class="flex flex-col gap-10px">
-        <div v-for="sec in currentRelease.sections" :key="sec.titleZh" class="flex flex-col gap-4px">
+      <!-- 版本更新条目（无底色无边框通透排版，每条小功能配专属小图标 + 悬浮「更多」） -->
+      <div class="changelog-scroll flex flex-col gap-12px">
+        <div v-for="sec in currentRelease.sections" :key="sec.titleZh" class="flex flex-col gap-5px">
           <div class="flex items-center gap-5px text-12px font-semibold text-[var(--sct-ink)]">
             <SvgIcon :icon="sec.icon" class="text-13px text-[var(--sct-accent)]" />
             <span>{{ bi(sec.titleZh, sec.titleEn) }}</span>
           </div>
-          <ul class="m-0 flex flex-col gap-4px pl-18px text-12px leading-snug text-gray-600 dark:text-gray-300">
-            <li v-for="(item, idx) in sec.items" :key="idx">
-              <span class="align-middle">{{ bi(item.zh, item.en) }}</span>
-              <NTag
-                v-if="item.badge"
-                size="tiny"
-                type="warning"
-                :bordered="false"
-                round
-                class="ml-5px align-middle text-10px"
-              >
-                {{ item.badge }}
-              </NTag>
+          <ul
+            class="m-0 flex flex-col text-12px leading-snug text-gray-600 dark:text-gray-300"
+            :class="[
+              sec.items.some(i => i.icon) ? 'list-none pl-4px' : 'pl-18px',
+              sec.items.some(i => i.titleZh) ? 'gap-8px' : 'gap-5px'
+            ]"
+          >
+            <li v-for="(item, idx) in sec.items" :key="idx" :class="item.icon ? 'flex items-start gap-7px' : ''">
+              <SvgIcon
+                v-if="item.icon"
+                :icon="item.icon"
+                class="mt-3px shrink-0 text-13px text-[var(--sct-accent)] opacity-85"
+              />
+              <!-- 两行式排版：第一行粗体简要标题（+ Preview），第二行缩进详细解释（+ 更多悬浮） -->
+              <div v-if="item.titleZh" class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-5px leading-snug">
+                  <strong class="text-12.5px font-semibold text-[var(--sct-ink)]">
+                    {{ bi(item.titleZh, item.titleEn || item.titleZh) }}
+                  </strong>
+                  <NTag v-if="item.badge" size="tiny" type="warning" :bordered="false" round class="text-10px">
+                    {{ item.badge }}
+                  </NTag>
+                </div>
+                <div class="mt-2px text-11.5px leading-relaxed text-gray-500 dark:text-gray-400">
+                  <span class="align-middle">{{ bi(item.zh, item.en) }}</span>
+                  <NTooltip v-if="item.detailZh" trigger="hover" placement="top" :style="{ maxWidth: '320px' }">
+                    <template #trigger>
+                      <span class="changelog-more-pill ml-5px align-middle">
+                        {{ bi('更多', 'More') }}
+                      </span>
+                    </template>
+                    <div class="text-12px leading-relaxed">
+                      {{ bi(item.detailZh, item.detailEn || item.detailZh) }}
+                    </div>
+                  </NTooltip>
+                </div>
+              </div>
+              <!-- 紧凑单行式排版（用于体验优化、问题修复及历史版本） -->
+              <span v-else class="flex-1 leading-relaxed">
+                <span class="align-middle">{{ bi(item.zh, item.en) }}</span>
+                <NTag
+                  v-if="item.badge"
+                  size="tiny"
+                  type="warning"
+                  :bordered="false"
+                  round
+                  class="ml-5px align-middle text-10px"
+                >
+                  {{ item.badge }}
+                </NTag>
+                <NTooltip v-if="item.detailZh" trigger="hover" placement="top" :style="{ maxWidth: '320px' }">
+                  <template #trigger>
+                    <span class="changelog-more-pill ml-5px align-middle">
+                      {{ bi('更多', 'More') }}
+                    </span>
+                  </template>
+                  <div class="text-12px leading-relaxed">
+                    {{ bi(item.detailZh, item.detailEn || item.detailZh) }}
+                  </div>
+                </NTooltip>
+              </span>
             </li>
           </ul>
         </div>
@@ -182,5 +230,35 @@ function handleUpdateShow(val: boolean) {
   height: 6px;
   border-radius: 999px;
   background: #a81c24;
+}
+.changelog-scroll {
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.changelog-more-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--sct-accent, #a81c24);
+  background: transparent;
+  border: 1px dashed rgba(168, 28, 36, 0.38);
+  cursor: help;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.changelog-more-pill:hover {
+  background: rgba(168, 28, 36, 0.08);
+  border-style: solid;
+}
+:global(.dark) .changelog-more-pill {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.45);
+}
+:global(.dark) .changelog-more-pill:hover {
+  background: rgba(239, 68, 68, 0.14);
 }
 </style>
