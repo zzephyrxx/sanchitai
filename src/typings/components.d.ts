@@ -82,6 +82,7 @@ declare module 'vue' {
     NPagination: typeof import('naive-ui')['NPagination']
     NPopconfirm: typeof import('naive-ui')['NPopconfirm']
     NPopover: typeof import('naive-ui')['NPopover']
+    NProgress: typeof import('naive-ui')['NProgress']
     NRadio: typeof import('naive-ui')['NRadio']
     NRadioButton: typeof import('naive-ui')['NRadioButton']
     NRadioGroup: typeof import('naive-ui')['NRadioGroup']
@@ -108,6 +109,7 @@ declare module 'vue' {
     TableColumnSetting: typeof import('./../components/advanced/table-column-setting.vue')['default']
     TableHeaderOperation: typeof import('./../components/advanced/table-header-operation.vue')['default']
     ThemeSchemaSwitch: typeof import('./../components/common/theme-schema-switch.vue')['default']
+    UpdateNotifier: typeof import('./../components/common/update-notifier.vue')['default']
     WaveBg: typeof import('./../components/custom/wave-bg.vue')['default']
   }
 }
@@ -184,6 +186,7 @@ declare global {
   const NPagination: typeof import('naive-ui')['NPagination']
   const NPopconfirm: typeof import('naive-ui')['NPopconfirm']
   const NPopover: typeof import('naive-ui')['NPopover']
+  const NProgress: typeof import('naive-ui')['NProgress']
   const NRadio: typeof import('naive-ui')['NRadio']
   const NRadioButton: typeof import('naive-ui')['NRadioButton']
   const NRadioGroup: typeof import('naive-ui')['NRadioGroup']
@@ -210,5 +213,6 @@ declare global {
   const TableColumnSetting: typeof import('./../components/advanced/table-column-setting.vue')['default']
   const TableHeaderOperation: typeof import('./../components/advanced/table-header-operation.vue')['default']
   const ThemeSchemaSwitch: typeof import('./../components/common/theme-schema-switch.vue')['default']
+  const UpdateNotifier: typeof import('./../components/common/update-notifier.vue')['default']
   const WaveBg: typeof import('./../components/custom/wave-bg.vue')['default']
 }

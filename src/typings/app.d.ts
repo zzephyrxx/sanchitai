@@ -23,6 +23,8 @@ declare namespace App {
       themeColor: string;
       /** Theme radius */
       themeRadius: number;
+      /** 界面密度（紧凑 / 舒适 / 宽松） */
+      density: UnionKey.ThemeDensity;
       /** 全局字体配置（支持界面正文、标题衬线、数字等宽三类主要字体分开设置，以及全局字号缩放百分比） */
       fontConfig: {
         /** 界面与正文字体 */
@@ -31,7 +33,7 @@ declare namespace App {
         heading: UnionKey.ThemeFontHeading;
         /** 数字与台账等宽字体 */
         mono: UnionKey.ThemeFontMono;
-        /** 全局缩放比例（85 ~ 125，默认 100 表示 100%） */
+        /** 全局缩放比例（85 ~ 150，默认 100 表示 100%） */
         scale: number;
       };
       /** Other color */

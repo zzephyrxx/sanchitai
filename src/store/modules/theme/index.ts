@@ -247,8 +247,10 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     const sansStack = SANS_FONT_STACKS[sans] ?? SANS_FONT_STACKS.system;
     const headingStack = heading === 'follow-sans' ? sansStack : (HEADING_FONT_STACKS[heading] ?? sansStack);
     const monoStack = MONO_FONT_STACKS[mono] ?? MONO_FONT_STACKS['ibm-plex'];
-    const clampedScale = Math.min(125, Math.max(85, scale));
+    const clampedScale = Math.min(150, Math.max(85, scale));
     const ratio = clampedScale / 100;
+    // 对党员发展泳道与党费表格额外增加约 10% 的缩放响应幅度
+    const boostedRatio = ratio === 1 ? 1 : Number((1 + (ratio - 1) * 1.1).toFixed(3));
 
     const rootStyle = document.documentElement.style;
     rootStyle.removeProperty('zoom');
@@ -256,7 +258,30 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     rootStyle.setProperty('--sct-font-heading', headingStack);
     rootStyle.setProperty('--sct-font-mono', monoStack);
     rootStyle.setProperty('--sct-font-scale', String(ratio));
+    rootStyle.setProperty('--sct-font-scale-boost', String(boostedRatio));
     rootStyle.setProperty('font-size', `${Math.round(16 * ratio * 100) / 100}px`);
+  }
+
+  /** 应用界面密度标记（紧凑 / 舒适 / 宽松） */
+  function applyDensityAttr() {
+    const raw = settings.value.density;
+    const density: UnionKey.ThemeDensity = raw === 'compact' || raw === 'loose' ? raw : 'comfortable';
+    if (raw !== density) {
+      settings.value.density = density;
+    }
+    document.documentElement.dataset.density = density;
+    const scaleMap: Record<UnionKey.ThemeDensity, number> = {
+      compact: 0.78,
+      comfortable: 1,
+      loose: 1.24
+    };
+    document.documentElement.style.setProperty('--sct-density-scale', String(scaleMap[density]));
+  }
+
+  function setDensity(density: UnionKey.ThemeDensity) {
+    settings.value.density = density;
+    applyDensityAttr();
+    cacheThemeSettings();
   }
 
   /**
@@ -539,6 +564,16 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     { immediate: true }
   );
 
+  // 应用界面密度标记
+  watch(
+    () => settings.value.density,
+    () => {
+      applyDensityAttr();
+      cacheThemeSettings();
+    },
+    { immediate: true }
+  );
+
   // 应用全局字体配置（正文 / 标题 / 等宽数字）
   watch(
     () => settings.value.fontConfig,
@@ -563,6 +598,7 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
     toggleThemeScheme,
     toggleThemeSchemeWithTransition,
     setThemePreset,
+    setDensity,
     resetPresetColors,
     updateThemeColors,
     setThemeLayout,

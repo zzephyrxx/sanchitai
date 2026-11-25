@@ -17,6 +17,9 @@ declare namespace UnionKey {
   /** 三尺台主题皮肤 */
   type ThemePreset = 'default' | 'crm-frosted-glass';
 
+  /** 界面密度：紧凑 / 舒适（默认） / 宽松 */
+  type ThemeDensity = 'compact' | 'comfortable' | 'loose';
+
   /** 全局界面主字体（正文 / UI，含常用中英文字体） */
   type ThemeFontSans =
     | 'system'

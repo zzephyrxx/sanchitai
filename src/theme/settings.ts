@@ -9,6 +9,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
   themePreset: 'default' as UnionKey.ThemePreset,
   themeColor: '#2B2926',
   themeRadius: 6,
+  density: 'comfortable',
   fontConfig: {
     sans: 'system',
     heading: 'follow-sans',
@@ -106,4 +107,9 @@ export const themeSettings: App.Theme.ThemeSetting = {
  *
  * If publish new version, use `overrideThemeSettings` to override certain theme settings
  */
-export const overrideThemeSettings: Partial<App.Theme.ThemeSetting> = {};
+export const overrideThemeSettings: Partial<App.Theme.ThemeSetting> = {
+  layout: {
+    mode: 'vertical',
+    scrollMode: 'content'
+  }
+};

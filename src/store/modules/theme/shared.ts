@@ -251,16 +251,39 @@ export function getNaiveTheme(
   const { primary: colorLoading } = colors;
   const rawScale = settings.fontConfig?.scale;
   const scaleRatio =
-    typeof rawScale === 'number' && !Number.isNaN(rawScale)
-      ? Math.min(125, Math.max(85, rawScale)) / 100
-      : 1;
+    typeof rawScale === 'number' && !Number.isNaN(rawScale) ? Math.min(150, Math.max(85, rawScale)) / 100 : 1;
   const px = (base: number) => `${Math.round(base * scaleRatio * 10) / 10}px`;
   const isEPaper = settings.themePreset === 'crm-frosted-glass';
+  const density = settings.density ?? 'comfortable';
+  const cardPad =
+    density === 'compact'
+      ? { sm: '8px 12px 8px 12px', md: '10px 14px 10px 14px', lg: '12px 16px 12px 16px', hu: '14px 18px 14px 18px' }
+      : density === 'loose'
+        ? { sm: '18px 22px 18px 22px', md: '22px 26px 22px 26px', lg: '24px 30px 24px 30px', hu: '28px 34px 28px 34px' }
+        : isEPaper
+          ? {
+              sm: '16px 16px 14px 16px',
+              md: '18px 20px 18px 20px',
+              lg: '20px 24px 20px 24px',
+              hu: '24px 28px 24px 28px'
+            }
+          : {
+              sm: '12px 16px 12px 16px',
+              md: '16px 20px 18px 20px',
+              lg: '18px 24px 20px 24px',
+              hu: '20px 28px 24px 28px'
+            };
+  const tableCellPad =
+    density === 'compact'
+      ? { sm: '5px 8px', md: '7px 10px', lg: '9px 12px' }
+      : density === 'loose'
+        ? { sm: '12px 14px', md: '14px 16px', lg: '16px 18px' }
+        : { sm: '8px 10px', md: '10px 12px', lg: '12px 14px' };
 
   const theme: GlobalThemeOverrides = {
     common: {
       ...getNaiveThemeColors(colors, settings.recommendColor),
-      borderRadius: `${settings.themeRadius}px`,
+      borderRadius: isEPaper ? '0px' : '6px',
       fontSize: px(14),
       fontSizeMini: px(12),
       fontSizeTiny: px(12),
@@ -270,10 +293,18 @@ export function getNaiveTheme(
       fontSizeHuge: px(16)
     },
     Card: {
-      paddingSmall: isEPaper ? '16px 16px 14px 16px' : '12px 16px 12px 16px',
-      paddingMedium: isEPaper ? '18px 20px 18px 20px' : '16px 20px 18px 20px',
-      paddingLarge: isEPaper ? '20px 24px 20px 24px' : '18px 24px 20px 24px',
-      paddingHuge: isEPaper ? '24px 28px 24px 28px' : '20px 28px 24px 28px'
+      paddingSmall: cardPad.sm,
+      paddingMedium: cardPad.md,
+      paddingLarge: cardPad.lg,
+      paddingHuge: cardPad.hu
+    },
+    DataTable: {
+      tdPaddingSmall: tableCellPad.sm,
+      thPaddingSmall: tableCellPad.sm,
+      tdPaddingMedium: tableCellPad.md,
+      thPaddingMedium: tableCellPad.md,
+      tdPaddingLarge: tableCellPad.lg,
+      thPaddingLarge: tableCellPad.lg
     },
     Button: {
       textColorPrimary: '#ffffff',

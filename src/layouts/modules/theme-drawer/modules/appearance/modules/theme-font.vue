@@ -53,7 +53,7 @@ const monoOptions = computed<Array<{ label: string; value: UnionKey.ThemeFontMon
           size="small"
           :step="5"
           :min="85"
-          :max="125"
+          :max="150"
           class="w-120px"
         >
           <template #suffix>%</template>

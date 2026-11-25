@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ThemeColor from './modules/theme-color.vue';
+import ThemeDensity from './modules/theme-density.vue';
 import ThemeFont from './modules/theme-font.vue';
-import ThemeRadius from './modules/theme-radius.vue';
 import ThemeSchema from './modules/theme-schema.vue';
 
 defineOptions({
@@ -13,7 +13,7 @@ defineOptions({
   <div class="flex-col-stretch gap-16px">
     <ThemeSchema />
     <ThemeColor />
-    <ThemeRadius />
+    <ThemeDensity />
     <ThemeFont />
   </div>
 </template>

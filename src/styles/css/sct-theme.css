@@ -4,8 +4,8 @@
    2. 电子纸（KONTUR Ledger CRM · 100% 复刻 crm-frosted-glass-template/page.tsx）
    ============================================================ */
 
-/* 仅对非 Naive UI 的裸 button 提供零权重透明底兜底，绝不干扰 .n-button */
-:where(button):not(.n-button) {
+/* 仅对非 Naive UI 的裸 button 提供真正零权重 (0,0,0) 透明底兜底，绝不覆盖 UnoCSS .bg-* 或干扰 .n-button */
+:where(button:not(.n-button)) {
   background-color: transparent;
 }
 
@@ -34,6 +34,8 @@ a.n-button {
   --sct-font-mono: 'IBM Plex Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
   --sct-font-serif: 'Instrument Serif', 'Georgia', 'Songti SC', 'STSong', serif;
   --sct-font-scale: 1;
+  --sct-font-scale-boost: 1;
+  --sct-density-scale: 1;
 }
 
 /* 全局三类字体绑定（正文 / 标题 / 等宽数字） */
@@ -42,7 +44,7 @@ body {
   font-family: var(--sct-font-sans);
 }
 
-/* 全局字号缩放：同步缩放 UnoCSS 固定 px 字号类，且不使用 CSS zoom 以免干扰 Popover/Tooltip/Dropdown 坐标计算 */
+/* 全局字号缩放：同步缩放 UnoCSS 固定 px 字号类（支持 85% ~ 150%），不使用 CSS zoom 以免干扰 Popover/Tooltip 坐标 */
 .text-10px {
   font-size: calc(10px * var(--sct-font-scale, 1)) !important;
 }
@@ -66,6 +68,91 @@ body {
 }
 .text-18px {
   font-size: calc(18px * var(--sct-font-scale, 1)) !important;
+}
+.text-20px {
+  font-size: calc(20px * var(--sct-font-scale, 1)) !important;
+}
+.text-22px {
+  font-size: calc(22px * var(--sct-font-scale, 1)) !important;
+}
+.text-24px {
+  font-size: calc(24px * var(--sct-font-scale, 1)) !important;
+}
+
+/* 界面密度全局适配（紧凑 / 舒适 / 宽松） */
+html[data-density='compact'] .n-form-item {
+  --n-feedback-height: 16px;
+}
+html[data-density='compact'] .n-card > .n-card-header {
+  padding-top: 10px !important;
+  padding-bottom: 8px !important;
+}
+html[data-density='loose'] .n-card > .n-card-header {
+  padding-top: 18px !important;
+  padding-bottom: 14px !important;
+}
+html[data-density='loose'] .n-form-item {
+  --n-feedback-height: 26px;
+}
+
+/* 表格操作列高辨识度按钮样式（党员积分 & 人员台账统一增强实感） */
+.sct-op-btn.n-button {
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  padding: 0 10px !important;
+  height: 26px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease !important;
+}
+.sct-op-btn.n-button:hover {
+  transform: translateY(-0.5px);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
+}
+.sct-op-btn--primary.n-button {
+  background-color: #a81c24 !important;
+  border: 1px solid #8f161d !important;
+  color: #ffffff !important;
+}
+.sct-op-btn--primary.n-button:hover {
+  background-color: #8f161d !important;
+}
+.sct-op-btn--info.n-button {
+  background-color: rgba(37, 99, 235, 0.12) !important;
+  border: 1px solid rgba(37, 99, 235, 0.32) !important;
+  color: #1d4ed8 !important;
+}
+.sct-op-btn--info.n-button:hover {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+}
+.sct-op-btn--neutral.n-button {
+  background-color: var(--sct-soft) !important;
+  border: 1px solid var(--sct-border) !important;
+  color: var(--sct-ink) !important;
+}
+.sct-op-btn--neutral.n-button:hover {
+  border-color: var(--sct-ink) !important;
+}
+.sct-op-btn--danger.n-button {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+  border: 1px solid rgba(220, 38, 38, 0.3) !important;
+  color: #dc2626 !important;
+}
+.sct-op-btn--danger.n-button:hover {
+  background-color: rgba(220, 38, 38, 0.18) !important;
+}
+html.dark .sct-op-btn--info.n-button {
+  background-color: rgba(96, 165, 250, 0.16) !important;
+  border-color: rgba(96, 165, 250, 0.38) !important;
+  color: #93c5fd !important;
+}
+html.dark .sct-op-btn--danger.n-button {
+  background-color: rgba(248, 113, 113, 0.16) !important;
+  border-color: rgba(248, 113, 113, 0.38) !important;
+  color: #fca5a5 !important;
 }
 
 h1:not(.sct-brand-title),
@@ -576,13 +663,19 @@ html.dark .sct-pill--grade-4 {
   color: #cbd5e1;
 }
 
-/* 电子纸 KONTUR 主题下新组件直角与无弥散阴影兼容（党员积分筛选按钮 / 组织架构节点与党小组卡） */
+/* 电子纸 KONTUR 主题下新组件直角与无弥散阴影兼容（党员积分筛选按钮 / 组织架构节点与党小组卡 / 发展翻页器与时间线节点） */
 html[data-preset='crm-frosted-glass'] .points-kpi-btn,
 html[data-preset='crm-frosted-glass'] .points-kpi-btn__cue,
 html[data-preset='crm-frosted-glass'] .mm-node,
 html[data-preset='crm-frosted-glass'] .mm-add-youth-btn,
 html[data-preset='crm-frosted-glass'] .mm-group-card,
-html[data-preset='crm-frosted-glass'] .mm-member-chip {
+html[data-preset='crm-frosted-glass'] .mm-member-chip,
+html[data-preset='crm-frosted-glass'] .dev-stepper,
+html[data-preset='crm-frosted-glass'] .dev-stepper__track,
+html[data-preset='crm-frosted-glass'] .dev-step-pill,
+html[data-preset='crm-frosted-glass'] .s-node,
+html[data-preset='crm-frosted-glass'] .sct-update-toast,
+html[data-preset='crm-frosted-glass'] .sct-op-btn.n-button {
   border-radius: 0px !important;
   box-shadow: none !important;
 }
