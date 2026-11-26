@@ -34,32 +34,43 @@ const { isFullscreen, toggle } = useFullscreen();
 </script>
 
 <template>
-  <DarkModeContainer class="h-full flex-y-center px-12px shadow-header">
-    <GlobalLogo v-if="showLogo" class="h-full" :style="{ width: themeStore.sider.width + 'px' }" />
+  <DarkModeContainer class="h-full flex-y-center overflow-hidden px-12px shadow-header">
+    <GlobalLogo v-if="showLogo" class="h-full shrink-0" :style="{ width: themeStore.sider.width + 'px' }" />
     <MenuToggler v-if="showMenuToggler" :collapsed="appStore.siderCollapse" @click="appStore.toggleSiderCollapse" />
     <div v-if="showMenu" :id="GLOBAL_HEADER_MENU_ID" class="h-full flex-y-center flex-1-hidden"></div>
     <div v-else class="mr-8px h-full min-w-0 flex-y-center flex-1-hidden">
-      <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-10px" />
+      <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-10px hidden md:flex" />
     </div>
-    <div data-tour="header-tools" class="h-full flex-y-center flex-shrink-0 justify-end gap-4px">
-      <OpenModeButton />
-      <BranchBadge />
-      <IdentityBadge />
+    <div data-tour="header-tools" class="h-full min-w-0 flex-y-center flex-shrink-0 justify-end gap-4px">
+      <div class="hidden items-center lg:inline-flex">
+        <OpenModeButton />
+      </div>
+      <div class="hidden items-center sm:inline-flex">
+        <BranchBadge />
+      </div>
+      <div class="hidden items-center md:inline-flex">
+        <IdentityBadge />
+      </div>
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />
-      <FullScreen v-if="!appStore.isMobile" :full="isFullscreen" @click="toggle" />
-      <LangSwitch
-        v-if="themeStore.header.multilingual.visible"
-        :lang="appStore.locale"
-        :lang-options="appStore.localeOptions"
-        @change-lang="appStore.changeLocale"
-      />
+      <div v-if="!appStore.isMobile" class="hidden items-center xl:inline-flex">
+        <FullScreen :full="isFullscreen" @click="toggle" />
+      </div>
+      <div v-if="themeStore.header.multilingual.visible" class="hidden items-center lg:inline-flex">
+        <LangSwitch
+          :lang="appStore.locale"
+          :lang-options="appStore.localeOptions"
+          @change-lang="appStore.changeLocale"
+        />
+      </div>
       <ThemeSchemaSwitch
         :theme-schema="themeStore.themeScheme"
         :is-dark="themeStore.darkMode"
         @switch="(e: MouseEvent) => themeStore.toggleThemeSchemeWithTransition(e)"
       />
       <ThemeButton />
-      <ChangelogButton />
+      <div class="hidden items-center xl:inline-flex">
+        <ChangelogButton />
+      </div>
       <LockButton />
     </div>
   </DarkModeContainer>

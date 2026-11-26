@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { useElementSize } from '@vueuse/core';
 import dayjs from 'dayjs';
 import type {
   CalendarOptions,
@@ -678,6 +679,21 @@ async function quickRestorePlan(ev: Sct.CalEvent) {
   window.$message?.success(`「${ev.title}」已恢复为计划中`);
 }
 
+// ---------------- 响应式右侧栏（弹性宽度，页面过窄时自动收回隐藏，支持抽屉按需查看） ----------------
+const calPageRef = ref<HTMLElement | null>(null);
+const { width: calPageWidth } = useElementSize(calPageRef);
+const isNarrowCalendar = computed(() => calPageWidth.value > 0 && calPageWidth.value < 960);
+const sideDrawerShow = ref(false);
+
+watch(isNarrowCalendar, narrow => {
+  if (!narrow) {
+    sideDrawerShow.value = false;
+  }
+  void nextTick(() => {
+    calendarRef.value?.getApi()?.updateSize();
+  });
+});
+
 // ---------------- 今日/本周速览 ----------------
 const today = dayjs().format('YYYY-MM-DD');
 const todayEvents = computed(() =>
@@ -715,7 +731,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 </script>
 
 <template>
-  <div class="h-full min-h-560px flex gap-14px">
+  <div ref="calPageRef" class="h-full min-h-560px flex gap-14px">
     <!-- 主台历容器（Nuxt UI Calendar Template 风格） -->
     <div
       class="h-full min-w-0 flex flex-1 flex-col overflow-hidden rounded-16px border border-[var(--sct-border)] bg-[var(--sct-container)]"
@@ -723,17 +739,17 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       <!-- Nuxt Calendar 风格定制顶栏（三列 Grid 布局，确保中间「日/周/月」固定正中、绝不随左侧日期文字宽度偏移） -->
       <div data-tour="calendar-topbar" class="cal-topbar border-b border-[var(--sct-border)] px-18px py-12px">
         <!-- 左：年月大标题 + 日期区间 + 今日/本周计数胶囊 -->
-        <div class="min-w-0 flex flex-wrap items-center gap-12px justify-self-start">
-          <div class="flex items-baseline gap-10px whitespace-nowrap">
-            <h2 class="m-0 text-18px font-extrabold tracking-tight" style="color: var(--sct-ink)">
+        <div class="min-w-0 flex flex-wrap items-center gap-10px justify-self-start">
+          <div class="flex items-baseline gap-8px whitespace-nowrap">
+            <h2 class="m-0 text-17px font-extrabold tracking-tight xl:text-18px" style="color: var(--sct-ink)">
               {{ currentTitle }}
             </h2>
-            <span class="text-12px font-medium" style="color: var(--sct-muted)">
+            <span class="hidden text-12px font-medium lg:inline" style="color: var(--sct-muted)">
               {{ currentRangeText }}
             </span>
           </div>
 
-          <div class="hidden items-center gap-6px whitespace-nowrap sm:flex">
+          <div class="hidden items-center gap-6px whitespace-nowrap xl:flex">
             <span
               class="inline-flex items-center gap-4px rounded-full px-9px py-2px text-11px font-medium"
               style="background: var(--sct-soft); border: 1px solid var(--sct-border); color: var(--sct-muted)"
@@ -770,7 +786,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
           </button>
         </div>
 
-        <!-- 右：前后翻页 / 今天 + 新建事项 -->
+        <!-- 右：前后翻页 / 今天 + 新建事项 + 窄屏今日日程抽屉入口 -->
         <div class="flex items-center gap-8px justify-self-end">
           <div class="cal-nav-group">
             <button
@@ -796,7 +812,18 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 
           <NButton type="primary" size="small" @click="openCreate(today, 14, 0)">
             <template #icon><SvgIcon icon="lucide:plus" /></template>
-            {{ $t('sct.calendar.newEvent') }}
+            <span class="hidden sm:inline">{{ $t('sct.calendar.newEvent') }}</span>
+          </NButton>
+
+          <NButton
+            v-if="isNarrowCalendar"
+            size="small"
+            secondary
+            :title="$t('sct.calendar.todaySchedule')"
+            @click="sideDrawerShow = true"
+          >
+            <template #icon><SvgIcon icon="lucide:panel-right" /></template>
+            <span v-if="todayEvents.length" class="font-mono text-11px">{{ todayEvents.length }}</span>
           </NButton>
         </div>
       </div>
@@ -811,8 +838,12 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       </div>
     </div>
 
-    <!-- 右侧栏：常驻显示，采用内置胶囊色带卡片 -->
-    <div data-tour="calendar-sidebar" class="w-288px flex flex-shrink-0 flex-col gap-12px overflow-y-auto">
+    <!-- 右侧栏：宽屏下弹性缩放（224px ~ 296px），页面过窄时自动收回隐藏 -->
+    <div
+      v-if="!isNarrowCalendar"
+      data-tour="calendar-sidebar"
+      class="cal-sidebar-pane flex flex-shrink-0 flex-col gap-12px overflow-y-auto"
+    >
       <!-- 1. 今日日程 -->
       <NCard :bordered="false" size="small" class="rounded-16px">
         <template #header>
@@ -949,6 +980,85 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
         </div>
       </NCard>
     </div>
+
+    <!-- 窄屏按需滑出抽屉：今日日程 + 本周概览 -->
+    <NDrawer v-model:show="sideDrawerShow" :width="320" placement="right" class="max-w-92vw">
+      <NDrawerContent :title="$t('sct.calendar.todaySchedule')" closable>
+        <div class="flex flex-col gap-14px">
+          <EmptyFancy
+            v-if="!todayEvents.length"
+            emoji="tea"
+            :text="$t('sct.calendar.todayEmpty')"
+            :sub="$t('sct.calendar.todayEmptySub')"
+            compact
+          />
+          <div v-else class="flex flex-col gap-8px">
+            <div
+              v-for="ev in todayEvents"
+              :key="ev.id"
+              class="cal-side-card group flex cursor-pointer items-stretch gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-container)] p-10px transition"
+              @click="
+                sideDrawerShow = false;
+                openDetail(ev.id, ev);
+              "
+            >
+              <span
+                class="my-1px w-3.5px flex-shrink-0 rounded-full"
+                :style="{ background: EVENT_CATEGORY_COLORS[ev.category]?.color ?? '#A81C24' }"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-13px font-bold text-[var(--sct-ink)]">{{ ev.title }}</div>
+                <div class="mt-4px flex items-center gap-8px text-11px text-[var(--sct-muted)]">
+                  <span class="font-mono">
+                    {{
+                      ev.start_time && ev.start_time !== ev.end_time
+                        ? `${ev.start_time}-${ev.end_time}`
+                        : $t('sct.common.allDay')
+                    }}
+                  </span>
+                  <span v-if="ev.location" class="truncate">{{ ev.location }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="border-t border-[var(--sct-border)] pt-12px">
+            <div class="mb-8px flex items-center justify-between text-13px font-bold">
+              <span>{{ $t('sct.calendar.weekOverview') }}</span>
+              <span class="text-12px font-normal text-gray-400">
+                {{ $t('sct.common.totalItems', { count: weekEvents.length }) }}
+              </span>
+            </div>
+            <div v-if="!weekCategoryCount.length" class="py-6px text-center text-12px text-gray-400">
+              {{ $t('sct.calendar.weekEmpty') }}
+            </div>
+            <div v-else class="flex flex-col gap-8px">
+              <div v-for="[cat, count] in weekCategoryCount" :key="cat" class="flex flex-col gap-4px">
+                <div class="flex items-center justify-between text-12px">
+                  <span class="flex items-center gap-6px font-medium">
+                    <span
+                      class="inline-block size-8px rounded-full"
+                      :style="{ background: EVENT_CATEGORY_COLORS[cat as Sct.EventCategory]?.color }"
+                    />
+                    {{ tCategory(cat) }}
+                  </span>
+                  <span class="font-bold text-[var(--sct-ink)]">{{ count }} {{ $t('sct.common.items') }}</span>
+                </div>
+                <div class="h-5px w-full overflow-hidden rounded-full bg-[var(--sct-soft)]">
+                  <div
+                    class="h-full rounded-full"
+                    :style="{
+                      width: `${Math.round((count / Math.max(1, weekEvents.length)) * 100)}%`,
+                      background: EVENT_CATEGORY_COLORS[cat as Sct.EventCategory]?.color
+                    }"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </NDrawerContent>
+    </NDrawer>
 
     <!-- 鼠标悬浮日程详情小弹窗（删除时即时无动画消失） -->
     <Teleport to="body">
@@ -1313,6 +1423,10 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
 
 .cal-today-list {
   padding: 2px;
+}
+
+.cal-sidebar-pane {
+  width: clamp(220px, 23%, 292px);
 }
 
 .cal-today-list--scroll {

@@ -69,7 +69,7 @@ async function handleSelectBrowser(key: string) {
     <template #trigger>
       <NButton size="small" secondary class="open-mode-btn shrink-0" :loading="switching" @click="handleMainClick">
         <template #icon><SvgIcon icon="lucide:monitor" /></template>
-        <span class="hidden text-12px sm:inline">{{ bi('返回桌面端', 'Return to Desktop') }}</span>
+        <span class="hidden text-12px xl:inline">{{ bi('返回桌面端', 'Return to Desktop') }}</span>
       </NButton>
     </template>
     {{ tooltipText }}
@@ -82,7 +82,7 @@ async function handleSelectBrowser(key: string) {
         <template #trigger>
           <NButton secondary class="open-mode-btn" :loading="switching" @click="handleMainClick">
             <template #icon><SvgIcon icon="lucide:external-link" /></template>
-            <span class="hidden text-12px sm:inline">{{ bi('在浏览器中打开', 'Open in Browser') }}</span>
+            <span class="hidden text-12px xl:inline">{{ bi('在浏览器中打开', 'Open in Browser') }}</span>
           </NButton>
         </template>
         {{ tooltipText }}

@@ -38,7 +38,9 @@ async function saveBranchName() {
       >
         <span class="hidden text-gray-400 2xl:inline">{{ $t('sct.header.branchLabel') }}</span>
         <span class="inline-block size-6px flex-shrink-0 rounded-full" style="background: #a81c24" />
-        <span class="whitespace-nowrap font-bold">{{ workStore.branchName }}</span>
+        <span class="max-w-110px truncate whitespace-nowrap font-bold lg:max-w-180px xl:max-w-none">
+          {{ workStore.branchName }}
+        </span>
         <SvgIcon
           icon="lucide:pen-line"
           class="flex-shrink-0 text-11px text-gray-400 transition group-hover:text-[#A81C24]"
