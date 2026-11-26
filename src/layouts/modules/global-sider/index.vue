@@ -4,6 +4,7 @@ import { GLOBAL_SIDER_MENU_ID } from '@/constants/app';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
 import GuideButton from '../global-header/components/guide-button.vue';
+import ModuleManagerButton from '../global-header/components/module-manager-button.vue';
 import GlobalLogo from '../global-logo/index.vue';
 
 defineOptions({
@@ -31,7 +32,10 @@ const menuWrapperClass = computed(() => 'flex-1-hidden');
       :style="{ height: themeStore.header.height + 'px' }"
     />
     <div :id="GLOBAL_SIDER_MENU_ID" data-tour="sider-nav" :class="menuWrapperClass"></div>
-    <GuideButton :collapsed="appStore.siderCollapse" />
+    <div class="border-t border-[var(--sct-border)]/70">
+      <ModuleManagerButton :collapsed="appStore.siderCollapse" />
+      <GuideButton :collapsed="appStore.siderCollapse" />
+    </div>
   </DarkModeContainer>
 </template>
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
 import dayjs from 'dayjs';
-import { useWorkDataStore } from '@/store/modules/work-data';
 import { EVENT_CATEGORY_OPTIONS } from '@/constants/sanchitai';
+import { useWorkDataStore } from '@/store/modules/work-data';
 
 defineOptions({ name: 'EventEditModal' });
 
@@ -95,7 +95,7 @@ watch(
 );
 
 const memberOptions = computed(() =>
-  workStore.members.map(m => ({
+  workStore.activeMembers.map(m => ({
     label: `${m.name}（${m.type}${m.role ? ` · ${m.role}` : ''}）`,
     value: m.id
   }))

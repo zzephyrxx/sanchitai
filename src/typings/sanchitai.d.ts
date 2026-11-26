@@ -28,8 +28,21 @@ declare namespace Sct {
   /** 导出隐私模式：默认脱敏公示版 / 全量报送版 */
   type ExportPrivacyMode = 'masked' | 'full';
 
-  /** 模块工坊可开关扩展模块 */
-  type OptionalModuleKey = 'seatmap' | 'points' | 'volunteer' | 'birthday';
+  /** 左下角「模块管理」可自由显隐的菜单与扩展模块（总览 / 花名册 / 设置常驻必留） */
+  type OptionalModuleKey =
+    | 'calendar'
+    | 'structure'
+    | 'seatmap'
+    | 'meetings'
+    | 'development'
+    | 'fees'
+    | 'talks'
+    | 'points'
+    | 'volunteer'
+    | 'knowledge'
+    | 'policy'
+    | 'docs'
+    | 'birthday';
 
   interface CustomFieldDef {
     key: string;

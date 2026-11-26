@@ -257,6 +257,9 @@ importers:
       vue:
         specifier: 3.5.43
         version: 3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)
+      vue-data-ui:
+        specifier: ^3.29.6
+        version: 3.29.6(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2))
       vue-draggable-plus:
         specifier: 0.6.1
         version: 0.6.1(@types/sortablejs@1.15.9)
@@ -5990,6 +5993,15 @@ packages:
 
   vscode-uri@3.2.0:
     resolution: {integrity: sha512-m2gXo3bn0G1kT9InzMf07fTbqMbGtyckj3bH5ktLO+1Ssv+yiATZ4dhwaQv9UZWxJh6E9IFGnQyjgWVDWVBDrg==}
+
+  vue-data-ui@3.29.6:
+    resolution: {integrity: sha512-RfBvuvB7D1Prk+pXPz6pimNxfqaMjI94Pa+xYyTmi5/UrVelc5zOcfz8sgI9vk9BnVzzQ23Lx9xKnfwmkGOR5w==}
+    peerDependencies:
+      jspdf: '>=3.0.1'
+      vue: '>=3.3.0'
+    peerDependenciesMeta:
+      jspdf:
+        optional: true
 
   vue-demi@0.13.11:
     resolution: {integrity: sha512-IR8HoEEGM65YY3ZJYAjMlKygDQn25D5ajNFNoKh9RSDMQtlzCxtfQjdQgv9jjK+m3377SsJXY8ysq8kLCZL25A==}
@@ -11943,6 +11955,10 @@ snapshots:
       vue: 3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)
 
   vscode-uri@3.2.0: {}
+
+  vue-data-ui@3.29.6(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)):
+    dependencies:
+      vue: 3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)
 
   vue-demi@0.13.11(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2)):
     dependencies:

@@ -5,11 +5,14 @@ import VChart from 'vue-echarts';
 import dayjs from 'dayjs';
 import { DEV_STAGE_ORDER, computeNextDevNode } from '@/constants/dev-nodes';
 import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
+import { isMemberArchived } from '@/constants/workspace-presets';
 import { setupEcharts } from '@/plugins/echarts';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import EmptyFancy from '@/components/custom/empty-fancy.vue';
+import DashboardVduiWidgets from './modules/dashboard-vdui-widgets.vue';
+import type { VduiWidgetId } from './modules/dashboard-vdui-widgets.vue';
 
 defineOptions({ name: 'DashboardPage' });
 
@@ -47,10 +50,19 @@ function useCountUp(source: () => number, duration = 850) {
 }
 
 const memberCount = computed(() => workStore.activeMembers.length);
+const activeFormalCount = computed(() => workStore.activeMembers.filter(m => m.type === '正式党员').length);
+const activeProbationCount = computed(() => workStore.activeMembers.filter(m => m.type === '预备党员').length);
+const activePartyCount = computed(() => activeFormalCount.value + activeProbationCount.value);
 const eventCount = computed(() => workStore.calEvents.length);
 const talkCount = computed(() => workStore.talks.length);
+const rosterMemberIdSet = computed(() => new Set(workStore.inBranchRosterMembers.map(m => m.id)));
 const owedCount = computed(
-  () => new Set(workStore.feeRecords.filter(f => f.status === '欠缴').map(f => f.member_id)).size
+  () =>
+    new Set(
+      workStore.feeRecords
+        .filter(f => f.status === '欠缴' && rosterMemberIdSet.value.has(f.member_id))
+        .map(f => f.member_id)
+    ).size
 );
 
 const memberNum = useCountUp(() => memberCount.value, 850);
@@ -63,20 +75,34 @@ interface WidgetDef {
   id: string;
   title: string;
   fullRow?: boolean;
+  vdui?: boolean;
+  moduleKey?: Sct.OptionalModuleKey;
 }
 const WIDGET_DEFS = computed<WidgetDef[]>(() => [
   { id: 'stats', title: bi('关键数字', 'Key Metrics'), fullRow: true },
   { id: 'reminders', title: bi('待办提醒中心', 'Action & Reminder Center'), fullRow: true },
-  { id: 'feeRing', title: bi('本月党费', 'Monthly Dues') },
+  { id: 'healthRadar', title: bi('支部党建健康雷达', 'Branch Health Radar'), vdui: true },
+  { id: 'pointsGauge', title: bi('党员积分 60+40 仪表', 'Party Points Gauge'), vdui: true, moduleKey: 'points' },
+  { id: 'volunteerDonut', title: bi('志愿服务时长统计', 'Volunteer Hours'), vdui: true, moduleKey: 'volunteer' },
+  { id: 'lifecycleWaffle', title: bi('成员生命周期矩阵', 'Lifecycle Matrix'), vdui: true },
+  { id: 'talksThermometer', title: bi('年度谈话覆盖温度计', 'Talks Coverage Meter'), vdui: true, moduleKey: 'talks' },
+  { id: 'groupOnion', title: bi('党小组活力同心环', 'Party Group Vitality'), vdui: true },
+  { id: 'feeRing', title: bi('本月党费', 'Monthly Dues'), moduleKey: 'fees' },
   { id: 'heatmap', title: bi('近半年日程热力', '6-Month Schedule Heatmap') },
-  { id: 'feeTrend', title: bi('缴费率趋势', 'Dues Trend') },
-  { id: 'stageBars', title: bi('发展阶段', 'Development Stages') },
+  { id: 'feeTrend', title: bi('缴费率趋势', 'Dues Trend'), moduleKey: 'fees' },
+  { id: 'stageBars', title: bi('发展阶段', 'Development Stages'), moduleKey: 'development' },
   { id: 'categoryBars', title: bi('类别分布', 'Category Breakdown') },
   { id: 'weekOverview', title: bi('本周速览', 'Weekly Snapshot') }
 ]);
 const DEFAULT_ORDER = [
   'stats',
   'reminders',
+  'healthRadar',
+  'pointsGauge',
+  'volunteerDonut',
+  'lifecycleWaffle',
+  'talksThermometer',
+  'groupOnion',
   'feeRing',
   'heatmap',
   'feeTrend',
@@ -172,8 +198,12 @@ function onWidgetPointerDown(w: WidgetDef, e: PointerEvent) {
 
 onBeforeUnmount(cleanupDashDrag);
 
-const activeWidgets = computed(
-  () => widgetOrder.value.map(id => WIDGET_DEFS.value.find(d => d.id === id)).filter(Boolean) as WidgetDef[]
+const activeWidgets = computed(() =>
+  widgetOrder.value
+    .map(id => WIDGET_DEFS.value.find(d => d.id === id))
+    .filter((d): d is WidgetDef =>
+      Boolean(d && (!d.moduleKey || workStore.workspaceConfig.enabledModules[d.moduleKey]))
+    )
 );
 const hiddenWidgets = computed(() => DEFAULT_ORDER.filter(id => !widgetOrder.value.includes(id)));
 
@@ -220,6 +250,10 @@ const yearStr = dayjs().format('YYYY');
 
 const overdueItems = computed(() =>
   workStore.devStages
+    .filter(d => {
+      const m = workStore.memberOf(d.member_id);
+      return Boolean(m && !isMemberArchived(m));
+    })
     .map(d => ({ d, nextNode: computeNextDevNode(d.stage, d.materials) }))
     .filter(({ d, nextNode }) => Boolean(nextNode && d.next_due && d.next_due < todayStr))
     .map(({ d, nextNode }) => ({
@@ -230,7 +264,7 @@ const overdueItems = computed(() =>
 const owedItems = computed(() => {
   const map = new Map<string, string[]>();
   workStore.feeRecords
-    .filter(f => f.status === '欠缴')
+    .filter(f => f.status === '欠缴' && rosterMemberIdSet.value.has(f.member_id))
     .forEach(f => {
       map.set(f.member_id, [...(map.get(f.member_id) ?? []), f.year_month]);
     });
@@ -241,7 +275,7 @@ const owedItems = computed(() => {
 
 const uncoveredTalks = computed(() => {
   const covered = new Set(workStore.talks.filter(t => t.date.startsWith(yearStr)).flatMap(t => t.member_ids));
-  const names = workStore.members
+  const names = workStore.activeMembers
     .filter(m => (m.type === '正式党员' || m.type === '预备党员') && !covered.has(m.id))
     .map(m => m.name);
   return { count: names.length, names };
@@ -249,6 +283,10 @@ const uncoveredTalks = computed(() => {
 
 const weekItems = computed(() => {
   const nodes = workStore.devStages
+    .filter(d => {
+      const m = workStore.memberOf(d.member_id);
+      return Boolean(m && !isMemberArchived(m));
+    })
     .map(d => ({ d, nextNode: computeNextDevNode(d.stage, d.materials) }))
     .filter(({ d, nextNode }) => Boolean(nextNode && d.next_due && d.next_due >= todayStr && d.next_due <= weekEndStr))
     .map(({ d, nextNode }) => ({
@@ -269,7 +307,8 @@ const weekItems = computed(() => {
 
 // ---------------- 当月缴纳率：CSS 进度环 ----------------
 const feeMemberIds = computed(
-  () => new Set(workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员').map(m => m.id))
+  () =>
+    new Set(workStore.inBranchRosterMembers.filter(m => m.type === '正式党员' || m.type === '预备党员').map(m => m.id))
 );
 
 const monthRate = computed(() => {
@@ -346,11 +385,15 @@ function heatColor(count: number) {
   return `rgba(${heatBase.value}, ${alpha})`;
 }
 
-// ---------------- 发展阶段横条 ----------------
+// ---------------- 发展阶段横条（仅统计未归档在册成员） ----------------
 const stageBars = computed(() => {
+  const activeStageRows = workStore.devStages.filter(d => {
+    const m = workStore.memberOf(d.member_id);
+    return Boolean(m && !isMemberArchived(m));
+  });
   const counts = DEV_STAGE_ORDER.map(stage => ({
     stage,
-    count: workStore.devStages.filter(d => d.stage === stage).length
+    count: activeStageRows.filter(d => d.stage === stage).length
   }));
   const max = Math.max(1, ...counts.map(c => c.count));
   return counts.map(c => ({ ...c, width: `${(c.count / max) * 100}%` }));
@@ -516,9 +559,9 @@ const weekCategoryCount = computed(() => {
                 </div>
                 <div class="mt-10px text-12px text-gray-400">
                   {{ bi('正式', 'Full') }}
-                  {{ memberCount && workStore.members.filter(m => m.type === '正式党员').length }} ·
+                  {{ activeFormalCount }} ·
                   {{ bi('预备', 'Probationary') }}
-                  {{ workStore.members.filter(m => m.type === '预备党员').length }}
+                  {{ activeProbationCount }}
                 </div>
               </div>
               <IconSolarUsersGroupTwoRoundedBoldDuotone class="shrink-0 text-50px text-[#3b82f6] opacity-90" />
@@ -555,8 +598,8 @@ const weekCategoryCount = computed(() => {
                 <div class="mt-10px text-12px text-gray-400">
                   {{
                     bi(
-                      `今年已覆盖 ${workStore.members.length - uncoveredTalks.count}/${memberCount} 人`,
-                      `Covered ${workStore.members.length - uncoveredTalks.count}/${memberCount} this year`
+                      `今年党员覆盖 ${Math.max(0, activePartyCount - uncoveredTalks.count)}/${activePartyCount} 人`,
+                      `Covered ${Math.max(0, activePartyCount - uncoveredTalks.count)}/${activePartyCount} party members`
                     )
                   }}
                 </div>
@@ -676,6 +719,9 @@ const weekCategoryCount = computed(() => {
             </div>
           </div>
         </NCard>
+
+        <!-- vue-data-ui 创意可视化组件 -->
+        <DashboardVduiWidgets v-else-if="w.vdui" :widget-id="w.id as VduiWidgetId" />
 
         <!-- 本月党费及以下卡片：自适应每行 3 个 -->
         <NCard v-else-if="w.id === 'feeRing'" :bordered="false" class="h-full rounded-16px">

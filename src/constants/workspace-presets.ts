@@ -1,6 +1,6 @@
 /**
  * 三尺台 v0.2.7 高校党建工作台配置：
- * - 工作台模块工坊元数据（座位图 / 党员积分 / 志愿时长 / 政治生日）
+ * - 左下角「模块管理」元数据（除总览 / 花名册 / 设置核心必留外，全部菜单模块与座位图均支持按需启停）
  * - 成员全生命周期状态元数据与判定纯函数
  * - 新转入党员纸质档案标准核查清单
  */
@@ -11,8 +11,11 @@ export const DEFAULT_BRANCH_NAME = '高校学生党支部';
 export const ONBOARDING_CURRENT_VERSION = '0.2.7';
 export const WORKSPACE_CONFIG_STORAGE_KEY = 'sct:workspace-config:v1';
 
+export type WorkshopModuleGroup = 'core_ext' | 'ledger' | 'library';
+
 export interface WorkshopModuleMeta {
   key: Sct.OptionalModuleKey;
+  group: WorkshopModuleGroup;
   routeName?: string;
   icon: string;
   color: string;
@@ -23,58 +26,178 @@ export interface WorkshopModuleMeta {
   badgeZh?: string;
 }
 
+export const WORKSHOP_MODULE_GROUPS: ReadonlyArray<{ key: WorkshopModuleGroup; titleZh: string; titleEn: string }> = [
+  { key: 'core_ext', titleZh: '工作台与组织', titleEn: 'Workbench & Org' },
+  { key: 'ledger', titleZh: '党务台账', titleEn: 'Party Ledgers' },
+  { key: 'library', titleZh: '资料库与工具', titleEn: 'Library & Tools' }
+];
+
 export const WORKSHOP_MODULES: readonly WorkshopModuleMeta[] = [
   {
+    key: 'calendar',
+    group: 'core_ext',
+    routeName: 'calendar',
+    icon: 'lucide:calendar-days',
+    color: '#A81C24',
+    titleZh: '工作台历',
+    titleEn: 'Work Calendar',
+    descZh: '月/周/日日程排期、三会一课联动与台账日程统筹',
+    descEn: 'Monthly/weekly schedule & meeting planning'
+  },
+  {
+    key: 'structure',
+    group: 'core_ext',
+    routeName: 'structure',
+    icon: 'lucide:network',
+    color: '#7c5cd6',
+    titleZh: '组织架构',
+    titleEn: 'Org Structure',
+    descZh: '支委会脑图指派、党小组分区与 25 步可视化发展流程图',
+    descEn: 'Branch committee mind map, party groups & 25-step flowchart'
+  },
+  {
     key: 'seatmap',
+    group: 'core_ext',
     icon: 'lucide:armchair',
     color: '#0f766e',
     titleZh: '人员座位图',
     titleEn: 'Visual Seat Map',
-    descZh: '在人员页启用教室/会议/工位拖拽排座视图、欠缴红点角标与一键打印座次表',
-    descEn: 'Drag-and-drop seating board, unpaid badges & printable seating charts in Members',
-    badgeZh: '高校/会务常用'
+    descZh: '花名册内启用教室/会议室拖拽排座、欠缴红点角标与打印座次表',
+    descEn: 'Drag-and-drop seating board & printable seating charts in Members',
+    badgeZh: '花名册子视图'
+  },
+  {
+    key: 'meetings',
+    group: 'ledger',
+    routeName: 'ledger_meetings',
+    icon: 'lucide:presentation',
+    color: '#2563eb',
+    titleZh: '三会一课',
+    titleEn: 'Meetings',
+    descZh: '党员大会、支委会、党小组会、党课与主题党日考勤台账',
+    descEn: 'Branch meetings, semester planner & attendance tracking'
+  },
+  {
+    key: 'development',
+    group: 'ledger',
+    routeName: 'ledger_development',
+    icon: 'lucide:route',
+    color: '#b45309',
+    titleZh: '党员发展',
+    titleEn: 'Development',
+    descZh: '五阶段泳道、25 步材料核查清单、S 型时间线与一键归档',
+    descEn: '5-stage pipeline, 25-step checklist & S-curve timeline'
+  },
+  {
+    key: 'fees',
+    group: 'ledger',
+    routeName: 'ledger_fees',
+    icon: 'lucide:coins',
+    color: '#15803d',
+    titleZh: '党费台账',
+    titleEn: 'Party Dues',
+    descZh: '按月收缴矩阵、批量登记已缴、欠缴提醒与台账导出',
+    descEn: 'Monthly dues matrix, batch status updates & unpaid tracking'
+  },
+  {
+    key: 'talks',
+    group: 'ledger',
+    routeName: 'ledger_talks',
+    icon: 'lucide:messages-square',
+    color: '#0f766e',
+    titleZh: '谈心谈话',
+    titleEn: 'Heart-to-Heart Talks',
+    descZh: '年度谈话覆盖矩阵、申请人 1 个月谈话提醒与记录留痕',
+    descEn: 'Annual coverage matrix & heart-to-heart talk logs'
   },
   {
     key: 'points',
+    group: 'ledger',
     routeName: 'ledger_points',
     icon: 'lucide:award',
     color: '#d97706',
-    titleZh: '党员积分与评定',
-    titleEn: 'Party Points & Rating',
-    descZh: '高校 60+40 分桶制考核，支持自定义细则、跨模块一键同步考勤/党费/志愿草稿与脱敏导出',
-    descEn: 'University 60+40 scoring ledger with rule customization, cross-module draft sync & masked export',
+    titleZh: '党员积分',
+    titleEn: 'Party Points',
+    descZh: '高校 60+40 分桶制考核、跨模块一键同步草稿与脱敏导出',
+    descEn: 'University 60+40 scoring ledger & cross-module draft sync',
     badgeZh: '60+40 分制'
   },
   {
     key: 'volunteer',
+    group: 'ledger',
     routeName: 'ledger_volunteer',
     icon: 'lucide:heart-handshake',
     color: '#16a34a',
-    titleZh: '志愿时长台账',
-    titleEn: 'Volunteer Hours Ledger',
-    descZh: '按活动与按成员双视角统计志愿时长，支持微信接龙识人、公示导出与积分草稿联动',
-    descEn: 'Activity & member views, WeChat list parser, public sheets & points sync',
+    titleZh: '志愿时长',
+    titleEn: 'Volunteer Hours',
+    descZh: '活动/成员双视角统计、微信接龙识人与双表公示导出',
+    descEn: 'Activity & member views, WeChat parser & public exports',
     badgeZh: 'v0.2.7 新增'
   },
   {
+    key: 'knowledge',
+    group: 'library',
+    routeName: 'library_knowledge',
+    icon: 'lucide:graduation-cap',
+    color: '#0f766e',
+    titleZh: '党建知识库',
+    titleEn: 'Knowledge Base',
+    descZh: '离线党内法规一图读懂、自定义图解与学习笔记归档',
+    descEn: 'Offline visual guides & custom markdown study notes'
+  },
+  {
+    key: 'policy',
+    group: 'library',
+    routeName: 'library_policy',
+    icon: 'lucide:landmark',
+    color: '#A81C24',
+    titleZh: '政策文件库',
+    titleEn: 'Policy Library',
+    descZh: '高频党建条例要点卡与本单位 PDF / Word 文件本地归档',
+    descEn: 'Core regulations & local document archive'
+  },
+  {
+    key: 'docs',
+    group: 'library',
+    routeName: 'library_docs',
+    icon: 'lucide:folder-open',
+    color: '#2563eb',
+    titleZh: '公文模板库',
+    titleEn: 'Doc Templates',
+    descZh: '常用支部会议记录、决议与通知模板一键套用起草',
+    descEn: 'Standard templates for notices, minutes & resolutions'
+  },
+  {
     key: 'birthday',
+    group: 'library',
     routeName: 'library_birthday',
     icon: 'lucide:gift',
     color: '#A81C24',
     titleZh: '政治生日贺卡',
     titleEn: 'Political Birthday Cards',
-    descZh: '近 30/60 天入党周年提醒、定制寄语与高清电子贺卡一键导出',
-    descEn: '30/60-day party anniversary reminders & custom greeting card studio'
+    descZh: '近 30/60 天入党周年提醒、定制寄语与高清贺卡批量导出',
+    descEn: '30/60-day anniversary reminders & greeting card studio'
   }
 ];
 
+export const DEFAULT_ENABLED_MODULES: Record<Sct.OptionalModuleKey, boolean> = {
+  calendar: true,
+  structure: true,
+  seatmap: true,
+  meetings: true,
+  development: true,
+  fees: true,
+  talks: true,
+  points: true,
+  volunteer: true,
+  knowledge: true,
+  policy: true,
+  docs: true,
+  birthday: true
+};
+
 export const DEFAULT_WORKSPACE_CONFIG: Sct.WorkspaceConfig = {
-  enabledModules: {
-    seatmap: true,
-    points: true,
-    volunteer: true,
-    birthday: true
-  },
+  enabledModules: { ...DEFAULT_ENABLED_MODULES },
   customFields: [],
   onboardingCompleted: false,
   onboardingVersion: ONBOARDING_CURRENT_VERSION
@@ -84,19 +207,22 @@ export function normalizeWorkspaceConfig(raw: unknown): Sct.WorkspaceConfig {
   if (!raw || typeof raw !== 'object') {
     return {
       ...DEFAULT_WORKSPACE_CONFIG,
-      enabledModules: { ...DEFAULT_WORKSPACE_CONFIG.enabledModules },
+      enabledModules: { ...DEFAULT_ENABLED_MODULES },
       customFields: []
     };
   }
   const src = raw as Partial<Sct.WorkspaceConfig>;
+  const enabledModules = { ...DEFAULT_ENABLED_MODULES };
+  if (src.enabledModules && typeof src.enabledModules === 'object') {
+    for (const key of Object.keys(DEFAULT_ENABLED_MODULES) as Sct.OptionalModuleKey[]) {
+      if (typeof src.enabledModules[key] === 'boolean') {
+        enabledModules[key] = src.enabledModules[key];
+      }
+    }
+  }
 
   return {
-    enabledModules: {
-      seatmap: src.enabledModules?.seatmap ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.seatmap,
-      points: src.enabledModules?.points ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.points,
-      volunteer: src.enabledModules?.volunteer ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.volunteer,
-      birthday: src.enabledModules?.birthday ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.birthday
-    },
+    enabledModules,
     customFields: Array.isArray(src.customFields)
       ? src.customFields
           .filter(f => f && typeof f.key === 'string' && typeof f.label === 'string' && f.label.trim())
@@ -142,10 +268,19 @@ export const reactiveEnabledModules = ref<Record<Sct.OptionalModuleKey, boolean>
   ...loadWorkspaceConfigSync().enabledModules
 });
 
-/** 路由名到可选模块键的映射 */
+/** 路由名到可选模块键的映射（总览 dashboard、花名册 ledger_members、设置 settings 常驻必留） */
 export const ROUTE_TO_OPTIONAL_MODULE: Record<string, Sct.OptionalModuleKey> = {
+  calendar: 'calendar',
+  structure: 'structure',
+  ledger_meetings: 'meetings',
+  ledger_development: 'development',
+  ledger_fees: 'fees',
+  ledger_talks: 'talks',
   ledger_points: 'points',
   ledger_volunteer: 'volunteer',
+  library_knowledge: 'knowledge',
+  library_policy: 'policy',
+  library_docs: 'docs',
   library_birthday: 'birthday'
 };
 

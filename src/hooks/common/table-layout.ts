@@ -167,7 +167,15 @@ export function useTableColumnLayout<T>(options: TableLayoutOptions<T>) {
   // ---------------- 列顺序拖拽 ----------------
   function reorderColumns(fromKey: string, toKey: string) {
     if (fromKey === toKey || pinnedEndSet.has(fromKey) || pinnedEndSet.has(toKey)) return;
+    const mapKeys = Object.keys(options.columnMap.value);
     const next = [...colOrder.value];
+    for (const k of mapKeys) {
+      if (!next.includes(k) && !pinnedEndSet.has(k)) {
+        const firstPinnedIdx = next.findIndex(x => pinnedEndSet.has(x));
+        if (firstPinnedIdx >= 0) next.splice(firstPinnedIdx, 0, k);
+        else next.push(k);
+      }
+    }
     const fromIdx = next.indexOf(fromKey);
     const toIdx = next.indexOf(toKey);
     if (fromIdx < 0 || toIdx < 0) return;
@@ -179,9 +187,12 @@ export function useTableColumnLayout<T>(options: TableLayoutOptions<T>) {
   const columns = computed<DataTableColumns<T>>(() => {
     const map = options.columnMap.value;
     const visibleSet = options.visibleKeys ? new Set(options.visibleKeys.value) : null;
+    const existingSet = new Set(colOrder.value);
+    const dynamicExtraKeys = Object.keys(map).filter(k => !existingSet.has(k) && !pinnedEndSet.has(k));
 
     const orderedKeys = [
       ...colOrder.value.filter(k => !pinnedEndSet.has(k)),
+      ...dynamicExtraKeys,
       ...colOrder.value.filter(k => pinnedEndSet.has(k))
     ].filter(k => Boolean(map[k]) && (!visibleSet || visibleSet.has(k)));
 

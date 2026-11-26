@@ -8,6 +8,7 @@ import {
   findFirstMissingPriorNode,
   nextStage
 } from '@/constants/dev-nodes';
+import { isMemberArchived } from '@/constants/workspace-presets';
 import { onTourCommand } from '@/utils/onboarding-bus';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWorkDataStore } from '@/store/modules/work-data';
@@ -127,7 +128,7 @@ const lanes = computed(() => {
 
   for (const d of workStore.devStages) {
     const m = workStore.memberOf(d.member_id);
-    if (!m) continue;
+    if (!m || isMemberArchived(m)) continue;
     const bucket = grouped.get(d.stage);
     if (!bucket) continue;
 

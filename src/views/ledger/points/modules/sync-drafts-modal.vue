@@ -19,7 +19,7 @@ const selectedRefs = ref<string[]>([]);
 const busy = ref(false);
 
 const suggestions = computed<SyncPointDraftSuggestion[]>(() => {
-  const partyMembers = workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员');
+  const partyMembers = workStore.activeMembers.filter(m => m.type === '正式党员' || m.type === '预备党员');
   return buildPointDraftSuggestions({
     year: props.year,
     scheme: props.scheme,

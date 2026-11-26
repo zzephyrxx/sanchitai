@@ -17,7 +17,7 @@ const { bi } = useSctI18n();
 const ROLE_SLOTS = ['书记', '副书记', '组织委员', '宣传委员', '纪检委员'] as const;
 
 function memberOfRole(role: string) {
-  return workStore.members.find(m => m.role === role);
+  return workStore.activeMembers.find(m => m.role === role);
 }
 
 const assignState = reactive<{
@@ -210,9 +210,9 @@ const currentAssignOccupied = computed(() => {
   return Boolean(memberOfRole(assignState.role));
 });
 
-/** 仅正式党员有表决权、选举权和被选举权（《党章》第七条），故支委候选人仅展示正式党员 */
+/** 仅在册正式党员有表决权、选举权和被选举权（《党章》第七条），故支委候选人仅展示在册正式党员 */
 const roleOptions = computed(() =>
-  workStore.members
+  workStore.activeMembers
     .filter(m => m.type === '正式党员')
     .map(m => ({
       label: `${m.name}（${m.type}${m.role ? ` · 现任${m.role}` : ''}）`,
@@ -740,7 +740,7 @@ async function handleDeleteAcademyNode() {
       <!-- ============ 1. 组织架构 ============ -->
       <div v-if="flowTab === 'org'">
         <OrgMindmap
-          :members="workStore.members"
+          :members="workStore.activeMembers"
           :youth-slots="workStore.youthCommitteeSlots"
           :party-group-names="workStore.partyGroupNames"
           @assign="openAssign"

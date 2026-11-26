@@ -138,7 +138,9 @@ const upcomingWindowDays = ref<30 | 60>(30);
 const upcomingModalShow = ref(false);
 const upcomingCheckedIds = ref<string[]>([]);
 
-const partyMembers = computed(() => workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员'));
+const partyMembers = computed(() =>
+  workStore.activeMembers.filter(m => m.type === '正式党员' || m.type === '预备党员')
+);
 
 /** 计算距离下一次政治生日的剩余天数（0 = 今天，支持跨年与闰年 2/29 安全回退） */
 function daysUntilPoliticalBirthday(joinDateStr: string): number | null {

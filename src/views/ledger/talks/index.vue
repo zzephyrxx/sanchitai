@@ -33,7 +33,7 @@ const showAllCoverage = ref(false);
 const COVERAGE_INITIAL_LIMIT = 42;
 
 const partyMembersForCoverage = computed(() =>
-  workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员')
+  workStore.activeMembers.filter(m => m.type === '正式党员' || m.type === '预备党员')
 );
 
 const latestYearTalkByMember = computed(() => {
@@ -91,7 +91,7 @@ const applicantAlert = computed(() => {
   const today = dayjs();
   const latestMap = latestAnyTalkDateByMember.value;
   const list: string[] = [];
-  for (const m of workStore.members) {
+  for (const m of workStore.activeMembers) {
     if (m.type !== '申请人' || !m.key_dates?.applied_at) continue;
     if (today.diff(dayjs(m.key_dates.applied_at), 'day') > 30) continue;
     const lastTalkDate = latestMap.get(m.id);
@@ -299,7 +299,13 @@ async function removeTalk(id: string) {
   window.$message?.success('谈话记录已删除');
 }
 
-const memberOptions = computed(() => workStore.members.map(m => ({ label: `${m.name}（${m.type}）`, value: m.id })));
+const memberOptions = computed(() => {
+  const activeIds = new Set(workStore.activeMembers.map(m => m.id));
+  const selectedIds = new Set(addForm.member_ids);
+  return workStore.members
+    .filter(m => activeIds.has(m.id) || selectedIds.has(m.id))
+    .map(m => ({ label: `${m.name}（${m.type}${activeIds.has(m.id) ? '' : ' · 归档'}）`, value: m.id }));
+});
 
 const dateTs = useDateAdapter(addForm);
 

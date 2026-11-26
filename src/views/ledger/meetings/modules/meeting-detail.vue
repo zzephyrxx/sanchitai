@@ -4,10 +4,10 @@
  */
 import { computed, h, ref, watch } from 'vue';
 import { NSelect } from 'naive-ui';
-import { useWorkDataStore } from '@/store/modules/work-data';
-import { useSvgIcon } from '@/hooks/common/icon';
 import { MEMBER_TYPE_COLORS } from '@/constants/sanchitai';
 import { buildSignInSheet, printHtml } from '@/utils/print';
+import { useWorkDataStore } from '@/store/modules/work-data';
+import { useSvgIcon } from '@/hooks/common/icon';
 
 defineOptions({ name: 'MeetingDetail' });
 
@@ -49,8 +49,9 @@ function initRows() {
   if (!props.eventId) return;
   const att = workStore.attendanceOfEvent(props.eventId);
   const statusMap = new Map(att.map(a => [a.member_id, a.status]));
+  const activeIds = new Set(workStore.activeMembers.map(m => m.id));
   localRows.value = workStore.members
-    .filter(m => m.type === '正式党员' || m.type === '预备党员')
+    .filter(m => (m.type === '正式党员' || m.type === '预备党员') && (activeIds.has(m.id) || statusMap.has(m.id)))
     .map(m => ({
       memberId: m.id,
       name: m.name,

@@ -554,27 +554,29 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       accent: '#A81C24'
     },
 
-    // ==================== 十、设置、模块工坊与左下角指南收尾 ====================
-    {
-      id: 'settings-workshop',
-      route: '/settings',
-      beforeCommands: ['tour:cleanup'],
-      selector: '[data-tour="settings-workshop"]',
-      title: '模块工坊与扩展字段',
-      description: '按需启停座位图、党员积分、志愿时长、政治生日等扩展模块（关闭不删数据），并可补充花名册自定义字段。',
-      side: 'bottom',
-      align: 'start',
-      accent: '#7c5cd6'
-    },
+    // ==================== 十、设置、模块管理与左下角指南收尾 ====================
     {
       id: 'settings-backup',
       route: '/settings',
+      beforeCommands: ['tour:cleanup'],
       selector: '[data-tour="settings-backup"]',
       title: '10+10 快照与换届交接',
       description: '纯本地离线零上报，内置 20 份环形快照防误删，换届用 <code>.sctpack</code> 按模块加密一键移交。',
       side: 'top',
       align: 'start',
       accent: '#1e6b4b'
+    },
+    {
+      id: 'settings-workshop',
+      expandSider: true,
+      beforeCommands: ['tour:cleanup'],
+      settleMs: 120,
+      selector: '[data-tour="module-manager"]',
+      title: '左下角「模块管理」',
+      description: '随时自由开关左侧菜单栏中的台账、资料库与座位图模块（关闭仅隐藏入口，历史数据安全保留）。',
+      side: 'right',
+      align: 'end',
+      accent: '#7c5cd6'
     },
     {
       id: 'guide-entry',

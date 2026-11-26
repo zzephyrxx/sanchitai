@@ -33,8 +33,16 @@ export interface MemberYearPointSummary {
   dimensions: DimensionScoreDetail[];
   /** 基础分合计（满分 60，一票否决时清零） */
   baseScore: number;
+  /** 基础分累计扣减（正数） */
+  baseDeducted: number;
   /** 履职分合计（上限 40） */
   dutyScore: number;
+  /** 专业学习有效分（上限 15） */
+  dutyStudyScore: number;
+  /** 实践活动有效分（上限 10） */
+  dutyPracticeScore: number;
+  /** 志愿服务有效分（上限 15） */
+  dutyVolunteerScore: number;
   /** 附加分合计 */
   bonusScore: number;
   /** 直接减扣分合计（正数） */
@@ -207,6 +215,8 @@ export function computeMemberYearPoints(
   const penaltyBuckets = dimensions.filter(d => d.mode === 'deduct_direct');
 
   const baseScore = vetoActive ? 0 : roundScore(baseBuckets.reduce((acc, d) => acc + d.effective, 0));
+  const baseInitialTotal = roundScore(baseBuckets.reduce((acc, d) => acc + d.initialScore, 0));
+  const baseDeducted = vetoActive ? baseInitialTotal : roundScore(Math.max(0, baseInitialTotal - baseScore));
 
   let dutyScoreRaw = 0;
   const groupedSums = new Map<string, number>();
@@ -226,6 +236,9 @@ export function computeMemberYearPoints(
     dutyScoreRaw += Math.min(gCap, sumVal);
   }
   const dutyScore = roundScore(dutyScoreRaw);
+  const dutyStudyScore = dutyBuckets.find(d => d.id === 'duty_study')?.effective ?? 0;
+  const dutyPracticeScore = dutyBuckets.find(d => d.id === 'duty_practice')?.effective ?? 0;
+  const dutyVolunteerScore = dutyBuckets.find(d => d.id === 'duty_volunteer')?.effective ?? 0;
   const bonusScore = roundScore(bonusBuckets.reduce((acc, d) => acc + d.effective, 0));
   const penaltyDeduction = roundScore(penaltyBuckets.reduce((acc, d) => acc + d.effective, 0));
 
@@ -251,7 +264,11 @@ export function computeMemberYearPoints(
     scheme,
     dimensions,
     baseScore,
+    baseDeducted,
     dutyScore,
+    dutyStudyScore,
+    dutyPracticeScore,
+    dutyVolunteerScore,
     bonusScore,
     penaltyDeduction,
     totalScore,

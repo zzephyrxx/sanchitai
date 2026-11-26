@@ -42,6 +42,67 @@ const lifecycleScope = ref<LifecycleScope>('active');
 const seatmapEnabled = computed(() => workStore.workspaceConfig.enabledModules.seatmap);
 const customFieldDefs = computed(() => workStore.workspaceConfig.customFields);
 
+// ---------------- 花名册自定义扩展字段管理（集成在列设置中） ----------------
+const customFieldModalShow = ref(false);
+const customFieldForm = reactive({
+  label: '',
+  type: 'text' as 'text' | 'select',
+  optionsText: '',
+  showInTable: true
+});
+
+function openAddCustomField() {
+  customFieldForm.label = '';
+  customFieldForm.type = 'text';
+  customFieldForm.optionsText = '';
+  customFieldForm.showInTable = true;
+  customFieldModalShow.value = true;
+}
+
+async function handleAddCustomField() {
+  const cleanLabel = customFieldForm.label.trim();
+  if (!cleanLabel) {
+    window.$message?.warning('请输入字段名称');
+    return;
+  }
+  if (customFieldDefs.value.some(f => f.label === cleanLabel)) {
+    window.$message?.warning(`字段「${cleanLabel}」已存在`);
+    return;
+  }
+  const options =
+    customFieldForm.type === 'select'
+      ? customFieldForm.optionsText
+          .split(/[,，、\n]+/)
+          .map(s => s.trim())
+          .filter(Boolean)
+      : undefined;
+  const newKey = `cf_${Date.now().toString(36).slice(-5)}`;
+  const nextFields: Sct.CustomFieldDef[] = [
+    ...customFieldDefs.value,
+    {
+      key: newKey,
+      label: cleanLabel,
+      type: customFieldForm.type,
+      options,
+      showInTable: customFieldForm.showInTable
+    }
+  ];
+  await workStore.updateWorkspaceConfig({ customFields: nextFields });
+  customFieldModalShow.value = false;
+  window.$message?.success(`已新增自定义字段「${cleanLabel}」`);
+}
+
+async function toggleCustomFieldTableColumn(key: string, show: boolean) {
+  const nextFields = customFieldDefs.value.map(f => (f.key === key ? { ...f, showInTable: show } : f));
+  await workStore.updateWorkspaceConfig({ customFields: nextFields });
+}
+
+async function removeCustomField(key: string) {
+  const nextFields = customFieldDefs.value.filter(f => f.key !== key);
+  await workStore.updateWorkspaceConfig({ customFields: nextFields });
+  window.$message?.success('已移除该自定义字段');
+}
+
 // ---------------- 视图与布区（默认打开列表页） ----------------
 const activeTab = ref<'list' | 'roster'>('list');
 watch(seatmapEnabled, enabled => {
@@ -994,6 +1055,21 @@ const allColumnMap = computed(() => ({
     sorter: (a: MemberRow, b: MemberRow) => (a.group ?? '').localeCompare(b.group ?? ''),
     render: (row: MemberRow) => row.group || '—'
   },
+  ...Object.fromEntries(
+    customFieldDefs.value.map(cf => [
+      cf.key,
+      {
+        key: cf.key,
+        defaultWidth: 118,
+        minWidth: 82,
+        ellipsis: { tooltip: true },
+        titleContent: () => colHeader('lucide:tag', cf.label),
+        sorter: (a: MemberRow, b: MemberRow) =>
+          (a.custom_fields?.[cf.key] ?? '').localeCompare(b.custom_fields?.[cf.key] ?? '', 'zh-CN'),
+        render: (row: MemberRow) => row.custom_fields?.[cf.key] || '—'
+      }
+    ])
+  ),
   op: {
     key: 'op',
     defaultWidth: 256,
@@ -1072,7 +1148,8 @@ const allColumnMap = computed(() => ({
   }
 }));
 
-const activeVisibleKeys = computed(() => [...visibleColKeys.value, 'name', 'op']);
+const visibleCustomColKeys = computed(() => customFieldDefs.value.filter(f => f.showInTable).map(f => f.key));
+const activeVisibleKeys = computed(() => [...visibleColKeys.value, ...visibleCustomColKeys.value, 'name', 'op']);
 
 const {
   columns: listColumns,
@@ -1504,11 +1581,16 @@ async function handleRestoreMember(id: string, name: string) {
                   <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
                 </NInput>
               </div>
-              <NPopover trigger="click" placement="bottom-start" :width="400">
+              <NPopover trigger="click" placement="bottom-start" :width="430">
                 <template #trigger>
                   <NButton size="small" secondary class="shrink-0">
                     <template #icon><SvgIcon icon="lucide:columns-3" /></template>
-                    {{ bi(`列设置（${visibleColKeys.length + 1}/${COLUMN_PICKER_META.length + 1}）`, 'Columns') }}
+                    {{
+                      bi(
+                        `列设置（${visibleColKeys.length + visibleCustomColKeys.length + 1}/${COLUMN_PICKER_META.length + customFieldDefs.length + 1}）`,
+                        'Columns'
+                      )
+                    }}
                   </NButton>
                 </template>
                 <div class="flex flex-col gap-10px p-4px">
@@ -1531,6 +1613,52 @@ async function handleRestoreMember(id: string, name: string) {
                       </NCheckbox>
                     </div>
                   </NCheckboxGroup>
+
+                  <!-- 花名册自定义扩展字段（直接支持列显隐 + 新增/删除） -->
+                  <div class="border-t border-dashed border-[var(--sct-border)] pt-8px">
+                    <div class="mb-6px flex items-center justify-between gap-8px">
+                      <span class="flex items-center gap-4px text-12px font-semibold text-[var(--sct-ink)]">
+                        <SvgIcon icon="lucide:tags" class="text-13px text-[#A81C24]" />
+                        <span>{{ bi('自定义扩展字段', 'Custom Fields') }}</span>
+                      </span>
+                      <NButton size="tiny" type="primary" secondary @click="openAddCustomField">
+                        <template #icon><SvgIcon icon="lucide:plus" /></template>
+                        {{ bi('新增字段', 'Add Field') }}
+                      </NButton>
+                    </div>
+                    <div v-if="customFieldDefs.length" class="flex flex-col gap-5px">
+                      <div
+                        v-for="cf in customFieldDefs"
+                        :key="cf.key"
+                        class="flex items-center justify-between gap-8px rounded-6px bg-[var(--sct-soft)] px-8px py-4px"
+                      >
+                        <NCheckbox
+                          :checked="Boolean(cf.showInTable)"
+                          size="small"
+                          @update:checked="val => toggleCustomFieldTableColumn(cf.key, val)"
+                        >
+                          <span class="text-12px">
+                            {{ cf.label }}
+                            <span class="text-10.5px text-[var(--sct-muted)]">
+                              （{{ cf.type === 'select' ? '下拉' : '文本' }}）
+                            </span>
+                          </span>
+                        </NCheckbox>
+                        <NPopconfirm @positive-click="removeCustomField(cf.key)">
+                          <template #trigger>
+                            <NButton size="tiny" quaternary type="error">
+                              <template #icon><SvgIcon icon="lucide:trash-2" class="text-12px" /></template>
+                            </NButton>
+                          </template>
+                          确定移除字段「{{ cf.label }}」？
+                        </NPopconfirm>
+                      </div>
+                    </div>
+                    <div v-else class="text-11.5px text-[var(--sct-muted)]">
+                      暂无自定义字段，点击右上角「新增字段」可按支部需要扩展（如：实验室、特长技能），自动联动人员编辑与导出。
+                    </div>
+                  </div>
+
                   <div
                     class="border-t border-gray-100 pt-6px text-11px leading-relaxed text-gray-400 dark:border-gray-800"
                   >
@@ -1939,6 +2067,42 @@ async function handleRestoreMember(id: string, name: string) {
     <BatchTransferOutModal v-model:show="batchTransferShow" />
 
     <!-- 全局隐私分级导出弹窗 -->
+    <!-- 新增自定义扩展字段弹窗 -->
+    <NModal v-model:show="customFieldModalShow" preset="card" title="新增花名册自定义字段" class="w-430px max-w-94vw">
+      <NForm label-placement="left" label-width="86" size="small">
+        <NFormItem required>
+          <template #label><span class="sct-field-label">字段名称</span></template>
+          <NInput
+            v-model:value="customFieldForm.label"
+            placeholder="如：所属实验室 / 特长技能 / 联系楼栋"
+            maxlength="20"
+          />
+        </NFormItem>
+        <NFormItem>
+          <template #label><span class="sct-field-label">字段类型</span></template>
+          <NRadioGroup v-model:value="customFieldForm.type" size="small">
+            <NRadioButton value="text">文本输入</NRadioButton>
+            <NRadioButton value="select">下拉选项</NRadioButton>
+          </NRadioGroup>
+        </NFormItem>
+        <NFormItem v-if="customFieldForm.type === 'select'">
+          <template #label><span class="sct-field-label">选项列表</span></template>
+          <NInput v-model:value="customFieldForm.optionsText" placeholder="用顿号或逗号分隔，如：一区、二区、三区" />
+        </NFormItem>
+        <NFormItem>
+          <template #label><span class="sct-field-label">列表显示</span></template>
+          <NSwitch v-model:value="customFieldForm.showInTable" size="small" />
+          <span class="ml-8px text-12px text-[var(--sct-muted)]">立即作为花名册表格列展示</span>
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="customFieldModalShow = false">取消</NButton>
+          <NButton size="small" type="primary" @click="handleAddCustomField">添加字段</NButton>
+        </div>
+      </template>
+    </NModal>
+
     <PrivacyExportModal
       v-model:show="rosterExportShow"
       :title="rosterExportKind === 'transfer' ? '导出《组织关系转接登记表》' : '导出人员花名册'"
