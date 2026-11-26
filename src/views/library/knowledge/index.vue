@@ -28,6 +28,7 @@ type UnifiedKnowledgeItem = KnowledgeItem & {
 };
 
 const CUSTOM_META_KEY = 'knowledge-custom-items';
+const HIDDEN_BUILTIN_META_KEY = 'knowledge-hidden-ids';
 
 const images = import.meta.glob<string>('@/assets/knowledge/*.jpg', { eager: true, query: '?url', import: 'default' });
 
@@ -39,12 +40,19 @@ function imgUrl(item: UnifiedKnowledgeItem): string {
 }
 
 const customItems = ref<CustomKnowledgeItem[]>([]);
+const hiddenBuiltinIds = ref<string[]>([]);
 
 onMounted(async () => {
   try {
-    const saved = await getMeta<CustomKnowledgeItem[]>(CUSTOM_META_KEY);
+    const [saved, hidden] = await Promise.all([
+      getMeta<CustomKnowledgeItem[]>(CUSTOM_META_KEY),
+      getMeta<string[]>(HIDDEN_BUILTIN_META_KEY)
+    ]);
     if (Array.isArray(saved)) {
       customItems.value = saved;
+    }
+    if (Array.isArray(hidden)) {
+      hiddenBuiltinIds.value = hidden.filter((id): id is string => typeof id === 'string');
     }
   } catch {
     /* ignore empty db */
@@ -55,7 +63,16 @@ async function persistCustomItems() {
   await setMeta(CUSTOM_META_KEY, JSON.parse(JSON.stringify(customItems.value)));
 }
 
-const allItems = computed<UnifiedKnowledgeItem[]>(() => [...customItems.value, ...KNOWLEDGE_ITEMS]);
+async function persistHiddenBuiltinIds() {
+  await setMeta(HIDDEN_BUILTIN_META_KEY, [...hiddenBuiltinIds.value]);
+}
+
+const hiddenBuiltinSet = computed(() => new Set(hiddenBuiltinIds.value));
+
+const allItems = computed<UnifiedKnowledgeItem[]>(() => [
+  ...customItems.value,
+  ...KNOWLEDGE_ITEMS.filter(it => !hiddenBuiltinSet.value.has(it.id))
+]);
 
 const activeCat = ref<string>('全部');
 const keyword = ref('');
@@ -226,6 +243,28 @@ async function removeCustomItem(id: string) {
   window.$message?.success('已从知识库移除');
 }
 
+async function removeKnowledgeItem(item: UnifiedKnowledgeItem) {
+  if (item.isCustom) {
+    await removeCustomItem(item.id);
+    return;
+  }
+  if (!hiddenBuiltinIds.value.includes(item.id)) {
+    hiddenBuiltinIds.value = [...hiddenBuiltinIds.value, item.id];
+    await persistHiddenBuiltinIds();
+  }
+  if (activeItem.value?.id === item.id) {
+    previewShow.value = false;
+    activeItem.value = null;
+  }
+  window.$message?.success('已从知识库移除（可在右上角「恢复内置」找回）');
+}
+
+async function restoreBuiltinItems() {
+  hiddenBuiltinIds.value = [];
+  await persistHiddenBuiltinIds();
+  window.$message?.success('已恢复全部内置知识库条目');
+}
+
 // ---------------- 轻量安全 Markdown 解析（零外部重依赖） ----------------
 interface MdBlock {
   type: 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'quote' | 'code' | 'hr' | 'p';
@@ -351,6 +390,15 @@ function mdSummaryLines(md?: string): string[] {
             <template #icon><SvgIcon icon="lucide:upload" /></template>
             {{ bi('上传图解 / Markdown', 'Upload Image / Markdown') }}
           </NButton>
+          <NPopconfirm v-if="hiddenBuiltinIds.length" @positive-click="restoreBuiltinItems">
+            <template #trigger>
+              <NButton size="small" secondary>
+                <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+                {{ bi('恢复内置', 'Restore') }}
+              </NButton>
+            </template>
+            确认恢复已删除的 {{ hiddenBuiltinIds.length }} 条内置知识库条目吗？（自定义上传条目不受影响）
+          </NPopconfirm>
           <NButton
             tag="a"
             href="https://www.12371.cn/special/tx/"
@@ -476,14 +524,18 @@ function mdSummaryLines(md?: string): string[] {
               放大
             </NButton>
           </template>
-          <NPopconfirm v-if="activeItem?.isCustom" @positive-click="removeCustomItem(activeItem.id)">
+          <NPopconfirm v-if="activeItem" @positive-click="removeKnowledgeItem(activeItem)">
             <template #trigger>
               <NButton size="tiny" secondary type="error">
                 <template #icon><SvgIcon icon="lucide:trash-2" /></template>
                 删除
               </NButton>
             </template>
-            确认删除「{{ activeItem?.title }}」吗？
+            {{
+              activeItem.isCustom
+                ? `确认永久删除自定义条目「${activeItem.title}」吗？`
+                : `确认从知识库移除「${activeItem.title}」吗？（后续可通过「恢复内置」找回）`
+            }}
           </NPopconfirm>
         </div>
       </template>

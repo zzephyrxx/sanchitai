@@ -237,6 +237,7 @@ export interface BackupShape {
   youth_committee_slots?: Sct.YouthCommitteeSlot[];
   academy_flow?: unknown;
   knowledge_custom_items?: unknown;
+  knowledge_hidden_ids?: string[];
   policy_cards?: unknown;
   policy_files?: Record<string, unknown>;
   [extra: string]: unknown;
@@ -341,6 +342,7 @@ export function migrateBackupShape(raw: unknown): BackupShape {
       : undefined,
     academy_flow: src.academy_flow,
     knowledge_custom_items: src.knowledge_custom_items,
+    knowledge_hidden_ids: Array.isArray(src.knowledge_hidden_ids) ? (src.knowledge_hidden_ids as string[]) : undefined,
     policy_cards: src.policy_cards,
     policy_files:
       src.policy_files && typeof src.policy_files === 'object'
@@ -431,6 +433,7 @@ export async function exportBackup(): Promise<BackupShape> {
     youth_committee_slots: metaMap.get('youth-committee-slots') as Sct.YouthCommitteeSlot[] | undefined,
     academy_flow: metaMap.get('academy-flow'),
     knowledge_custom_items: metaMap.get('knowledge-custom-items'),
+    knowledge_hidden_ids: metaMap.get('knowledge-hidden-ids') as string[] | undefined,
     policy_cards: metaMap.get('policy-cards-v1'),
     policy_files: Object.keys(policyFiles).length > 0 ? policyFiles : undefined
   };
@@ -653,6 +656,11 @@ async function replaceLibraryTables(shape: BackupShape): Promise<void> {
     } else {
       await db.meta.delete('knowledge-custom-items');
     }
+    if (shape.knowledge_hidden_ids !== undefined) {
+      await db.meta.put({ key: 'knowledge-hidden-ids', value: shape.knowledge_hidden_ids });
+    } else {
+      await db.meta.delete('knowledge-hidden-ids');
+    }
     if (shape.policy_cards !== undefined) {
       await db.meta.put({ key: 'policy-cards-v1', value: shape.policy_cards });
     } else {
@@ -746,6 +754,7 @@ export async function clearAllData(): Promise<void> {
         'point-year-snapshots',
         'academy-flow',
         'knowledge-custom-items',
+        'knowledge-hidden-ids',
         'policy-cards-v1',
         ...policyFileKeys
       ]);

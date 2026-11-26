@@ -285,6 +285,7 @@ const BUSINESS_META_KEYS = [
   'point-year-snapshots',
   'academy-flow',
   'knowledge-custom-items',
+  'knowledge-hidden-ids',
   'policy-cards-v1'
 ] as const;
 

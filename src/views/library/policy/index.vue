@@ -713,10 +713,10 @@ function fmtSize(size: number) {
       </div>
     </NCard>
 
-    <!-- 精致纯阅读卡片弹窗（顶部党建红装饰线条） -->
+    <!-- 精致纯阅读卡片弹窗（对齐台历事项悬浮卡内缩圆头胶囊色带美学，置于顶部，默认党建红） -->
     <NModal v-model:show="readerShow" :mask-closable="true">
       <div v-if="readingCard" class="policy-reader-card">
-        <div class="px-22px pt-22px pb-18px">
+        <div class="px-22px pt-24px pb-18px">
           <div class="flex items-start justify-between gap-12px">
             <div class="flex flex-wrap items-center gap-6px">
               <NTag size="small" type="error" :bordered="false" round>
@@ -874,10 +874,11 @@ function fmtSize(size: number) {
 .policy-reader-card::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 10px;
+  left: 20px;
+  right: 20px;
   height: 4px;
+  border-radius: 999px;
   background: #a81c24;
 }
 </style>
