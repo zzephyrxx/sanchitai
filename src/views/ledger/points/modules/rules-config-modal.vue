@@ -170,7 +170,7 @@ async function handleSaveAll() {
 async function handleResetDefault() {
   await workStore.resetPointRules();
   localRules.value = JSON.parse(JSON.stringify(DEFAULT_POINT_RULES)) as Sct.PointRuleItem[];
-  window.$message?.success('已恢复为计算机学院默认考核标准');
+  window.$message?.success('已恢复为高校 60+40 默认考核标准');
 }
 </script>
 
@@ -185,17 +185,15 @@ async function handleResetDefault() {
     <div
       class="mb-12px flex flex-wrap items-center justify-between gap-8px rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-12px text-gray-500"
     >
-      <span>
-        预置《西安理工大学计算机学院学生党员积分管理考核标准》，可微调分值、停用或新增自定义条目；历史已录入记录不受影响。
-      </span>
+      <span>预置高校学生党员 60+40 积分管理考核标准，可微调分值、停用或新增自定义条目；历史已录入记录不受影响。</span>
       <NPopconfirm @positive-click="handleResetDefault">
         <template #trigger>
           <NButton size="tiny" secondary>
             <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-            恢复学院默认标准
+            恢复默认标准
           </NButton>
         </template>
-        确定恢复为计算机学院默认积分细则？自定义修改将被覆盖。
+        确定恢复为高校 60+40 默认积分细则？自定义修改将被覆盖。
       </NPopconfirm>
     </div>
 

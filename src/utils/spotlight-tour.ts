@@ -1,5 +1,5 @@
 /**
- * 三尺台 v0.3.0 跨页深度「新手引导动画」引擎（基于 driver.js）
+ * 三尺台 v0.2.7 跨页深度「新手引导动画」引擎（基于 driver.js）
  *
  * 性能与体验优化：
  * - 启动时后台静默预加载后续页面懒加载代码包（消除跨页首次跳转卡顿）
@@ -430,33 +430,18 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       accent: '#0f766e'
     },
 
-    // ==================== 七、党员积分与评定 ====================
+    // ==================== 七、党员积分管理 ====================
     {
       id: 'points-actions',
       route: '/ledger/points',
-      beforeCommands: ['points:close-workshop'],
+      beforeCommands: ['tour:cleanup'],
       when: () => mods.points !== false,
       selector: '[data-tour="points-actions"]',
-      title: '党员积分 · 草稿同步与公示',
-      description: '点「一键同步草稿」自动抓取考勤、党费与志愿时长待核实入账，支持脱敏 Excel 与打印。',
+      title: '党员积分 · 60+40 与草稿同步',
+      description:
+        '采用高校 60+40 分桶制；点「一键同步草稿」自动抓取考勤、党费与志愿时长待核实入账，支持细则微调与脱敏导出。',
       side: 'bottom',
       align: 'end',
-      accent: '#d97706'
-    },
-    {
-      id: 'points-workshop',
-      route: '/ledger/points',
-      beforeCommands: ['points:open-workshop'],
-      settleMs: 220,
-      skipIfMissing: true,
-      when: () => mods.points !== false,
-      selector: '[data-tour="points-workshop-presets"]',
-      fallbackSelector: '[data-tour="points-workshop-dims"]',
-      title: '方案规则工坊',
-      description:
-        '内置百分制、高校 60+40、五星模型、纯加分与空白自定义，按年锁定快照，支持 <code>.sctpreset</code> 共享。',
-      side: 'left',
-      align: 'start',
       accent: '#d97706'
     },
 
@@ -575,8 +560,8 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       route: '/settings',
       beforeCommands: ['tour:cleanup'],
       selector: '[data-tour="settings-workshop"]',
-      title: '模块工坊与场景配置',
-      description: '随时切换 5 套支部场景、按需启停扩展模块（关闭不删数据），支持 <code>.sctpreset</code> 配置包共享。',
+      title: '模块工坊与扩展字段',
+      description: '按需启停座位图、党员积分、志愿时长、政治生日等扩展模块（关闭不删数据），并可补充花名册自定义字段。',
       side: 'bottom',
       align: 'start',
       accent: '#7c5cd6'
@@ -598,7 +583,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       settleMs: 120,
       selector: '[data-tour="guide-entry"]',
       title: '左下角「使用指南」',
-      description: '引导完成！日后随时点此查阅 15 模块完整手册、重放新手引导动画或重新配置支部场景。',
+      description: '引导完成！日后随时点此查阅 15 模块完整手册、重放新手引导动画或重新运行初始化设置。',
       side: 'right',
       align: 'end',
       accent: '#A81C24'

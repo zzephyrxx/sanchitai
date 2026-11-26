@@ -1,6 +1,6 @@
 [package]
 name = "sanchitai"
-version = "0.3.0"
+version = "0.2.7"
 description = "三尺台 · 学工个人离线工作台"
 edition = "2021"
 

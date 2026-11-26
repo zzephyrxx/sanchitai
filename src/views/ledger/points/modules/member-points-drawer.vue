@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * 个人年度积分账单抽屉（v0.3.0 动态多方案引擎适配）
- * - 顶部得分仪表卡（分数制显示总分与各维度进度条；五星模型显示 ★★★★★ 星标点亮明细）
- * - 动态选择当前方案的维度与细则快速登记
+ * 个人年度积分账单抽屉（v0.2.7 高校 60+40 分桶制）
+ * - 顶部得分仪表卡（总分与 10 个分桶得分明细）
+ * - 快速登记加减分与参考细则自动算分
  * - 流水清单按时间倒序，支持一键「认定 / 待核实 / 未通过」与编辑删除
  */
 import { computed, reactive, ref, watch } from 'vue';
@@ -192,16 +192,7 @@ async function handleSaveVeto() {
           <div class="flex flex-wrap items-center justify-between gap-10px">
             <div>
               <div class="text-11.5px text-[var(--sct-muted)]">{{ scheme.name }}</div>
-              <div v-if="scheme.scheme_mode === 'star'" class="mt-4px flex items-center gap-8px">
-                <span class="text-20px tracking-widest text-[#d97706]">
-                  {{ '★'.repeat(summary.starsEarned)
-                  }}{{ '☆'.repeat(Math.max(0, summary.starsTotal - summary.starsEarned)) }}
-                </span>
-                <span class="font-mono text-13px font-bold text-[var(--sct-ink)]">
-                  {{ summary.starsEarned }}/{{ summary.starsTotal }} 星 · {{ formatScore(summary.totalScore) }} 分
-                </span>
-              </div>
-              <div v-else class="mt-2px flex items-baseline gap-8px">
+              <div class="mt-2px flex items-baseline gap-8px">
                 <span
                   class="font-mono text-26px font-extrabold leading-none"
                   :style="{ color: summary.isWarning ? '#dc2626' : '#A81C24' }"
@@ -228,7 +219,6 @@ async function handleSaveVeto() {
             >
               <div class="w-full flex items-center justify-between gap-4px text-11px text-[var(--sct-muted)]">
                 <span class="truncate">{{ d.shortLabel }}</span>
-                <span v-if="scheme.scheme_mode === 'star' && d.starLit" class="text-[#d97706]">★</span>
               </div>
               <div class="mt-2px font-mono text-13px font-bold" :style="{ color: d.color }">
                 {{
@@ -341,7 +331,7 @@ async function handleSaveVeto() {
         >
           <div class="flex items-center gap-8px text-12px">
             <NSwitch v-model:value="vetoActive" size="small" />
-            <span class="font-semibold">年度一票否决（基础分/星级清零）</span>
+            <span class="font-semibold">年度一票否决（基础分清零）</span>
           </div>
           <div class="flex items-center gap-6px">
             <NInput

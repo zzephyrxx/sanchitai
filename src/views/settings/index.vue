@@ -564,7 +564,7 @@ onMounted(listSnapshots);
   <div class="grid grid-cols-1 items-start gap-14px xl:grid-cols-12">
     <!-- 左栏（7/12 宽）：模块工坊 + 备份与恢复（10+10 快照） + 数据存储路径 + 「一键交接 / 演示数据」 -->
     <div class="flex flex-col gap-14px xl:col-span-7">
-      <!-- 工作台模块工坊与场景配置（v0.3.0） -->
+      <!-- 工作台模块工坊与扩展字段（v0.2.7） -->
       <ModuleWorkshopCard />
 
       <!-- 备份与恢复 -->

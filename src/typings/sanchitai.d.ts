@@ -1,8 +1,8 @@
 /**
  * 三尺台 领域类型定义（全局命名空间 Sct）
  *
- * v0.3.0 扩展：成员全生命周期、组织关系转接与转入核查、工作台场景预设与模块开关、
- * 多方案动态党员积分引擎、志愿时长台账、全局隐私脱敏导出。
+ * v0.2.7 扩展：成员全生命周期、组织关系转接与转入核查、工作台模块开关与自定义字段、
+ * 党员积分跨模块草稿同步（60+40 分制）、志愿时长台账、全局隐私脱敏导出。
  */
 declare namespace Sct {
   type MemberType = '正式党员' | '预备党员' | '发展对象' | '入党积极分子' | '申请人';
@@ -28,14 +28,8 @@ declare namespace Sct {
   /** 导出隐私模式：默认脱敏公示版 / 全量报送版 */
   type ExportPrivacyMode = 'masked' | 'full';
 
-  /** 支部场景预设 */
-  type BranchSceneKey = 'university_student' | 'university_faculty' | 'gov_enterprise' | 'community_org' | 'minimal';
-
   /** 模块工坊可开关扩展模块 */
   type OptionalModuleKey = 'seatmap' | 'points' | 'volunteer' | 'birthday';
-
-  /** 花名册场景字段组 */
-  type FieldGroupKey = 'university_student' | 'org_workplace' | 'community_grid';
 
   interface CustomFieldDef {
     key: string;
@@ -46,9 +40,7 @@ declare namespace Sct {
   }
 
   interface WorkspaceConfig {
-    scene: BranchSceneKey;
     enabledModules: Record<OptionalModuleKey, boolean>;
-    enabledFieldGroups: Record<FieldGroupKey, boolean>;
     customFields: CustomFieldDef[];
     onboardingCompleted: boolean;
     onboardingVersion: string;
@@ -327,15 +319,12 @@ declare namespace Sct {
   /** 积分细则辅助计分模式 */
   type PointCalcMode = 'fixed' | 'count' | 'role_half' | 'hours_20';
 
-  /** 积分/评定方案计分模式：分数制 / 五星评定模型 */
-  type PointSchemeMode = 'score' | 'star';
-
-  /** 动态计分维度（大类/分桶） */
+  /** 计分维度（60+40 分桶定义） */
   interface PointDimensionDef {
     id: string;
     label: string;
     shortLabel: string;
-    /** 兼容归类：base=初始分扣分 / duty=封顶加分 / bonus=不封顶加分 / penalty=直接扣分 */
+    /** 归类：base=初始分扣分 / duty=封顶加分 / bonus=不封顶加分 / penalty=直接扣分 */
     category: PointCategory;
     /** 计分方向：deduct_from_base（从初始分扣至0）/ add_capped（0起加至封顶）/ add_uncapped（不封顶加分）/ deduct_direct（直接扣减） */
     mode: 'deduct_from_base' | 'add_capped' | 'add_uncapped' | 'deduct_direct';
@@ -343,28 +332,22 @@ declare namespace Sct {
     initial_score: number;
     /** 封顶分（deduct_from_base 或 add_capped 使用，null 为不封顶） */
     cap: number | null;
-    /** 星级模式下，达到该分值即点亮 1 颗星 */
-    star_threshold?: number;
     color: string;
     /** 是否参与全局履职上限封顶 */
     group_cap_key?: string;
   }
 
-  /** 完整积分/评定方案 */
+  /** 党员积分考核方案（固定高校 60+40 分桶制） */
   interface PointScheme {
     id: string;
     name: string;
     description: string;
-    scheme_mode: PointSchemeMode;
     pass_line: number;
-    /** 星级模式下合格星数（如 3 星） */
-    pass_stars?: number;
     enable_veto: boolean;
-    /** 可选分组总上限（如履职三大类合计 ≤40） */
+    /** 分组总上限（履职三大类合计 ≤40） */
     group_caps?: Record<string, number>;
     dimensions: PointDimensionDef[];
     rules: PointRuleItem[];
-    builtin?: boolean;
   }
 
   /** 党员积分考核细则项 */
@@ -414,7 +397,7 @@ declare namespace Sct {
     identity?: string;
   }
 
-  /** 年度一票否决记录（开启后基础分归零 / 星级清零） */
+  /** 年度一票否决记录（开启后基础分归零） */
   interface PointVeto {
     /** 复合主键 `${member_id}::${year}` */
     id: string;
@@ -424,23 +407,6 @@ declare namespace Sct {
     reason: string;
     updated_at: string;
     identity?: string;
-  }
-
-  /** 单位配置包（.sctpreset）格式 */
-  interface UnitPresetPack {
-    format: 'sctpreset';
-    version: 1;
-    exported_at: string;
-    name: string;
-    description?: string;
-    source_branch?: string;
-    includes: Array<'scene' | 'point_scheme' | 'custom_fields' | 'doc_templates'>;
-    scene?: BranchSceneKey;
-    enabled_modules?: Record<OptionalModuleKey, boolean>;
-    enabled_field_groups?: Record<FieldGroupKey, boolean>;
-    custom_fields?: CustomFieldDef[];
-    point_scheme?: PointScheme;
-    doc_templates?: DocTemplate[];
   }
 
   /** 自定义青年委员槽位（支持 0..N 个，仅限正式党员担任） */

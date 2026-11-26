@@ -42,8 +42,6 @@ watch(
     workStore.pointRecords,
     workStore.pointVetoes,
     workStore.pointRules,
-    workStore.allPointSchemes,
-    workStore.pointYearSchemeMap,
     workStore.transferRecords,
     workStore.volunteerActivities,
     workStore.workspaceConfig,

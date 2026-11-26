@@ -1,19 +1,14 @@
 <script setup lang="ts">
 /**
- * 三尺台 v0.3.0：
- * 1. 首次启动：精简 3 步支部初始化弹窗 → 完成后自动播放「新手引导动画」（Driver.js 跨页自动跳转与高亮）
- * 2. 左下角「使用指南」：全站 15 模块详尽可检索手册弹窗（全部卡片采用台历事项卡片「1px 细框 + 浅底 + 独立内缩圆头竖条」风格）
+ * 三尺台 v0.2.7：
+ * 1. 首次启动：精简 2 步高校支部初始化弹窗（支部名称 → 初始数据）→ 完成后可自动播放「新手引导动画」
+ * 2. 左下角「使用指南」：全站 15 模块详尽可检索手册弹窗
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { GUIDE_GROUPS, USER_GUIDE_CHAPTERS } from '@/constants/user-guide';
 import type { GuideChapter } from '@/constants/user-guide';
-import {
-  BRANCH_SCENE_PRESETS,
-  ONBOARDING_CURRENT_VERSION,
-  WORKSHOP_MODULES,
-  getScenePreset
-} from '@/constants/workspace-presets';
+import { DEFAULT_BRANCH_NAME, ONBOARDING_CURRENT_VERSION } from '@/constants/workspace-presets';
 import {
   closeOnboardingGuide,
   onboardingStage,
@@ -48,42 +43,29 @@ onBeforeUnmount(() => {
   stopSpotlightTour();
 });
 
-// ---------------- 阶段 A：3 步支部初始化弹窗 ----------------
+// ---------------- 阶段 A：2 步高校支部初始化弹窗 ----------------
 const setupStep = ref(1);
 const setupBusy = ref(false);
 const setupForm = reactive({
-  scene: workStore.workspaceConfig.scene as Sct.BranchSceneKey,
   branchName: workStore.branchName,
-  enabledModules: { ...workStore.workspaceConfig.enabledModules } as Record<Sct.OptionalModuleKey, boolean>,
   dataMode: 'keep_demo' as 'keep_demo' | 'clear_blank'
 });
 
 watch(onboardingVisible, visible => {
   if (!visible) return;
   setupStep.value = 1;
-  setupForm.scene = workStore.workspaceConfig.scene;
   setupForm.branchName = workStore.branchName;
-  setupForm.enabledModules = { ...workStore.workspaceConfig.enabledModules };
   setupForm.dataMode = 'keep_demo';
   guideSearch.value = '';
 });
 
-function pickScene(sceneKey: Sct.BranchSceneKey) {
-  setupForm.scene = sceneKey;
-  const preset = getScenePreset(sceneKey);
-  setupForm.enabledModules = { ...preset.enabledModules };
-  if (!setupForm.branchName.trim() || BRANCH_SCENE_PRESETS.some(p => p.defaultBranchName === setupForm.branchName)) {
-    setupForm.branchName = preset.defaultBranchName;
-  }
-}
-
 async function commitSetup(runTourAfter: boolean) {
   setupBusy.value = true;
   try {
-    await workStore.applyBranchScenePreset(setupForm.scene, {
-      branchName: setupForm.branchName.trim() || getScenePreset(setupForm.scene).defaultBranchName,
-      enabledModules: { ...setupForm.enabledModules },
-      markOnboarded: true
+    await workStore.setBranchName(setupForm.branchName.trim() || DEFAULT_BRANCH_NAME);
+    await workStore.updateWorkspaceConfig({
+      onboardingCompleted: true,
+      onboardingVersion: ONBOARDING_CURRENT_VERSION
     });
     if (setupForm.dataMode === 'clear_blank') {
       await clearAllData();
@@ -203,7 +185,7 @@ function handlePlayAnimation(startStepId?: string) {
           <span class="text-15px font-bold">
             {{ onboardingStage === 'setup' ? '欢迎使用三尺台 · 支部工作台初始化' : '使用指南 · 完整功能手册' }}
           </span>
-          <NTag size="tiny" :bordered="false" class="font-mono">v0.3.0</NTag>
+          <NTag size="tiny" :bordered="false" class="font-mono">v0.2.7</NTag>
         </div>
 
         <div v-if="onboardingStage === 'guide'" class="flex items-center gap-6px">
@@ -213,20 +195,19 @@ function handlePlayAnimation(startStepId?: string) {
           </NButton>
           <NButton size="tiny" secondary @click="onboardingStage = 'setup'">
             <template #icon><SvgIcon icon="lucide:sliders-horizontal" /></template>
-            场景初始化
+            初始化设置
           </NButton>
         </div>
       </div>
     </template>
 
-    <!-- ==================== 模式 A：精简 3 步支部初始化弹窗 ==================== -->
+    <!-- ==================== 模式 A：精简 2 步高校支部初始化弹窗 ==================== -->
     <div v-if="onboardingStage === 'setup'" class="flex flex-col gap-16px">
-      <div class="grid grid-cols-3 gap-8px">
+      <div class="grid grid-cols-2 gap-8px">
         <button
           v-for="s in [
-            { n: 1, label: '01 · 支部场景与名称' },
-            { n: 2, label: '02 · 扩展模块开关' },
-            { n: 3, label: '03 · 初始数据状态' }
+            { n: 1, label: '01 · 支部名称' },
+            { n: 2, label: '02 · 初始数据状态' }
           ]"
           :key="s.n"
           type="button"
@@ -248,63 +229,20 @@ function handlePlayAnimation(startStepId?: string) {
       <div v-if="setupStep === 1" class="flex flex-col gap-14px">
         <div>
           <div class="mb-6px text-13px font-bold">支部名称</div>
-          <NInput v-model:value="setupForm.branchName" maxlength="40" placeholder="请输入你的党支部名称" />
+          <NInput v-model:value="setupForm.branchName" maxlength="40" placeholder="请输入你的高校党支部名称" />
         </div>
-        <div>
-          <div class="mb-8px text-13px font-bold">选择支部类型（自动匹配花名册字段与常用模块）</div>
-          <div class="grid grid-cols-1 gap-10px sm:grid-cols-2">
-            <button
-              v-for="preset in BRANCH_SCENE_PRESETS"
-              :key="preset.key"
-              type="button"
-              class="sct-inset-card flex-col p-12px text-left"
-              :class="{ 'is-active': setupForm.scene === preset.key }"
-              style="--bar-color: #a81c24; --bar-soft: rgba(168, 28, 36, 0.07)"
-              @click="pickScene(preset.key)"
-            >
-              <span class="sct-inset-card__bar" />
-              <div class="w-full flex items-center justify-between gap-6px">
-                <span class="flex items-center gap-6px text-13.5px font-bold">
-                  <SvgIcon :icon="preset.icon" class="text-16px text-[#A81C24]" />
-                  {{ preset.titleZh }}
-                </span>
-                <NTag size="tiny" :bordered="false">{{ preset.tagZh }}</NTag>
-              </div>
-              <div class="mt-5px text-11.5px text-[var(--sct-muted)] leading-relaxed">{{ preset.descZh }}</div>
-            </button>
-          </div>
+        <div
+          class="rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-14px py-10px text-12px text-[var(--sct-muted)] leading-relaxed"
+        >
+          已面向高校党建工作预置：学生花名册字段（学号 / 层次 / 年级 / 专业 / 班级 / 导师 / 宿舍）、学生党费默认 0.2
+          元/月、60+40 党员积分方案，以及组织关系转接与志愿时长台账。后续可在「设置 →
+          工作台模块工坊」按需启停扩展模块或添加自定义字段。
         </div>
       </div>
 
       <!-- Step 2 -->
-      <div v-else-if="setupStep === 2" class="flex flex-col gap-12px">
-        <div class="text-12.5px text-[var(--sct-muted)]">
-          按需启停以下 4 项扩展模块（关闭仅隐藏侧栏入口，历史数据永久安全保留）：
-        </div>
-        <div class="grid grid-cols-1 gap-10px sm:grid-cols-2">
-          <div
-            v-for="mod in WORKSHOP_MODULES"
-            :key="mod.key"
-            class="sct-inset-card items-start justify-between p-12px"
-            :class="{ 'is-active': setupForm.enabledModules[mod.key] }"
-            :style="{ '--bar-color': mod.color, '--bar-soft': 'var(--sct-soft)' }"
-          >
-            <span class="sct-inset-card__bar" />
-            <div class="min-w-0 flex-1 pr-8px">
-              <div class="flex items-center gap-6px text-13px font-bold">
-                <SvgIcon :icon="mod.icon" class="text-16px" :style="{ color: mod.color }" />
-                <span>{{ mod.titleZh }}</span>
-              </div>
-              <div class="mt-4px text-11.5px text-[var(--sct-muted)] leading-relaxed">{{ mod.descZh }}</div>
-            </div>
-            <NSwitch v-model:value="setupForm.enabledModules[mod.key]" size="small" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Step 3 -->
       <div v-else class="flex flex-col gap-12px">
-        <div class="text-12.5px text-[var(--sct-muted)]">选择初始数据模式，完成后将自动开启全站「新手引导动画」：</div>
+        <div class="text-12.5px text-[var(--sct-muted)]">选择初始数据模式，完成后可开启全站「新手引导动画」：</div>
         <div class="grid grid-cols-1 gap-10px sm:grid-cols-2">
           <button
             type="button"
@@ -344,9 +282,9 @@ function handlePlayAnimation(startStepId?: string) {
       <!-- 底部操作栏 -->
       <div class="flex items-center justify-between border-t border-[var(--sct-border)] pt-12px">
         <NButton v-if="setupStep > 1" size="small" secondary @click="setupStep -= 1">← 上一步</NButton>
-        <span v-else class="text-11.5px text-[var(--sct-muted)]">全部选项均可随时在「设置 → 模块工坊」调整</span>
+        <span v-else class="text-11.5px text-[var(--sct-muted)]">支部名称与扩展模块均可随时在「设置」调整</span>
         <div class="flex items-center gap-8px">
-          <NButton v-if="setupStep < 3" size="small" type="primary" @click="setupStep += 1">下一步 →</NButton>
+          <NButton v-if="setupStep < 2" size="small" type="primary" @click="setupStep += 1">下一步 →</NButton>
           <template v-else>
             <NButton size="small" secondary :loading="setupBusy" @click="commitSetup(false)">直接进入工作台</NButton>
             <NButton size="small" type="primary" :loading="setupBusy" @click="commitSetup(true)">

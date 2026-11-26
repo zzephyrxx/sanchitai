@@ -34,7 +34,7 @@ const menuOptions: DropdownOption[] = [
   },
   { type: 'divider', key: 'd1' },
   {
-    label: '配置支部场景',
+    label: '初始化设置',
     key: 'setup',
     icon: renderMenuIcon('lucide:sliders-horizontal', '#0f766e')
   }

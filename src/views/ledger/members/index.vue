@@ -40,7 +40,6 @@ type LifecycleScope = 'active' | 'transferring_out' | 'incoming_audit' | 'floati
 const lifecycleScope = ref<LifecycleScope>('active');
 
 const seatmapEnabled = computed(() => workStore.workspaceConfig.enabledModules.seatmap);
-const enabledFieldGroups = computed(() => workStore.workspaceConfig.enabledFieldGroups);
 const customFieldDefs = computed(() => workStore.workspaceConfig.customFields);
 
 // ---------------- 视图与布区（默认打开列表页） ----------------
@@ -435,24 +434,17 @@ async function handleConfirmRosterExport(privacyMode: Sct.ExportPrivacyMode) {
         状态: getMemberLifecycle(m),
         党内职务: m.role || '',
         党小组: m.group || '',
-        '学号/工号': m.student_id || '',
+        学号: m.student_id || '',
         性别: m.gender || '',
         民族: m.ethnicity || '',
-        出生年月: m.birth_date || ''
+        出生年月: m.birth_date || '',
+        层次: m.level || '',
+        年级: m.grade || '',
+        专业: m.major || '',
+        班级: m.class_name || '',
+        导师: m.advisor || '',
+        宿舍: [m.dorm_building, m.dorm_room].filter(Boolean).join('-')
       };
-      if (enabledFieldGroups.value.university_student) {
-        row.层次 = m.level || '';
-        row.年级 = m.grade || '';
-        row.专业 = m.major || '';
-        row.班级 = m.class_name || '';
-        row.导师 = m.advisor || '';
-        row.宿舍 = [m.dorm_building, m.dorm_room].filter(Boolean).join('-');
-      }
-      if (enabledFieldGroups.value.org_workplace || enabledFieldGroups.value.community_grid) {
-        row[enabledFieldGroups.value.community_grid ? '所属网格' : '部门/科室'] = m.department || '';
-        row['岗位/职称'] = m.job_title || '';
-        row[enabledFieldGroups.value.community_grid ? '居住楼栋' : '办公地点'] = m.office_location || '';
-      }
       for (const cf of customFieldDefs.value) {
         row[cf.label] = m.custom_fields?.[cf.key] || '';
       }
@@ -2446,45 +2438,6 @@ async function handleRestoreMember(id: string, name: string) {
           </template>
           <NInput v-model:value="addForm.note" type="textarea" :rows="2" />
         </NFormItem>
-
-        <!-- 企事业 / 社区场景扩展字段（按工作台模块配置动态展示） -->
-        <div
-          v-if="enabledFieldGroups.org_workplace || enabledFieldGroups.community_grid"
-          class="mb-10px rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)]/50 p-10px"
-        >
-          <div class="mb-8px text-12px font-bold text-[var(--sct-ink)]">
-            {{ enabledFieldGroups.community_grid ? '社区 / 两新场景信息' : '单位 / 教工场景信息' }}
-          </div>
-          <div class="grid grid-cols-1 gap-x-14px sm:grid-cols-2">
-            <NFormItem>
-              <template #label>
-                <span class="sct-field-label">
-                  <SvgIcon icon="lucide:building" class="sct-field-icon" />
-                  <span>{{ enabledFieldGroups.community_grid ? '所属网格' : '部门/科室' }}</span>
-                </span>
-              </template>
-              <NInput v-model:value="addForm.department" placeholder="选填" />
-            </NFormItem>
-            <NFormItem>
-              <template #label>
-                <span class="sct-field-label">
-                  <SvgIcon icon="lucide:briefcase" class="sct-field-icon" />
-                  <span>岗位/职称</span>
-                </span>
-              </template>
-              <NInput v-model:value="addForm.job_title" placeholder="选填" />
-            </NFormItem>
-            <NFormItem>
-              <template #label>
-                <span class="sct-field-label">
-                  <SvgIcon icon="lucide:map-pin" class="sct-field-icon" />
-                  <span>{{ enabledFieldGroups.community_grid ? '居住楼栋' : '办公地点' }}</span>
-                </span>
-              </template>
-              <NInput v-model:value="addForm.office_location" placeholder="选填" />
-            </NFormItem>
-          </div>
-        </div>
 
         <!-- 用户自定义扩展字段 -->
         <div

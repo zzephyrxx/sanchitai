@@ -1,17 +1,15 @@
 <script setup lang="ts">
 /**
- * 设置页「工作台模块工坊 & 场景字段配置」卡片（v0.3.0）
- * - 一键切换支部场景预设 / 重新唤起新手初始化与 10 项功能秘籍
+ * 设置页「工作台模块工坊 & 自定义字段」卡片（v0.2.7 高校定制版）
  * - 台账卡片网格启停扩展模块（座位图 / 党员积分 / 志愿时长 / 政治生日），关闭隐藏菜单但保留数据
- * - 场景字段组开关 + 自定义花名册扩展字段管理
- * - .sctpreset 单位配置包一键导入/导出
+ * - 高校学生花名册基础字段默认开启，支持额外增删自定义扩展字段
+ * - 快捷唤起新手引导动画、使用指南手册与初始化设置
  */
 import { computed, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { nanoid } from '@sa/utils';
-import { BRANCH_SCENE_PRESETS, FIELD_GROUP_METAS, WORKSHOP_MODULES } from '@/constants/workspace-presets';
+import { WORKSHOP_MODULES } from '@/constants/workspace-presets';
 import { openOnboardingGuide, startSpotlightTour } from '@/utils/onboarding-bus';
-import { buildUnitPresetPack, exportUnitPresetFile, parseUnitPresetText } from '@/utils/unit-preset';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 
@@ -22,7 +20,6 @@ const workStore = useWorkDataStore();
 const { bi } = useSctI18n();
 
 const cfg = computed(() => workStore.workspaceConfig);
-const presetFileInput = ref<HTMLInputElement>();
 
 const addFieldModalShow = ref(false);
 const fieldForm = reactive({
@@ -32,11 +29,6 @@ const fieldForm = reactive({
   showInTable: false
 });
 
-async function handleSceneChange(scene: Sct.BranchSceneKey) {
-  await workStore.applyBranchScenePreset(scene);
-  window.$message?.success('已切换支部场景预设（菜单与花名册字段已同步生效）');
-}
-
 async function toggleModule(key: Sct.OptionalModuleKey, val: boolean) {
   await workStore.updateWorkspaceConfig({
     enabledModules: {
@@ -45,15 +37,6 @@ async function toggleModule(key: Sct.OptionalModuleKey, val: boolean) {
     }
   });
   window.$message?.success(val ? '扩展模块已启用（侧边栏即时可见）' : '扩展模块已隐藏（原有数据安全保留）');
-}
-
-async function toggleFieldGroup(key: Sct.FieldGroupKey, val: boolean) {
-  await workStore.updateWorkspaceConfig({
-    enabledFieldGroups: {
-      ...cfg.value.enabledFieldGroups,
-      [key]: val
-    }
-  });
 }
 
 function openAddField() {
@@ -96,39 +79,6 @@ async function removeCustomField(key: string) {
   await workStore.updateWorkspaceConfig({ customFields: nextFields });
   window.$message?.success('已移除该自定义字段');
 }
-
-async function exportUnitPreset() {
-  const curYear = new Date().getFullYear();
-  const pack = buildUnitPresetPack({
-    name: `${workStore.branchName}_标准配置包`,
-    sourceBranch: workStore.branchName,
-    includes: ['scene', 'custom_fields', 'point_scheme', 'doc_templates'],
-    workspaceConfig: cfg.value,
-    pointScheme: workStore.getPointSchemeForYear(curYear),
-    docTemplates: workStore.docTemplates
-  });
-  const res = await exportUnitPresetFile(pack);
-  if (res === 'saved') {
-    window.$message?.success('单位配置包 (.sctpreset) 已导出（不含任何隐私台账，可直接分享）');
-  }
-}
-
-async function handleImportUnitPreset(e: Event) {
-  const input = e.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  try {
-    const parsed = parseUnitPresetText(await file.text());
-    if (!parsed.ok) {
-      window.$message?.error(parsed.message);
-      return;
-    }
-    const applied = await workStore.applyUnitPresetPack(parsed.pack);
-    window.$message?.success(`已导入配置包「${parsed.pack.name}」：${applied.join('、')}`);
-  } finally {
-    input.value = '';
-  }
-}
 </script>
 
 <template>
@@ -136,8 +86,8 @@ async function handleImportUnitPreset(e: Event) {
     <template #header>
       <div class="flex flex-wrap items-center gap-8px">
         <SvgIcon icon="lucide:blocks" class="text-17px text-[#A81C24]" />
-        <span class="font-bold">{{ bi('工作台模块工坊与场景配置', 'Module Workshop & Scene Presets') }}</span>
-        <NTag size="tiny" type="info" :bordered="false" round>按需启停 · 通用适配</NTag>
+        <span class="font-bold">{{ bi('工作台模块工坊与扩展字段', 'Module Workshop & Custom Fields') }}</span>
+        <NTag size="tiny" type="info" :bordered="false" round>按需启停 · 高校定制</NTag>
       </div>
     </template>
     <template #header-extra>
@@ -152,45 +102,12 @@ async function handleImportUnitPreset(e: Event) {
         </NButton>
         <NButton size="tiny" secondary @click="openOnboardingGuide('setup')">
           <template #icon><SvgIcon icon="lucide:wand-2" /></template>
-          场景初始化
+          初始化设置
         </NButton>
       </div>
     </template>
 
     <div class="flex flex-col gap-14px">
-      <!-- 支部场景预设切换 + .sctpreset 共享 -->
-      <div
-        class="flex flex-wrap items-center justify-between gap-10px rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-9px"
-      >
-        <div class="flex flex-wrap items-center gap-8px">
-          <span class="text-12.5px font-bold">当前支部场景：</span>
-          <NSelect
-            :value="cfg.scene"
-            size="small"
-            class="w-190px"
-            :options="BRANCH_SCENE_PRESETS.map(p => ({ label: `${p.titleZh}（${p.tagZh}）`, value: p.key }))"
-            @update:value="val => handleSceneChange(val as Sct.BranchSceneKey)"
-          />
-        </div>
-        <div class="flex flex-wrap items-center gap-6px">
-          <NButton size="tiny" type="info" secondary @click="presetFileInput?.click()">
-            <template #icon><SvgIcon icon="lucide:upload" /></template>
-            导入单位配置包 (.sctpreset)
-          </NButton>
-          <NButton size="tiny" secondary @click="exportUnitPreset">
-            <template #icon><SvgIcon icon="lucide:share-2" /></template>
-            分享配置包
-          </NButton>
-          <input
-            ref="presetFileInput"
-            type="file"
-            accept=".sctpreset,.json"
-            class="hidden"
-            @change="handleImportUnitPreset"
-          />
-        </div>
-      </div>
-
       <!-- 扩展模块卡片网格 -->
       <div class="grid grid-cols-1 gap-10px sm:grid-cols-2">
         <div
@@ -224,31 +141,20 @@ async function handleImportUnitPreset(e: Event) {
         </div>
       </div>
 
-      <!-- 花名册场景字段组 + 自定义字段 -->
+      <!-- 花名册自定义扩展字段 -->
       <div class="rounded-8px border border-[var(--sct-border)] bg-[var(--sct-page)] p-12px">
-        <div class="mb-8px flex flex-wrap items-center justify-between gap-8px">
-          <span class="text-12.5px font-bold">花名册场景字段组与自定义字段</span>
+        <div class="flex flex-wrap items-center justify-between gap-8px">
+          <div class="min-w-0">
+            <div class="text-12.5px font-bold">花名册自定义扩展字段</div>
+            <div class="mt-2px text-11.5px text-[var(--sct-muted)]">
+              高校学生默认字段（学号 · 培养层次 · 年级 · 专业 · 班级 · 导师 ·
+              宿舍）已内置开启，可按支部需要继续补充自定义字段
+            </div>
+          </div>
           <NButton size="tiny" type="primary" secondary @click="openAddField">
             <template #icon><SvgIcon icon="lucide:plus" /></template>
             新增自定义字段
           </NButton>
-        </div>
-        <div class="flex flex-col gap-6px">
-          <div
-            v-for="fg in FIELD_GROUP_METAS"
-            :key="fg.key"
-            class="flex items-center justify-between gap-8px rounded-6px bg-[var(--sct-container)] px-10px py-6px text-12px"
-          >
-            <div class="min-w-0">
-              <span class="font-semibold">{{ fg.titleZh }}</span>
-              <span class="ml-8px text-11px text-[var(--sct-muted)]">{{ fg.fieldsSummary }}</span>
-            </div>
-            <NSwitch
-              :value="cfg.enabledFieldGroups[fg.key]"
-              size="small"
-              @update:value="val => toggleFieldGroup(fg.key, val)"
-            />
-          </div>
         </div>
 
         <div
@@ -274,7 +180,7 @@ async function handleImportUnitPreset(e: Event) {
       <NForm label-placement="left" label-width="86" size="small">
         <NFormItem required>
           <template #label><span class="sct-field-label">字段名称</span></template>
-          <NInput v-model:value="fieldForm.label" placeholder="如：特长技能 / 联系楼栋 / 所在工区" />
+          <NInput v-model:value="fieldForm.label" placeholder="如：实验室 / 特长技能 / 联系楼栋" />
         </NFormItem>
         <NFormItem>
           <template #label><span class="sct-field-label">字段类型</span></template>

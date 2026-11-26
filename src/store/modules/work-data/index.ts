@@ -10,17 +10,11 @@ import type { EventInput } from '@fullcalendar/core';
 import { nanoid } from '@sa/utils';
 import { computeNextDevNode, findMatchedMaterial, nodesOfStage } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
-import {
-  BUILTIN_POINT_SCHEMES,
-  DEFAULT_POINT_RULES,
-  clonePointScheme,
-  getBuiltinPointScheme
-} from '@/constants/party-points';
+import { DEFAULT_POINT_RULES, buildUni6040Scheme } from '@/constants/party-points';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
 import {
   DEFAULT_BRANCH_NAME,
   getMemberLifecycle,
-  getScenePreset,
   isMemberActive,
   isMemberArchived,
   isMemberFloating,
@@ -90,18 +84,6 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     () => db.meta.get('point-rules'),
     undefined
   );
-  const pointSchemesRow = useDexieLive<{ key: string; value: unknown } | undefined>(
-    () => db.meta.get('point-schemes'),
-    undefined
-  );
-  const pointYearSchemeRow = useDexieLive<{ key: string; value: unknown } | undefined>(
-    () => db.meta.get('point-year-scheme'),
-    undefined
-  );
-  const pointYearSnapshotsRow = useDexieLive<{ key: string; value: unknown } | undefined>(
-    () => db.meta.get('point-year-snapshots'),
-    undefined
-  );
   const workspaceConfigRow = useDexieLive<{ key: string; value: unknown } | undefined>(
     () => db.meta.get('workspace-config'),
     undefined
@@ -142,49 +124,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     return DEFAULT_POINT_RULES;
   });
 
-  const allPointSchemes = computed<Sct.PointScheme[]>(() => {
-    const customList = Array.isArray(pointSchemesRow.value?.value)
-      ? (pointSchemesRow.value.value as Sct.PointScheme[])
-      : [];
-    const customById = new Map(customList.map(s => [s.id, s]));
-    const legacyCustomRules = Array.isArray(pointRulesRow.value?.value)
-      ? (pointRulesRow.value.value as Sct.PointRuleItem[])
-      : null;
-
-    const mergedBuiltins = BUILTIN_POINT_SCHEMES.map(b => {
-      const override = customById.get(b.id);
-      if (override) return override;
-      if (b.id === 'scheme-uni-60-40' && legacyCustomRules?.length) {
-        return { ...clonePointScheme(b), rules: legacyCustomRules };
-      }
-      return clonePointScheme(b);
-    });
-
-    const builtinIds = new Set(BUILTIN_POINT_SCHEMES.map(b => b.id));
-    const extras = customList.filter(s => !builtinIds.has(s.id));
-    return [...mergedBuiltins, ...extras];
-  });
-
-  const pointYearSchemeMap = computed<Record<string, string>>(() => {
-    const val = pointYearSchemeRow.value?.value;
-    return val && typeof val === 'object' ? (val as Record<string, string>) : {};
-  });
-
-  const pointYearSnapshots = computed<Record<string, Sct.PointScheme>>(() => {
-    const val = pointYearSnapshotsRow.value?.value;
-    return val && typeof val === 'object' ? (val as Record<string, Sct.PointScheme>) : {};
-  });
-
-  function getPointSchemeForYear(year: number): Sct.PointScheme {
-    const key = String(year);
-    const snap = pointYearSnapshots.value[key];
-    if (snap && Array.isArray(snap.dimensions) && snap.dimensions.length > 0) {
-      return snap;
-    }
-    const boundId = pointYearSchemeMap.value[key] || getScenePreset(workspaceConfig.value.scene).defaultPointSchemeId;
-    const hit = allPointSchemes.value.find(s => s.id === boundId);
-    return clonePointScheme(hit ?? getBuiltinPointScheme('scheme-uni-60-40'));
-  }
+  const activePointScheme = computed<Sct.PointScheme>(() => buildUni6040Scheme(pointRules.value));
 
   const partyGroupNames = computed<string[]>(() => {
     const saved = Array.isArray(partyGroupsRow.value?.value)
@@ -428,8 +368,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       full_date: '',
       role: '',
       lifecycle_status: '在册正常',
-      fee_category: getScenePreset(workspaceConfig.value.scene).defaultFeeCategory,
-      fee_monthly: getScenePreset(workspaceConfig.value.scene).defaultFeeMonthly,
+      fee_category: '学生党员',
+      fee_monthly: FEE_STANDARD.studentMonthly,
       ...input,
       id,
       code: autoCode,
@@ -1166,39 +1106,6 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await guardWrite(db.meta.delete('point-rules'), '重置积分考核标准');
   }
 
-  async function saveCustomPointScheme(scheme: Sct.PointScheme) {
-    const cur = Array.isArray(pointSchemesRow.value?.value)
-      ? [...(pointSchemesRow.value.value as Sct.PointScheme[])]
-      : [];
-    const idx = cur.findIndex(s => s.id === scheme.id);
-    if (idx >= 0) {
-      cur[idx] = plain(scheme);
-    } else {
-      cur.push(plain(scheme));
-    }
-    await guardWrite(db.meta.put({ key: 'point-schemes', value: plain(cur) }), '保存积分考核方案');
-  }
-
-  async function deleteCustomPointScheme(schemeId: string) {
-    const cur = Array.isArray(pointSchemesRow.value?.value) ? (pointSchemesRow.value.value as Sct.PointScheme[]) : [];
-    const next = cur.filter(s => s.id !== schemeId);
-    await guardWrite(db.meta.put({ key: 'point-schemes', value: plain(next) }), '删除自定义积分方案');
-  }
-
-  /** 将指定方案快照绑定至目标年度（换年或改方案不影响其他年度历史成绩） */
-  async function bindYearPointScheme(year: number, scheme: Sct.PointScheme) {
-    const key = String(year);
-    const nextMap = { ...pointYearSchemeMap.value, [key]: scheme.id };
-    const nextSnaps = { ...pointYearSnapshots.value, [key]: plain(scheme) };
-    await guardWrite(
-      db.transaction('rw', [db.meta], async () => {
-        await db.meta.put({ key: 'point-year-scheme', value: plain(nextMap) });
-        await db.meta.put({ key: 'point-year-snapshots', value: plain(nextSnaps) });
-      }),
-      '绑定年度积分方案'
-    );
-  }
-
   async function bulkAddPointRecords(
     inputs: Array<Omit<Sct.PointRecord, 'id' | 'created_at' | 'identity'>>
   ): Promise<number> {
@@ -1214,7 +1121,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     return rows.length;
   }
 
-  // ---------------- 工作台通用配置、场景预设与 .sctpreset 单位配置包 ----------------
+  // ---------------- 工作台模块开关与自定义字段配置 ----------------
   async function updateWorkspaceConfig(patch: Partial<Sct.WorkspaceConfig>) {
     const cur = workspaceConfig.value;
     const next = normalizeWorkspaceConfig({
@@ -1224,74 +1131,12 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
         ...cur.enabledModules,
         ...patch.enabledModules
       },
-      enabledFieldGroups: {
-        ...cur.enabledFieldGroups,
-        ...patch.enabledFieldGroups
-      },
       customFields: patch.customFields ?? cur.customFields,
       updatedAt: new Date().toISOString()
     });
     persistWorkspaceConfigSync(next);
     await guardWrite(db.meta.put({ key: 'workspace-config', value: plain(next) }), '工作台配置');
     return next;
-  }
-
-  async function applyBranchScenePreset(
-    scene: Sct.BranchSceneKey,
-    options: {
-      branchName?: string;
-      enabledModules?: Record<Sct.OptionalModuleKey, boolean>;
-      markOnboarded?: boolean;
-    } = {}
-  ) {
-    const preset = getScenePreset(scene);
-    const nextCfg = await updateWorkspaceConfig({
-      scene,
-      enabledModules: options.enabledModules ?? { ...preset.enabledModules },
-      enabledFieldGroups: { ...preset.enabledFieldGroups },
-      onboardingCompleted: options.markOnboarded ?? workspaceConfig.value.onboardingCompleted
-    });
-    if (options.branchName?.trim()) {
-      await setBranchName(options.branchName.trim());
-    }
-    const curYear = dayjs().year();
-    if (!pointYearSnapshots.value[String(curYear)]) {
-      await bindYearPointScheme(curYear, getBuiltinPointScheme(preset.defaultPointSchemeId));
-    }
-    return nextCfg;
-  }
-
-  async function applyUnitPresetPack(pack: Sct.UnitPresetPack, targetYear = dayjs().year()) {
-    const applied: string[] = [];
-    if (pack.includes.includes('scene') && pack.scene) {
-      await updateWorkspaceConfig({
-        scene: pack.scene,
-        enabledModules: pack.enabled_modules,
-        enabledFieldGroups: pack.enabled_field_groups
-      });
-      applied.push('支部场景与模块配置');
-    }
-    if (pack.includes.includes('custom_fields') && Array.isArray(pack.custom_fields)) {
-      await updateWorkspaceConfig({ customFields: pack.custom_fields });
-      applied.push(`花名册自定义字段(${pack.custom_fields.length}项)`);
-    }
-    if (pack.includes.includes('point_scheme') && pack.point_scheme) {
-      const importedScheme: Sct.PointScheme = {
-        ...plain(pack.point_scheme),
-        builtin: false
-      };
-      await saveCustomPointScheme(importedScheme);
-      await bindYearPointScheme(targetYear, importedScheme);
-      applied.push(`积分考核方案「${importedScheme.name}」`);
-    }
-    if (pack.includes.includes('doc_templates') && Array.isArray(pack.doc_templates) && pack.doc_templates.length) {
-      await guardWrite(
-        db.docTemplates.bulkPut(plain(pack.doc_templates.map(t => ({ ...t, identity: 'secretary' })))),
-        '导入配置包材料模板'
-      );
-      applied.push(`公文模板(${pack.doc_templates.length}套)`);
-    }
-    return applied;
   }
 
   // ---------------- 组织关系转接 / 转入核查 / 流动党员 / 归档与恢复 ----------------
@@ -1816,17 +1661,12 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     pointRecords,
     pointVetoes,
     pointRules,
-    allPointSchemes,
-    pointYearSchemeMap,
-    pointYearSnapshots,
-    getPointSchemeForYear,
+    activePointScheme,
     partyGroupNames,
     youthCommitteeSlots,
     branchName,
     setBranchName,
     updateWorkspaceConfig,
-    applyBranchScenePreset,
-    applyUnitPresetPack,
     memberMonthlyFee,
     attendanceOfEvent,
     initAttendance,
@@ -1851,9 +1691,6 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     setPointVeto,
     savePointRules,
     resetPointRules,
-    saveCustomPointScheme,
-    deleteCustomPointScheme,
-    bindYearPointScheme,
     bulkAddPointRecords,
     canHardDeleteMember,
     initiateTransferOut,

@@ -77,7 +77,6 @@ const lifecycle = computed(() => getMemberLifecycle(member.value));
 const lifecycleMeta = computed(() => MEMBER_LIFECYCLE_META[lifecycle.value]);
 const archived = computed(() => isMemberArchived(member.value));
 
-const enabledGroups = computed(() => workStore.workspaceConfig.enabledFieldGroups);
 const customFieldDefs = computed(() => workStore.workspaceConfig.customFields);
 
 const devStage = computed(() =>
@@ -227,36 +226,15 @@ async function handleRestore() {
           </NDescriptionsItem>
           <NDescriptionsItem v-if="member.birth_date" label="出生年月">{{ member.birth_date }}</NDescriptionsItem>
 
-          <!-- 高校学生场景字段 -->
-          <template v-if="enabledGroups.university_student || member.level || member.grade || member.major">
-            <NDescriptionsItem v-if="member.level || member.grade" label="层次 / 年级">
-              {{ [member.level, member.grade].filter(Boolean).join(' · ') }}
-            </NDescriptionsItem>
-            <NDescriptionsItem v-if="member.major || member.class_name" label="专业 / 班级">
-              {{ [member.major, member.class_name].filter(Boolean).join(' · ') }}
-            </NDescriptionsItem>
-            <NDescriptionsItem v-if="dormText" label="宿舍">{{ dormText }}</NDescriptionsItem>
-            <NDescriptionsItem v-if="member.advisor" label="导师姓名">{{ member.advisor }}</NDescriptionsItem>
-          </template>
-
-          <!-- 企事业 / 社区场景字段 -->
-          <template
-            v-if="enabledGroups.org_workplace || enabledGroups.community_grid || member.department || member.job_title"
-          >
-            <NDescriptionsItem
-              v-if="member.department"
-              :label="enabledGroups.community_grid ? '所属网格' : '部门 / 科室'"
-            >
-              {{ member.department }}
-            </NDescriptionsItem>
-            <NDescriptionsItem v-if="member.job_title" label="岗位 / 职称">{{ member.job_title }}</NDescriptionsItem>
-            <NDescriptionsItem
-              v-if="member.office_location"
-              :label="enabledGroups.community_grid ? '居住楼栋' : '办公地点'"
-            >
-              {{ member.office_location }}
-            </NDescriptionsItem>
-          </template>
+          <!-- 高校学生字段 -->
+          <NDescriptionsItem v-if="member.level || member.grade" label="层次 / 年级">
+            {{ [member.level, member.grade].filter(Boolean).join(' · ') }}
+          </NDescriptionsItem>
+          <NDescriptionsItem v-if="member.major || member.class_name" label="专业 / 班级">
+            {{ [member.major, member.class_name].filter(Boolean).join(' · ') }}
+          </NDescriptionsItem>
+          <NDescriptionsItem v-if="dormText" label="宿舍">{{ dormText }}</NDescriptionsItem>
+          <NDescriptionsItem v-if="member.advisor" label="导师姓名">{{ member.advisor }}</NDescriptionsItem>
 
           <!-- 自定义扩展字段 -->
           <NDescriptionsItem v-for="cf in customFieldDefs" :key="cf.key" :label="cf.label">

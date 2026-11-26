@@ -1,110 +1,15 @@
 /**
- * 三尺台 v0.3.0 工作台通用化配置：
- * - 5 套支部场景预设（高校学生 / 高校教工 / 机关国企 / 社区两新 / 极简模式）
- * - 工作台模块工坊元数据
+ * 三尺台 v0.2.7 高校党建工作台配置：
+ * - 工作台模块工坊元数据（座位图 / 党员积分 / 志愿时长 / 政治生日）
  * - 成员全生命周期状态元数据与判定纯函数
  * - 新转入党员纸质档案标准核查清单
  */
 
 import { ref } from 'vue';
 
-export const DEFAULT_BRANCH_NAME = '示范党支部';
-export const ONBOARDING_CURRENT_VERSION = '0.3.0';
+export const DEFAULT_BRANCH_NAME = '高校学生党支部';
+export const ONBOARDING_CURRENT_VERSION = '0.2.7';
 export const WORKSPACE_CONFIG_STORAGE_KEY = 'sct:workspace-config:v1';
-
-export interface BranchScenePresetMeta {
-  key: Sct.BranchSceneKey;
-  titleZh: string;
-  titleEn: string;
-  tagZh: string;
-  descZh: string;
-  descEn: string;
-  icon: string;
-  defaultBranchName: string;
-  defaultFeeCategory: Sct.FeeCategory;
-  defaultFeeMonthly: number;
-  defaultPointSchemeId: string;
-  enabledModules: Record<Sct.OptionalModuleKey, boolean>;
-  enabledFieldGroups: Record<Sct.FieldGroupKey, boolean>;
-}
-
-export const BRANCH_SCENE_PRESETS: readonly BranchScenePresetMeta[] = [
-  {
-    key: 'university_student',
-    titleZh: '高校学生党支部',
-    titleEn: 'University Student Branch',
-    tagZh: '本硕博适用',
-    descZh: '开启学号/年级/宿舍/导师字段、教室座位图、志愿时长、学生党员积分与政治生日，党费默认 0.2 元/月',
-    descEn: 'Student fields, seat map, volunteer hours, student points & birthday cards (¥0.2/mo dues)',
-    icon: 'lucide:graduation-cap',
-    defaultBranchName: '示范学生党支部',
-    defaultFeeCategory: '学生党员',
-    defaultFeeMonthly: 0.2,
-    defaultPointSchemeId: 'scheme-uni-60-40',
-    enabledModules: { seatmap: true, points: true, volunteer: true, birthday: true },
-    enabledFieldGroups: { university_student: true, org_workplace: false, community_grid: false }
-  },
-  {
-    key: 'university_faculty',
-    titleZh: '高校教工党支部',
-    titleEn: 'University Faculty Branch',
-    tagZh: '教师/科研团队',
-    descZh: '开启工号/院系部门/职务职称/办公地点字段，在职党费标准，默认保留核心台账与政治生日，其余按需开启',
-    descEn: 'Faculty workplace fields, staff dues, core ledgers & political birthday cards',
-    icon: 'lucide:book-open-check',
-    defaultBranchName: '示范教工党支部',
-    defaultFeeCategory: '在职党员',
-    defaultFeeMonthly: 30,
-    defaultPointSchemeId: 'scheme-general-100',
-    enabledModules: { seatmap: false, points: false, volunteer: true, birthday: true },
-    enabledFieldGroups: { university_student: false, org_workplace: true, community_grid: false }
-  },
-  {
-    key: 'gov_enterprise',
-    titleZh: '机关 / 国企党支部',
-    titleEn: 'Gov & Enterprise Branch',
-    tagZh: '部门/科室/厂矿',
-    descZh: '开启工号/部门科室/岗位职级/办公地点字段，适配通用百分制或五星评定，聚焦三会一课、党费与谈心谈话',
-    descEn: 'Department & job title fields, general 100-pt or 5-star evaluation, core workflows',
-    icon: 'lucide:building-2',
-    defaultBranchName: '示范机关党支部',
-    defaultFeeCategory: '在职党员',
-    defaultFeeMonthly: 50,
-    defaultPointSchemeId: 'scheme-five-star',
-    enabledModules: { seatmap: false, points: true, volunteer: true, birthday: true },
-    enabledFieldGroups: { university_student: false, org_workplace: true, community_grid: false }
-  },
-  {
-    key: 'community_org',
-    titleZh: '社区 / 两新党支部',
-    titleEn: 'Community & Social Branch',
-    tagZh: '网格/志愿服务',
-    descZh: '开启所属网格/居住楼栋/从业岗位字段，突出志愿服务时长、政治生日关怀与流动党员追踪',
-    descEn: 'Community grid fields, volunteer hours tracking, birthday care & floating members',
-    icon: 'lucide:home',
-    defaultBranchName: '示范社区党支部',
-    defaultFeeCategory: '在职党员',
-    defaultFeeMonthly: 10,
-    defaultPointSchemeId: 'scheme-positive-only',
-    enabledModules: { seatmap: false, points: false, volunteer: true, birthday: true },
-    enabledFieldGroups: { university_student: false, org_workplace: false, community_grid: true }
-  },
-  {
-    key: 'minimal',
-    titleZh: '极简通用模式',
-    titleEn: 'Minimal Core Mode',
-    tagZh: '纯净零干扰',
-    descZh: '仅保留所有党支部通用的核心台账（台历、花名册、三会一课、发展、党费、谈话、资源库），随时可在模块工坊加装',
-    descEn: 'Core universal ledgers only; enable optional extensions anytime in Module Workshop',
-    icon: 'lucide:feather',
-    defaultBranchName: DEFAULT_BRANCH_NAME,
-    defaultFeeCategory: '在职党员',
-    defaultFeeMonthly: 10,
-    defaultPointSchemeId: 'scheme-general-100',
-    enabledModules: { seatmap: false, points: false, volunteer: false, birthday: false },
-    enabledFieldGroups: { university_student: false, org_workplace: false, community_grid: false }
-  }
-];
 
 export interface WorkshopModuleMeta {
   key: Sct.OptionalModuleKey;
@@ -136,9 +41,9 @@ export const WORKSHOP_MODULES: readonly WorkshopModuleMeta[] = [
     color: '#d97706',
     titleZh: '党员积分与评定',
     titleEn: 'Party Points & Rating',
-    descZh: '支持百分制、基础+履职分桶制、五星评定、纯加分制及 .sctpreset 单位规则包共享',
-    descEn: 'Multi-scheme scoring engine (100pt / 60+40 / 5-Star / Positive) & .sctpreset sharing',
-    badgeZh: '多方案引擎'
+    descZh: '高校 60+40 分桶制考核，支持自定义细则、跨模块一键同步考勤/党费/志愿草稿与脱敏导出',
+    descEn: 'University 60+40 scoring ledger with rule customization, cross-module draft sync & masked export',
+    badgeZh: '60+40 分制'
   },
   {
     key: 'volunteer',
@@ -149,7 +54,7 @@ export const WORKSHOP_MODULES: readonly WorkshopModuleMeta[] = [
     titleEn: 'Volunteer Hours Ledger',
     descZh: '按活动与按成员双视角统计志愿时长，支持微信接龙识人、公示导出与积分草稿联动',
     descEn: 'Activity & member views, WeChat list parser, public sheets & points sync',
-    badgeZh: 'v0.3 新增'
+    badgeZh: 'v0.2.7 新增'
   },
   {
     key: 'birthday',
@@ -163,87 +68,34 @@ export const WORKSHOP_MODULES: readonly WorkshopModuleMeta[] = [
   }
 ];
 
-export interface FieldGroupMeta {
-  key: Sct.FieldGroupKey;
-  titleZh: string;
-  titleEn: string;
-  descZh: string;
-  fieldsSummary: string;
-}
-
-export const FIELD_GROUP_METAS: readonly FieldGroupMeta[] = [
-  {
-    key: 'university_student',
-    titleZh: '高校学生字段组',
-    titleEn: 'University Student Fields',
-    descZh: '适用于本科生、研究生党支部花名册',
-    fieldsSummary: '学号 · 培养层次 · 年级 · 专业 · 班级 · 导师 · 宿舍楼栋/房间'
-  },
-  {
-    key: 'org_workplace',
-    titleZh: '企事业 / 教工字段组',
-    titleEn: 'Workplace / Faculty Fields',
-    descZh: '适用于高校教工、机关单位、国企党支部',
-    fieldsSummary: '工号 · 部门/科室 · 岗位/职称 · 办公地点'
-  },
-  {
-    key: 'community_grid',
-    titleZh: '社区 / 两新字段组',
-    titleEn: 'Community / Grid Fields',
-    descZh: '适用于社区、街道与两新组织党支部',
-    fieldsSummary: '所属网格 · 从业单位/岗位 · 居住楼栋'
-  }
-];
-
 export const DEFAULT_WORKSPACE_CONFIG: Sct.WorkspaceConfig = {
-  scene: 'university_student',
   enabledModules: {
     seatmap: true,
     points: true,
     volunteer: true,
     birthday: true
   },
-  enabledFieldGroups: {
-    university_student: true,
-    org_workplace: false,
-    community_grid: false
-  },
   customFields: [],
   onboardingCompleted: false,
   onboardingVersion: ONBOARDING_CURRENT_VERSION
 };
-
-export function getScenePreset(scene: Sct.BranchSceneKey): BranchScenePresetMeta {
-  return BRANCH_SCENE_PRESETS.find(item => item.key === scene) ?? BRANCH_SCENE_PRESETS[0];
-}
 
 export function normalizeWorkspaceConfig(raw: unknown): Sct.WorkspaceConfig {
   if (!raw || typeof raw !== 'object') {
     return {
       ...DEFAULT_WORKSPACE_CONFIG,
       enabledModules: { ...DEFAULT_WORKSPACE_CONFIG.enabledModules },
-      enabledFieldGroups: { ...DEFAULT_WORKSPACE_CONFIG.enabledFieldGroups },
       customFields: []
     };
   }
   const src = raw as Partial<Sct.WorkspaceConfig>;
-  const scene = BRANCH_SCENE_PRESETS.some(p => p.key === src.scene)
-    ? (src.scene as Sct.BranchSceneKey)
-    : DEFAULT_WORKSPACE_CONFIG.scene;
-  const preset = getScenePreset(scene);
 
   return {
-    scene,
     enabledModules: {
-      seatmap: src.enabledModules?.seatmap ?? preset.enabledModules.seatmap,
-      points: src.enabledModules?.points ?? preset.enabledModules.points,
-      volunteer: src.enabledModules?.volunteer ?? preset.enabledModules.volunteer,
-      birthday: src.enabledModules?.birthday ?? preset.enabledModules.birthday
-    },
-    enabledFieldGroups: {
-      university_student: src.enabledFieldGroups?.university_student ?? preset.enabledFieldGroups.university_student,
-      org_workplace: src.enabledFieldGroups?.org_workplace ?? preset.enabledFieldGroups.org_workplace,
-      community_grid: src.enabledFieldGroups?.community_grid ?? preset.enabledFieldGroups.community_grid
+      seatmap: src.enabledModules?.seatmap ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.seatmap,
+      points: src.enabledModules?.points ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.points,
+      volunteer: src.enabledModules?.volunteer ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.volunteer,
+      birthday: src.enabledModules?.birthday ?? DEFAULT_WORKSPACE_CONFIG.enabledModules.birthday
     },
     customFields: Array.isArray(src.customFields)
       ? src.customFields
