@@ -531,7 +531,7 @@ async function confirmDangerAction() {
       window.$message?.success('已重置为演示种子数据');
     } else {
       await clearAllData();
-      window.$message?.success('业务数据已清空（本地备份快照与 6 套内置材料模板已保留）');
+      window.$message?.success('业务数据已清空（本地备份快照与 14 套内置公文模板已保留）');
     }
     dangerModalShow.value = false;
     dangerAction.value = null;
@@ -1417,7 +1417,7 @@ onMounted(listSnapshots);
           <template v-else>
             此操作将
             <strong>永久清空当前全部成员、台历、三会一课、党员发展、党费、谈话与文档数据</strong>
-            （保留本地备份快照与 6 套内置材料模板）。操作不可撤销！
+            （保留本地备份快照与 14 套内置公文模板）。操作不可撤销！
           </template>
         </NAlert>
         <div class="text-12px text-gray-600">为防止误操作，请在下方输入框中完整输入以下确认文字：</div>

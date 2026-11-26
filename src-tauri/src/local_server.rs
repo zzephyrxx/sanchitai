@@ -230,13 +230,18 @@ pub fn pick_folder_native() -> Result<Option<String>, String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let script = r#"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
 $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
 $dlg.Description = '选择三尺台数据存储目录'
 $dlg.ShowNewFolderButton = $true
-if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+if ($dlg.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
   Write-Output $dlg.SelectedPath
 }
+$owner.Dispose()
 "#;
         let out = Command::new("powershell")
             .args(["-NoProfile", "-STA", "-Command", script])
@@ -288,14 +293,24 @@ pub fn open_path_in_os(path: &Path) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         if path.is_dir() {
             Command::new("explorer")
                 .arg(path)
                 .spawn()
                 .map_err(|e| e.to_string())?;
         } else {
-            Command::new("cmd")
-                .args(["/C", "start", "", &path.to_string_lossy()])
+            Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
+                    "Start-Process -LiteralPath $env:SCT_OPEN_PATH",
+                ])
+                .env("SCT_OPEN_PATH", path)
+                .creation_flags(CREATE_NO_WINDOW)
                 .spawn()
                 .map_err(|e| e.to_string())?;
         }
@@ -311,18 +326,27 @@ pub fn open_path_in_os(path: &Path) -> Result<(), String> {
     }
 }
 
-/// 跨平台原子写文件（兼容 Windows：目标文件已存在时先移除再 rename）
+/// 跨平台原子写文件（优先原子 rename；Windows 旧文件系统若失败则回退移除后重命名）
 fn atomic_write_file(dir: &Path, target: &Path, tmp_name: &str, bytes: &[u8]) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let tmp = dir.join(tmp_name);
     fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    #[cfg(target_os = "windows")]
-    {
-        if target.exists() {
-            let _ = fs::remove_file(target);
+    match fs::rename(&tmp, target) {
+        Ok(()) => Ok(()),
+        Err(first_err) => {
+            #[cfg(target_os = "windows")]
+            {
+                if target.exists() {
+                    let _ = fs::remove_file(target);
+                    if fs::rename(&tmp, target).is_ok() {
+                        return Ok(());
+                    }
+                }
+            }
+            let _ = fs::remove_file(&tmp);
+            Err(first_err.to_string())
         }
     }
-    fs::rename(&tmp, target).map_err(|e| e.to_string())
 }
 
 fn sanitize_browser_id(id: &str) -> String {

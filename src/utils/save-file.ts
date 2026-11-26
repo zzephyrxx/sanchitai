@@ -26,6 +26,7 @@ export interface SaveFileResult {
 interface FileSystemWritableStreamLike {
   write: (data: Blob) => Promise<void>;
   close: () => Promise<void>;
+  abort?: () => Promise<void>;
 }
 
 interface FileSystemFileHandleLike {
@@ -159,39 +160,61 @@ function promptFallbackFilename(suggestedName: string): Promise<string | null> {
  * 支持传入 Blob 或延迟工厂函数：传工厂函数时可在点击事件的首个微任务内立刻唤起系统「另存为」弹窗，
  * 避免异步查询 IndexedDB 导致浏览器丢失 user gesture 授权。
  */
+function sanitizeSuggestedName(name: string): string {
+  const withoutCtrl = Array.from(name || 'export')
+    .filter(ch => ch.charCodeAt(0) >= 32)
+    .join('');
+  const cleaned = withoutCtrl
+    .replace(/[/\\:*?"<>|]/g, '·')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
+  return cleaned || 'export';
+}
+
 export async function saveFileWithPicker(
   blobOrFactory: Blob | (() => Blob | Promise<Blob>),
   options: SaveFileOptions
 ): Promise<SaveFileResult> {
+  const safeSuggestedName = sanitizeSuggestedName(options.suggestedName);
   const picker = (window as unknown as { showSaveFilePicker?: ShowSaveFilePickerFn }).showSaveFilePicker;
   const resolveBlob = async () => (typeof blobOrFactory === 'function' ? await blobOrFactory() : blobOrFactory);
 
   if (typeof picker === 'function') {
+    let handle: FileSystemFileHandleLike | null = null;
     try {
       const initialMime = typeof blobOrFactory === 'function' ? '' : blobOrFactory.type;
-      const types = buildPickerTypes(initialMime, options);
-      const handle = await picker({
-        suggestedName: options.suggestedName,
+      const types = buildPickerTypes(initialMime, { ...options, suggestedName: safeSuggestedName });
+      handle = await picker({
+        suggestedName: safeSuggestedName,
         ...(types.length ? { types } : {})
       });
-      const blob = await resolveBlob();
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return { status: 'saved', fileName: handle.name, method: 'picker' };
     } catch (err) {
       if ((err as DOMException)?.name === 'AbortError') {
         return { status: 'cancelled' };
       }
-      // 某些受限上下文（如跨域 iframe）可能抛 SecurityError，降级走确认弹窗
+      // 某些受限上下文（如跨域 iframe 或未满足 user gesture）可能抛 SecurityError，降级走确认弹窗
+    }
+
+    if (handle) {
+      const blob = await resolveBlob();
+      const writable = await handle.createWritable();
+      try {
+        await writable.write(blob);
+        await writable.close();
+      } catch (writeErr) {
+        await writable.abort?.().catch(() => {});
+        throw writeErr;
+      }
+      return { status: 'saved', fileName: handle.name, method: 'picker' };
     }
   }
 
-  const chosenName = await promptFallbackFilename(options.suggestedName);
+  const chosenName = await promptFallbackFilename(safeSuggestedName);
   if (!chosenName) {
     return { status: 'cancelled' };
   }
   const blob = await resolveBlob();
-  saveAs(blob, chosenName);
-  return { status: 'saved', fileName: chosenName, method: 'download' };
+  saveAs(blob, sanitizeSuggestedName(chosenName));
+  return { status: 'saved', fileName: sanitizeSuggestedName(chosenName), method: 'download' };
 }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * 三尺台 v0.2.7：
+ * 三尺台 v0.2.8：
  * 1. 首次启动：精简 2 步高校支部初始化弹窗（支部名称 → 初始数据）→ 完成后可自动播放「新手引导动画」
  * 2. 左下角「使用指南」：全站 15 模块详尽可检索手册弹窗
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { APP_VERSION } from '@/constants/changelog';
 import { GUIDE_GROUPS, USER_GUIDE_CHAPTERS } from '@/constants/user-guide';
 import type { GuideChapter } from '@/constants/user-guide';
 import {
@@ -36,6 +37,8 @@ function launchTour(startStepId?: string) {
 
 let unmounted = false;
 
+const persistedBranchName = ref<string | null>(null);
+
 onMounted(async () => {
   registerSpotlightLauncher(launchTour);
   const [rawCfg, persistedBranch] = await Promise.all([
@@ -44,8 +47,9 @@ onMounted(async () => {
   ]);
   if (unmounted) return;
   const resolvedCfg = rawCfg ? normalizeWorkspaceConfig(rawCfg) : workStore.workspaceConfig;
-  if (persistedBranch) {
-    setupForm.branchName = persistedBranch;
+  if (persistedBranch?.trim()) {
+    persistedBranchName.value = persistedBranch.trim();
+    setupForm.branchName = persistedBranch.trim();
   }
   if (!resolvedCfg.onboardingCompleted) {
     onboardingStage.value = 'setup';
@@ -70,7 +74,11 @@ const setupForm = reactive({
 watch(onboardingVisible, visible => {
   if (!visible) return;
   setupStep.value = 1;
-  setupForm.branchName = workStore.branchName;
+  const liveBranch = workStore.branchName?.trim();
+  setupForm.branchName =
+    liveBranch && liveBranch !== DEFAULT_BRANCH_NAME
+      ? liveBranch
+      : (persistedBranchName.value ?? liveBranch ?? DEFAULT_BRANCH_NAME);
   setupForm.dataMode = 'keep_demo';
   guideSearch.value = '';
 });
@@ -201,7 +209,7 @@ function handlePlayAnimation(startStepId?: string) {
           <span class="text-15px font-bold">
             {{ onboardingStage === 'setup' ? '欢迎使用三尺台 · 支部工作台初始化' : '使用指南 · 完整功能手册' }}
           </span>
-          <NTag size="tiny" :bordered="false" class="font-mono">v0.2.7</NTag>
+          <NTag size="tiny" :bordered="false" class="font-mono">{{ APP_VERSION }}</NTag>
         </div>
 
         <div v-if="onboardingStage === 'guide'" class="flex items-center gap-6px">
@@ -251,8 +259,8 @@ function handlePlayAnimation(startStepId?: string) {
           class="rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-14px py-10px text-12px text-[var(--sct-muted)] leading-relaxed"
         >
           已面向高校党建工作预置：学生花名册字段（学号 / 层次 / 年级 / 专业 / 班级 / 导师 / 宿舍）、学生党费默认 0.2
-          元/月、60+40 党员积分方案，以及组织关系转接与志愿时长台账。后续可在「设置 →
-          工作台模块工坊」按需启停扩展模块或添加自定义字段。
+          元/月、60+40 党员积分方案、14
+          套党支部国标公文模板，以及组织关系转接与志愿时长台账。后续可在左侧栏左下角「模块管理」按需启停功能模块，或在人员页「列设置」中添加自定义扩展字段。
         </div>
       </div>
 
@@ -298,7 +306,9 @@ function handlePlayAnimation(startStepId?: string) {
       <!-- 底部操作栏 -->
       <div class="flex items-center justify-between border-t border-[var(--sct-border)] pt-12px">
         <NButton v-if="setupStep > 1" size="small" secondary @click="setupStep -= 1">← 上一步</NButton>
-        <span v-else class="text-11.5px text-[var(--sct-muted)]">支部名称与扩展模块均可随时在「设置」调整</span>
+        <span v-else class="text-11.5px text-[var(--sct-muted)]">
+          支部名称可点击顶栏「支部徽章」修改，菜单可在左下角「模块管理」启停
+        </span>
         <div class="flex items-center gap-8px">
           <NButton v-if="setupStep < 2" size="small" type="primary" @click="setupStep += 1">下一步 →</NButton>
           <template v-else>
@@ -320,7 +330,7 @@ function handlePlayAnimation(startStepId?: string) {
           size="small"
           clearable
           class="max-w-360px"
-          placeholder="搜索任意功能点，如：撕纸、转出、S型时间线、接龙、快照…"
+          placeholder="搜索任意功能点，如：撕纸、转出、S型时间线、接龙、docx、快照…"
         >
           <template #prefix><SvgIcon icon="lucide:search" class="text-[var(--sct-muted)]" /></template>
         </NInput>

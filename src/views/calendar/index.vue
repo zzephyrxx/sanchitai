@@ -663,6 +663,7 @@ const offCalTour = onTourCommand(cmd => {
     if (first) openDetail(first.id, first);
   } else if (cmd === 'calendar:close-drawer' || cmd === 'tour:cleanup') {
     detailShow.value = false;
+    sideDrawerShow.value = false;
   }
 });
 onBeforeUnmount(offCalTour);

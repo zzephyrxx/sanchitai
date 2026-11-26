@@ -9,7 +9,7 @@ import { normalizeMemberRecord } from '@/utils/member-status';
 import { db, ensureDefaultDocTemplates, getMeta, setMeta } from './db';
 import seedJson from './seed/seed-data.json';
 
-const SEED_VERSION = 'v0.2.7';
+const SEED_VERSION = 'v0.2.8';
 const SEED_FLAG = 'seed-flag';
 
 const SEED = seedJson as unknown as {

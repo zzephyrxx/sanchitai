@@ -30,7 +30,7 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_HISTORY: ChangelogRelease[] = [
   {
-    version: 'v0.2.7',
+    version: 'v0.2.8',
     date: '2026-11-26',
     sections: [
       {
@@ -39,43 +39,61 @@ export const CHANGELOG_HISTORY: ChangelogRelease[] = [
             icon: 'lucide:send',
             titleZh: '成员全生命周期与组织关系转接闭环',
             titleEn: 'Member Lifecycle & Organization Transfer',
-            zh: '彻底告别「关系转出 = 直接删除」：顶部 5 枚状态胶囊（在册 / 转出办理中 / 转入待核查 / 流动党员 / 历史归档），配套单人 4 步转出抽屉、毕业季批量转出、转入多人档案核查矩阵与《核实函》《自提申请书》导出，历史台账永久留痕防误删',
-            en: 'Full member lifecycle pills, 4-step outgoing transfer drawer, batch graduation workbench, incoming audit matrix & delete protection'
+            zh: '彻底告别「关系转出 = 直接删除」：顶部 5 枚状态胶囊（在册 / 转出办理中 / 转入待核查 / 流动党员 / 历史归档），配套单人 4 步转出抽屉、毕业季批量转出、转入多人档案核查矩阵与《商请核实函》《自提申请书》标准 .docx 导出，历史台账永久留痕防误删',
+            en: 'Full member lifecycle pills, 4-step outgoing transfer drawer, batch graduation workbench, incoming audit matrix & standard .docx letter exports'
           },
           {
             icon: 'lucide:heart-handshake',
             titleZh: '志愿时长台账（三合一快录）',
             titleEn: 'Volunteer Hours Ledger',
-            zh: '新增志愿时长台账：支持按活动与按成员双视角、人头芯片勾选微调 + 台历活动引入 + 粘贴微信接龙名单自动识人，支持考核折算预览、双 Sheet Excel 公示表与电子纸打印公示单',
-            en: 'Dual activity/member views, WeChat list parser, calendar import, optional conversion score, Excel & print notice exports'
+            zh: '新增志愿时长台账：支持按活动与按成员双视角、人头芯片勾选微调 + 台历活动引入 + 粘贴微信群接龙自动识别单人时长与岗位，支持考核折算预览、双 Sheet Excel 公示表与打印公示单',
+            en: 'Dual activity/member views, WeChat list parser with per-member hours & roles, calendar import, Excel & print notice exports'
           },
           {
             icon: 'lucide:award',
-            titleZh: '党员积分跨模块一键同步草稿',
-            titleEn: 'Cross-Module Points Draft Sync',
-            zh: '聚焦高校 60+40 分桶制考核，新增「一键同步草稿」自动扫描三会一课未到会、党费欠缴与志愿时长台账生成待核实条目，并升级脱敏双版 Excel 与打印记录表',
-            en: 'Focused university 60+40 scoring with one-click draft sync from attendance, dues & volunteer hours plus masked exports'
+            titleZh: '党员积分升级（60+40 分桶制与构成进度条）',
+            titleEn: 'Party Points Upgrade (60+40 & Breakdown Bar)',
+            zh: '聚焦高校 60+40 分桶制考核，保留经典台账布局与独立录入弹窗，融入彩色分段积分构成进度条，并新增「一键同步草稿」自动扫描三会一课考勤、党费欠缴与志愿时长生成待核实条目',
+            en: 'Focused 60+40 university scoring with classic ledger & entry modal, segmented breakdown bar, and one-click cross-module draft sync'
+          },
+          {
+            icon: 'lucide:chart-pie',
+            titleZh: '统计总览新增 6 项大尺寸数据可视化组件',
+            titleEn: '6 New Dashboard Visualization Widgets',
+            zh: '新增支部健康五维雷达、积分 60+40 仪表盘、志愿时长来源环、成员生命周期 10×10 方格矩阵、年度谈话覆盖温度计与党小组活力同心环，全面适配墨韵/电子纸双皮肤与深浅模式',
+            en: 'Added 6 spacious theme-aware visual widgets: health radar, points gauge, volunteer donut, lifecycle waffle, talk thermometer & group rings'
+          },
+          {
+            icon: 'lucide:file-text',
+            titleZh: '党支部材料库扩充至 14 套并升级国标公文 .docx 导出',
+            titleEn: '14 Branch Doc Templates & GB/T 9704 .docx Export',
+            zh: '新增「组织建设」分类及换届选举请示/报告/公告、设立支部请示、政审综合报告、发展公示、支部大会决议、年度组织生活会请示等 8 套高校党支部高频公文模板；全面升级为原生标准 .docx 导出',
+            en: 'Expanded to 14 university party-branch templates and upgraded Word export to native OOXML .docx following GB/T 9704-2012',
+            detailZh:
+              '导出的 .docx 严格遵循《党政机关公文格式》GB/T 9704-2012：A4 规范页边距（上37/下35/左28/右26mm）、28 磅固定行距、方正小标宋简体/黑体/楷体_GB2312/仿宋_GB2312 分级字体，以及四号宋体奇偶页公文页码。',
+            detailEn:
+              'Exports true OOXML .docx matching GB/T 9704-2012 A4 margins, exact 28pt line spacing, hierarchical Chinese official fonts, and odd/even page footers.'
           },
           {
             icon: 'lucide:blocks',
-            titleZh: '工作台模块工坊与花名册自定义字段',
-            titleEn: 'Module Workshop & Custom Roster Fields',
-            zh: '人员座位图、党员积分、志愿时长、政治生日均可按需启停（隐藏菜单但安全保留数据），花名册在高校学生字段基础上支持补充自定义扩展字段',
-            en: 'Toggle optional modules cleanly without data loss and add custom member roster fields alongside university student fields'
+            titleZh: '左下角「模块管理」与花名册「列设置」扩展字段',
+            titleEn: 'Sidebar Module Manager & Custom Roster Fields',
+            zh: '「模块管理」移至侧栏左下角使用指南上方，随时一键定制左侧菜单功能显隐（隐藏菜单但保留全部数据）；花名册自定义扩展字段整合进人员页「列设置」，随手增删更顺手',
+            en: 'Moved Module Manager to the bottom-left sidebar above User Guide, and integrated custom roster fields directly into Members column settings'
           },
           {
             icon: 'lucide:compass',
-            titleZh: '首次初始化、跨页引导动画与使用指南',
-            titleEn: 'Onboarding, Spotlight Tour & User Guide',
-            zh: '新增 2 步高校支部初始化弹窗、15 模块可检索「使用指南」手册与 Driver.js 跨页新手引导动画，侧栏左下角随时重温',
-            en: '2-step setup modal, searchable 15-module user guide & interactive cross-page spotlight tour'
+            titleZh: '2 步支部初始化、跨页引导动画与使用指南',
+            titleEn: '2-Step Setup, Spotlight Tour & User Guide',
+            zh: '新增精简 2 步高校支部初始化弹窗、15 模块可检索「使用指南」手册与跨页新手引导动画，侧栏左下角随时重温',
+            en: '2-step branch setup modal, searchable 15-module user guide & interactive cross-page spotlight tour'
           },
           {
             icon: 'lucide:shield-check',
-            titleZh: '全局隐私脱敏双版导出',
-            titleEn: 'Dual-Mode Privacy Exports',
-            zh: '花名册、组织关系转接登记表、志愿时长公示表与党员积分导出统一默认「脱敏公示版（身份证/手机号掩码）」，切换「全量报送版」需显式二次确认',
-            en: 'All key exports default to Masked Public mode with explicit confirmation required for Full Sensitive reporting'
+            titleZh: '全局脱敏导出与界面细节打磨',
+            titleEn: 'Privacy Exports & UI Polish',
+            zh: '全站表格导出默认「脱敏公示版」，全量报送需二次确认；台历右侧今日日程栏与顶部菜单栏支持窄屏弹性收起；知识库卡片支持二次确认删除与恢复内置；政策阅读弹窗升级党建红顶部胶囊条；精简设置页与统一「关于」排版',
+            en: 'Default masked public exports, responsive calendar sidebar & top header, deletable knowledge cards with restore, refined policy modal & unified Settings About layout'
           }
         ]
       }

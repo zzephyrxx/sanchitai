@@ -6,7 +6,7 @@ import { setupI18n } from './locales';
 import { setupStore } from './store';
 import { setupRouter } from './router';
 import App from './App.vue';
-import { syncMemberPartyStatuses } from './db/db';
+import { ensureDefaultDocTemplates, syncMemberPartyStatuses } from './db/db';
 import { ensureProbationCandidates } from './db/probation';
 import { ensureSeeded } from './db/seed';
 
@@ -31,6 +31,9 @@ async function setupApp() {
 
   // 初始化桌面端 ⇄ 浏览器本机微服务桥接与双向同步
   await initDesktopBridge();
+
+  // 桥接拉取旧版数据后再次确保新增内置党支部公文模板补齐（无损合并）
+  await ensureDefaultDocTemplates();
 
   // 预备期满临近时自动生成转正大会候选事项（不阻塞启动）
   void ensureProbationCandidates().catch(err => {

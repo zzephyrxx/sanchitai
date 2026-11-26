@@ -1,5 +1,5 @@
 /**
- * 三尺台 v0.2.7 高校党建工作台配置：
+ * 三尺台 v0.2.8 高校党建工作台配置：
  * - 左下角「模块管理」元数据（除总览 / 花名册 / 设置核心必留外，全部菜单模块与座位图均支持按需启停）
  * - 成员全生命周期状态元数据与判定纯函数
  * - 新转入党员纸质档案标准核查清单
@@ -8,7 +8,7 @@
 import { ref } from 'vue';
 
 export const DEFAULT_BRANCH_NAME = '高校学生党支部';
-export const ONBOARDING_CURRENT_VERSION = '0.2.7';
+export const ONBOARDING_CURRENT_VERSION = '0.2.8';
 export const WORKSPACE_CONFIG_STORAGE_KEY = 'sct:workspace-config:v1';
 
 export type WorkshopModuleGroup = 'core_ext' | 'ledger' | 'library';
@@ -132,7 +132,7 @@ export const WORKSHOP_MODULES: readonly WorkshopModuleMeta[] = [
     titleEn: 'Volunteer Hours',
     descZh: '活动/成员双视角统计、微信接龙识人与双表公示导出',
     descEn: 'Activity & member views, WeChat parser & public exports',
-    badgeZh: 'v0.2.7 新增'
+    badgeZh: 'v0.2.8 新增'
   },
   {
     key: 'knowledge',

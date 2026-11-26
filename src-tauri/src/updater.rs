@@ -376,11 +376,16 @@ pub fn download_update_asset(
         return Err(last_err);
     }
 
-    #[cfg(target_os = "windows")]
-    if final_path.exists() {
-        let _ = fs::remove_file(&final_path);
+    if let Err(first_err) = fs::rename(&part_path, &final_path) {
+        #[cfg(target_os = "windows")]
+        if final_path.exists() {
+            let _ = fs::remove_file(&final_path);
+            if fs::rename(&part_path, &final_path).is_ok() {
+                return Ok(final_path.to_string_lossy().to_string());
+            }
+        }
+        return Err(format!("保存安装包失败: {first_err}"));
     }
-    fs::rename(&part_path, &final_path).map_err(|e| format!("保存安装包失败: {e}"))?;
     Ok(final_path.to_string_lossy().to_string())
 }
 

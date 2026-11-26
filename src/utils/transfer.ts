@@ -7,6 +7,7 @@
  */
 import dayjs from 'dayjs';
 import { INCOMING_AUDIT_ITEMS } from '@/constants/workspace-presets';
+import { exportOfficialDocx } from '@/utils/official-docx';
 import { formatIdCardForExport, formatPhoneForExport, privacyModeFileSuffix } from '@/utils/privacy-export';
 import { saveFileWithPicker } from '@/utils/save-file';
 
@@ -16,7 +17,6 @@ export async function exportTransferRegistryExcel(opts: {
   records: ReadonlyArray<{ transfer: Sct.TransferRecord; member?: Sct.Member }>;
   privacyMode: Sct.ExportPrivacyMode;
 }): Promise<'saved' | 'cancelled'> {
-  const XLSX = await import('xlsx');
   const { branchName, records, privacyMode } = opts;
 
   const rows = records.map(({ transfer, member }, idx) => ({
@@ -42,25 +42,28 @@ export async function exportTransferRegistryExcel(opts: {
     备注: transfer.note ?? ''
   }));
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 提示: '暂无组织关系转接记录' }]);
-  XLSX.utils.book_append_sheet(wb, ws, '组织关系转接登记表');
-
-  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-  const blob = new Blob([buf], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  });
-
-  const res = await saveFileWithPicker(blob, {
-    suggestedName: `${branchName}_组织关系转接登记表${privacyModeFileSuffix(privacyMode)}_${dayjs().format('YYYYMMDD')}.xlsx`,
-    types: [
-      {
-        description: 'Excel 工作簿',
-        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        extensions: ['.xlsx']
-      }
-    ]
-  });
+  const res = await saveFileWithPicker(
+    async () => {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 提示: '暂无组织关系转接记录' }]);
+      XLSX.utils.book_append_sheet(wb, ws, '组织关系转接登记表');
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+      return new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+    },
+    {
+      suggestedName: `${branchName}_组织关系转接登记表${privacyModeFileSuffix(privacyMode)}_${dayjs().format('YYYYMMDD')}.xlsx`,
+      types: [
+        {
+          description: 'Excel 工作簿',
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          extensions: ['.xlsx']
+        }
+      ]
+    }
+  );
   return res.status === 'saved' ? 'saved' : 'cancelled';
 }
 
@@ -139,6 +142,5 @@ export async function downloadTextAsDoc(
   title: string,
   plainText: string
 ): Promise<'saved' | 'cancelled'> {
-  const { exportOfficialDocx } = await import('@/utils/official-docx');
   return exportOfficialDocx(filename, title, plainText);
 }

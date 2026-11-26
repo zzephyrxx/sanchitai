@@ -1,5 +1,5 @@
 /**
- * 三尺台 v0.2.7 跨页深度「新手引导动画」引擎（基于 driver.js）
+ * 三尺台 v0.2.8 跨页深度「新手引导动画」引擎（基于 driver.js）
  *
  * 性能与体验优化：
  * - 启动时后台静默预加载后续页面懒加载代码包（消除跨页首次跳转卡顿）
@@ -220,9 +220,10 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       when: () => mods.calendar !== false,
       beforeCommands: ['calendar:close-drawer'],
       settleMs: 140,
+      skipIfMissing: true,
       selector: '[data-tour="calendar-sidebar"]',
-      title: '今日日程栏',
-      description: '速览今日日程与近期提醒，可按分类色标过滤专项排期。',
+      title: '今日日程栏（弹性自适应）',
+      description: '速览今日日程、近期提醒与分类图例；窗口较窄时自动收起，可从顶栏右侧抽屉图标随时展开。',
       side: 'left',
       align: 'start',
       accent: '#A81C24'
@@ -235,7 +236,8 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       beforeCommands: ['calendar:close-drawer'],
       selector: '[data-tour="header-tools"]',
       title: '全局工具与 ⌘K 速搜',
-      description: '按 <code>⌘K</code> / <code>Ctrl+K</code> 全局检索；支持切换支部身份、双皮肤、字号缩放与 PIN 锁屏。',
+      description:
+        '按 <code>⌘K</code> / <code>Ctrl+K</code> 全局检索；支持支部身份、双皮肤、字号缩放与 PIN 锁屏，窄屏自动精简排布。',
       side: 'bottom',
       align: 'end',
       accent: '#2563eb'
@@ -244,8 +246,9 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       id: 'dashboard-grid',
       route: '/dashboard',
       selector: '[data-tour="dashboard-grid"]',
-      title: '统计总览与待办预警',
-      description: '汇总支部人数、党费进度、发展分布，并自动预警逾期日程、欠缴、谈话超期与转出待回执。',
+      title: '统计总览与 6 项创意可视化',
+      description:
+        '汇总待办自动预警与基础指标，并新增<strong>健康五维雷达、积分仪表、志愿来源环、生命周期矩阵、谈话温度计与党小组同心环</strong>。',
       side: 'top',
       align: 'center',
       accent: '#2563eb'
@@ -279,8 +282,9 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       route: '/ledger/members',
       beforeCommands: ['members:reset'],
       selector: '[data-tour="members-actions"]',
-      title: '批量转出与防误删',
-      description: '支持毕业季批量转出、默认脱敏导出；凡有历史台账的成员拦截物理删除，保历史账实相符。',
+      title: '批量转出、列设置与防误删',
+      description:
+        '支持毕业季批量转出、在「列设置」中增删自定义扩展字段及默认脱敏导出；凡有历史台账的成员拦截物理删除。',
       side: 'bottom',
       align: 'end',
       accent: '#dc2626'
@@ -461,6 +465,17 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       align: 'end',
       accent: '#d97706'
     },
+    {
+      id: 'points-kpi',
+      route: '/ledger/points',
+      when: () => mods.points !== false,
+      selector: '[data-tour="points-kpi"]',
+      title: '预警快筛与积分构成进度条',
+      description: '一键筛出低于 60 分预警或待核实条目；列表与抽屉均展示彩色分段构成进度条，操作列支持独立弹窗快录。',
+      side: 'bottom',
+      align: 'start',
+      accent: '#d97706'
+    },
 
     // ==================== 八、志愿时长台账 ====================
     {
@@ -526,7 +541,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       beforeCommands: ['tour:cleanup'],
       selector: '[data-tour="knowledge-bar"]',
       title: '知识库 · 高清图解与笔记',
-      description: '离线查阅 12371 党内法规一图读懂，支持上传自定义图解与 Markdown 文档。',
+      description: '离线查阅党内法规一图读懂，支持上传自定义图解与 Markdown，点开卡片支持二次确认删除与恢复内置。',
       side: 'bottom',
       align: 'center',
       accent: '#0f766e'
@@ -537,7 +552,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       when: () => mods.policy !== false,
       selector: '[data-tour="policy-header"]',
       title: '政策文件与本单位归档',
-      description: '内置高频条例要点卡；切至「本单位归档」可导入上级 PDF / Word / 图片本地集中留档。',
+      description: '内置高频条例要点卡（顶部党建红胶囊纯净阅读弹窗）；切至「本单位归档」可本地留档 PDF / Word / 图片。',
       side: 'bottom',
       align: 'start',
       accent: '#A81C24'
@@ -547,8 +562,9 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
       route: '/library/docs',
       when: () => mods.docs !== false,
       selector: '[data-tour="docs-templates"]',
-      title: '标准公文模板库',
-      description: '点击模板一键套用起草常用支部材料，支持新增模板或导入 <code>.md/.txt</code>。',
+      title: '14 套党支部公文模板 · 国标 .docx',
+      description:
+        '覆盖组织建设换届、发展政审决议、三会一课等 14 套高频模板，支持一键导出符合 <strong>GB/T 9704</strong> 标准的原生 <code>.docx</code>。',
       side: 'top',
       align: 'center',
       accent: '#2563eb'

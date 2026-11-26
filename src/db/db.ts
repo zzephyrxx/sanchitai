@@ -351,9 +351,22 @@ export function migrateBackupShape(raw: unknown): BackupShape {
   };
 }
 
-const BUILTIN_TPL_SYNC_KEY = 'doc-templates-v027-synced';
+const BUILTIN_TPL_SYNC_KEY = 'doc-templates-v028-synced';
 
-/** 确保材料库内置党支部模板存在；首次升级至 v0.2.7 时无损补齐新增内置模板（不覆盖已有修改） */
+function isOlderThanV028(version?: string): boolean {
+  if (!version) return true;
+  const parts = version
+    .trim()
+    .replace(/^v/i, '')
+    .split('.')
+    .map(n => Number.parseInt(n, 10) || 0);
+  const [maj = 0, min = 0, pat = 0] = parts;
+  if (maj !== 0) return maj < 0;
+  if (min !== 2) return min < 2;
+  return pat < 8;
+}
+
+/** 确保材料库内置党支部模板存在；首次升级至 v0.2.8 时无损补齐新增内置模板（不覆盖已有修改） */
 export async function ensureDefaultDocTemplates(): Promise<number> {
   const builtins = getBuiltinDocTemplates();
   if (!builtins.length) return 0;
@@ -660,6 +673,9 @@ async function replaceLibraryTables(shape: BackupShape): Promise<void> {
   await db.transaction('rw', [db.docTemplates, db.docs, db.meta], async () => {
     await Promise.all([db.docTemplates.clear(), db.docs.clear()]);
     await Promise.all([db.docTemplates.bulkPut(templates), db.docs.bulkPut(shape.docs ?? [])]);
+    if (isOlderThanV028(shape.app_version)) {
+      await db.meta.delete(BUILTIN_TPL_SYNC_KEY);
+    }
 
     if (shape.academy_flow !== undefined) {
       await db.meta.put({ key: 'academy-flow', value: shape.academy_flow });

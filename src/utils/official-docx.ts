@@ -54,6 +54,7 @@ type BlockKind =
   | 'attachment'
   | 'sign'
   | 'date'
+  | 'hr'
   | 'quote'
   | 'body';
 
@@ -100,7 +101,9 @@ const META_KEYS = new Set([
   '书    记',
   '书记',
   '副书记',
-  '委员'
+  '委员',
+  '委员分工',
+  '日期'
 ]);
 
 function stripInlineMarkdown(s: string): string {
@@ -134,6 +137,7 @@ function parseToOfficialBlocks(fallbackTitle: string, rawBody: string): ParsedDo
   const signLineIndexes = new Set<number>();
   const dateLineIndexes = new Set<number>();
 
+  let hrUsedForSign = false;
   if (lastNonEmpty >= 0 && DATE_LINE_RE.test(trimmedLines[lastNonEmpty])) {
     dateLineIndexes.add(lastNonEmpty);
     let prev = lastNonEmpty - 1;
@@ -151,6 +155,7 @@ function parseToOfficialBlocks(fallbackTitle: string, rawBody: string): ParsedDo
       tailIdxs.length <= 3 &&
       tailIdxs.every(i => DATE_LINE_RE.test(trimmedLines[i]) || isSignatureLine(trimmedLines[i]));
     if (allSignOrDate) {
+      hrUsedForSign = true;
       for (const i of tailIdxs) {
         if (DATE_LINE_RE.test(trimmedLines[i])) dateLineIndexes.add(i);
         else signLineIndexes.add(i);
@@ -163,15 +168,26 @@ function parseToOfficialBlocks(fallbackTitle: string, rawBody: string): ParsedDo
   let seenBodyOrHeading = false;
 
   for (let i = 0; i < trimmedLines.length; i += 1) {
+    const rawLine = rawLines[i] ?? '';
     const line = trimmedLines[i];
     if (!line) continue;
-    if (/^(-{3,}|\*{3,})$/.test(line)) continue;
+    if (/^(-{3,}|\*{3,})$/.test(line)) {
+      if (!hrUsedForSign || i !== hrSignIdx) {
+        blocks.push({ kind: 'hr', text: '' });
+      }
+      continue;
+    }
 
     if (dateLineIndexes.has(i)) {
       blocks.push({ kind: 'date', text: stripInlineMarkdown(line) });
       continue;
     }
     if (signLineIndexes.has(i)) {
+      blocks.push({ kind: 'sign', text: stripInlineMarkdown(line) });
+      continue;
+    }
+    // 兼容右缩进签字/申请日期行（如《党员档案自提申请书》中部落款）
+    if (/^\s{8,}/.test(rawLine) && line.length <= 36 && /(?:签字|日期|落款|党支部|委员会)/.test(line)) {
       blocks.push({ kind: 'sign', text: stripInlineMarkdown(line) });
       continue;
     }
@@ -182,7 +198,7 @@ function parseToOfficialBlocks(fallbackTitle: string, rawBody: string): ParsedDo
       hasTitle = true;
       continue;
     }
-    if (!hasTitle && blocks.length === 0 && line.length <= 42 && !/[。；]$/.test(line) && !/[：:]$/.test(line)) {
+    if (!hasTitle && blocks.length === 0 && line.length <= 60 && !/[。；]$/.test(line) && !/[：:]$/.test(line)) {
       blocks.push({ kind: 'title', text: stripInlineMarkdown(line) });
       hasTitle = true;
       continue;
@@ -232,7 +248,7 @@ function parseToOfficialBlocks(fallbackTitle: string, rawBody: string): ParsedDo
       blocks.push({
         kind: 'meta',
         label: `${metaMatch[1].trim()}：`,
-        text: stripInlineMarkdown(metaMatch[2].trim())
+        text: metaMatch[2].trim()
       });
       seenBodyOrHeading = true;
       continue;
@@ -272,7 +288,7 @@ function parseToOfficialBlocks(fallbackTitle: string, rawBody: string): ParsedDo
 
 /** 生成符合 GB/T 9704-2012 党政机关公文标准的 Word (.docx) Blob */
 export async function buildOfficialDocxBlob(title: string, body: string): Promise<Blob> {
-  const { AlignmentType, Document, Footer, LineRuleType, Packer, PageNumber, Paragraph, TextRun } =
+  const { AlignmentType, BorderStyle, Document, Footer, LineRuleType, Packer, PageNumber, Paragraph, TextRun } =
     await import('docx');
 
   function makeFont(fontName: string) {
@@ -294,9 +310,10 @@ export async function buildOfficialDocxBlob(title: string, body: string): Promis
     });
   }
 
-  /** 支持正文中 `**加粗**` 片段转成原生 Word 加粗 */
+  /** 支持正文中 `**加粗**` 转成原生 Word 加粗，并剥离行内反引号 */
   function makeInlineRuns(text: string, fontName: string, size: number) {
-    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+    const cleaned = text.replace(/`([^`]+)`/g, '$1');
+    const parts = cleaned.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
     return parts.map(part => {
       if (part.startsWith('**') && part.endsWith('**')) {
         return makeRun(part.slice(2, -2), fontName, size, true);
@@ -427,6 +444,24 @@ export async function buildOfficialDocxBlob(title: string, body: string): Promis
       continue;
     }
 
+    if (blk.kind === 'hr') {
+      addedSignBlank = false;
+      children.push(
+        new Paragraph({
+          spacing: { before: 160, after: 160, line: 240, lineRule: LineRuleType.AUTO },
+          border: {
+            bottom: {
+              style: BorderStyle.DASHED,
+              size: 6,
+              color: '666666'
+            }
+          },
+          children: []
+        })
+      );
+      continue;
+    }
+
     if (blk.kind === 'quote') {
       children.push(
         new Paragraph({
@@ -454,6 +489,7 @@ export async function buildOfficialDocxBlob(title: string, body: string): Promis
     new Paragraph({
       alignment: isOdd ? AlignmentType.RIGHT : AlignmentType.LEFT,
       indent: isOdd ? { right: INDENT_1CHAR } : { left: INDENT_1CHAR },
+      spacing: { before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO },
       children: [
         makeRun('— ', FONT_PAGE_NUM, SIZE_4HAO),
         new TextRun({
@@ -469,9 +505,6 @@ export async function buildOfficialDocxBlob(title: string, body: string): Promis
   const doc = new Document({
     title: title.trim() || '党支部工作材料',
     creator: '三尺台 · 高校党支部工作台',
-    features: {
-      updateFields: true
-    },
     evenAndOddHeaderAndFooters: true,
     styles: {
       default: {
@@ -520,9 +553,13 @@ export async function exportOfficialDocx(
   title: string,
   body: string
 ): Promise<'saved' | 'cancelled'> {
-  const cleanName = (filename || title || '党支部公文').trim().replace(/\.docx?$/i, '');
-  const blob = await buildOfficialDocxBlob(title, body);
-  const res = await saveFileWithPicker(blob, {
+  const cleanName = (filename || title || '党支部公文')
+    .trim()
+    .replace(/\.docx?$/i, '')
+    .replace(/[/\\:*?"<>|]/g, '·')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const res = await saveFileWithPicker(() => buildOfficialDocxBlob(title, body), {
     suggestedName: `${cleanName}.docx`,
     types: [{ description: 'Word 公文文档 (.docx)', mime: DOCX_MIME, extensions: ['.docx'] }]
   });

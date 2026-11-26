@@ -272,6 +272,7 @@ export async function buildSelectiveSctPackPayload(
     partialBackup.docs = full.docs;
     partialBackup.academy_flow = full.academy_flow;
     partialBackup.knowledge_custom_items = full.knowledge_custom_items;
+    partialBackup.knowledge_hidden_ids = full.knowledge_hidden_ids;
     partialBackup.policy_cards = full.policy_cards;
     partialBackup.policy_files = full.policy_files;
   }
