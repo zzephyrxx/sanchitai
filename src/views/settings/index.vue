@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '@/constants/changelog';
 import { isMacPlatform, useDesktopBridge } from '@/utils/desktop-bridge';
@@ -9,7 +9,6 @@ import { saveFileWithPicker } from '@/utils/save-file';
 import { applySctPackImport, exportSctPackBytes, inspectImportBytes } from '@/utils/sctpack';
 import type { ExportCategoryKey, SctPackPayload, SctPackSummary } from '@/utils/sctpack';
 import { useAppLockStore, LOCK_QUESTIONS } from '@/store/modules/applock';
-import { useThemeStore } from '@/store/modules/theme';
 import { useUpdaterStore } from '@/store/modules/updater';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
@@ -29,21 +28,9 @@ defineOptions({ name: 'SettingsPage' });
 
 const appLock = useAppLockStore();
 const workStore = useWorkDataStore();
-const themeStore = useThemeStore();
 const updaterStore = useUpdaterStore();
 const { bi } = useSctI18n();
 const desktopBridge = useDesktopBridge();
-
-// ---------------- 界面外观：密度与缩放快捷设置（与右侧主题抽屉实时同步） ----------------
-const DENSITY_OPTIONS: Array<{ value: UnionKey.ThemeDensity; zh: string; en: string }> = [
-  { value: 'compact', zh: '紧凑', en: 'Compact' },
-  { value: 'comfortable', zh: '舒适（默认）', en: 'Comfortable' },
-  { value: 'loose', zh: '宽松', en: 'Loose' }
-];
-
-function handleDensityChange(val: string) {
-  themeStore.setDensity(val as UnionKey.ThemeDensity);
-}
 
 // ---------------- 自定义数据存储路径（桌面端） ----------------
 const dirBusy = ref(false);
@@ -773,84 +760,59 @@ onMounted(listSnapshots);
       </div>
     </div>
 
-    <!-- 右栏（5/12 宽）：「应用锁 + 界面密度与缩放」 → 「窗口与打开方式」 → 「关于（含演示数据）」 -->
+    <!-- 右栏（5/12 宽）：「应用锁」 → 「窗口与打开方式」 → 「关于（含软件更新与演示数据）」 -->
     <div class="flex flex-col gap-14px xl:col-span-5">
-      <!-- 第 1 行：应用锁 + 界面密度与缩放 -->
-      <div class="grid grid-cols-1 gap-14px md:grid-cols-2">
-        <!-- 应用锁 -->
-        <NCard :bordered="false" class="h-full">
-          <template #header>
-            <div class="flex items-center gap-8px">
-              <SvgIcon icon="lucide:shield-check" class="text-17px text-[#2563eb]" />
-              <span class="font-bold">{{ bi('应用锁', 'App Lock') }}</span>
-            </div>
-          </template>
-          <template #header-extra>
-            <NSwitch :value="appLock.enabled" size="small" @update:value="toggleLock" />
-          </template>
-          <NSpace v-if="appLock.enabled" vertical size="small">
-            <NSelect
-              :value="appLock.idleMinutes"
-              :options="IDLE_OPTIONS"
-              size="small"
-              @update:value="v => appLock.setIdleMinutes(v)"
-            />
-            <div class="flex flex-wrap gap-6px">
-              <NButton size="tiny" secondary @click="lockPwdShow = true">
-                <template #icon><SvgIcon icon="lucide:key-round" /></template>
-                {{ bi('改密码', 'Password') }}
-              </NButton>
-              <NButton size="tiny" type="primary" @click="appLock.lock()">
-                <template #icon><SvgIcon icon="lucide:lock" /></template>
-                {{ bi('立即锁定', 'Lock') }}
-              </NButton>
-            </div>
-          </NSpace>
-          <div v-else class="flex items-center gap-6px text-13px text-[var(--sct-muted)]">
-            <SvgIcon icon="lucide:lock-open" class="text-14px" />
-            <span>{{ bi('未启用', 'Disabled') }}</span>
+      <!-- 第 1 行：应用锁 -->
+      <NCard :bordered="false">
+        <template #header>
+          <div class="flex items-center gap-8px">
+            <SvgIcon icon="lucide:shield-check" class="text-17px text-[#2563eb]" />
+            <span class="font-bold">{{ bi('应用锁', 'App Lock') }}</span>
+            <NTag size="tiny" :type="appLock.enabled ? 'success' : 'default'" :bordered="false" round>
+              {{ appLock.enabled ? bi('已开启', 'Enabled') : bi('未启用', 'Disabled') }}
+            </NTag>
           </div>
-        </NCard>
+        </template>
+        <template #header-extra>
+          <NSwitch :value="appLock.enabled" size="small" @update:value="toggleLock" />
+        </template>
+        <div v-if="appLock.enabled" class="flex flex-wrap items-center justify-between gap-10px">
+          <div class="flex items-center gap-8px">
+            <span class="text-12.5px text-[var(--sct-muted)]">{{ bi('自动锁定', 'Auto-lock') }}</span>
+            <div class="w-168px">
+              <NSelect
+                :value="appLock.idleMinutes"
+                :options="IDLE_OPTIONS"
+                size="small"
+                @update:value="v => appLock.setIdleMinutes(v)"
+              />
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-6px">
+            <NButton size="tiny" secondary @click="lockPwdShow = true">
+              <template #icon><SvgIcon icon="lucide:key-round" /></template>
+              {{ bi('修改密码', 'Change Password') }}
+            </NButton>
+            <NButton size="tiny" type="primary" @click="appLock.lock()">
+              <template #icon><SvgIcon icon="lucide:lock" /></template>
+              {{ bi('立即锁定', 'Lock Now') }}
+            </NButton>
+          </div>
+        </div>
+        <div v-else class="flex items-center gap-6px text-12.5px text-[var(--sct-muted)]">
+          <SvgIcon icon="lucide:lock-open" class="text-14px" />
+          <span>
+            {{
+              bi(
+                '开启后可设置本地访问密码与闲置自动锁屏，防止他人翻阅支部台账。',
+                'Protect local records with a password & idle lock.'
+              )
+            }}
+          </span>
+        </div>
+      </NCard>
 
-        <!-- 界面密度与缩放 -->
-        <NCard :bordered="false" class="h-full">
-          <template #header>
-            <div class="flex items-center gap-8px">
-              <SvgIcon icon="lucide:sliders-horizontal" class="text-17px text-[#A81C24]" />
-              <span class="font-bold">{{ bi('界面密度与缩放', 'Density & Scaling') }}</span>
-            </div>
-          </template>
-          <NSpace vertical size="small">
-            <div class="flex flex-col gap-5px">
-              <div class="text-12px font-medium text-[var(--sct-muted)]">{{ bi('界面密度', 'Density') }}</div>
-              <NRadioGroup :value="themeStore.density" size="small" @update:value="handleDensityChange">
-                <NRadioButton v-for="opt in DENSITY_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ bi(opt.zh, opt.en) }}
-                </NRadioButton>
-              </NRadioGroup>
-            </div>
-            <div class="flex flex-col gap-5px pt-2px">
-              <div class="flex items-center justify-between text-12px">
-                <span class="font-medium text-[var(--sct-muted)]">{{ bi('全局字号缩放', 'Font Scale') }}</span>
-                <div class="flex items-center gap-4px">
-                  <span class="font-mono font-bold text-[var(--sct-ink)]">{{ themeStore.fontConfig.scale }}%</span>
-                  <NButton
-                    v-if="themeStore.fontConfig.scale !== 100"
-                    size="tiny"
-                    quaternary
-                    @click="themeStore.fontConfig.scale = 100"
-                  >
-                    100%
-                  </NButton>
-                </div>
-              </div>
-              <NSlider v-model:value="themeStore.fontConfig.scale" :min="85" :max="150" :step="5" />
-            </div>
-          </NSpace>
-        </NCard>
-      </div>
-
-      <!-- 第 2 行：窗口与打开方式（右栏通宽） -->
+      <!-- 第 2 行：窗口与打开方式 -->
       <NCard :bordered="false">
         <template #header>
           <div class="flex items-center gap-8px">
@@ -934,7 +896,7 @@ onMounted(listSnapshots);
         </NSpace>
       </NCard>
 
-      <!-- 关于（更名自「关于三尺台与软件更新」，合并「演示数据」管理区） -->
+      <!-- 第 3 行：关于（统一扁平键值条目风格，与上方配置卡协调一致） -->
       <NCard :bordered="false">
         <template #header>
           <div class="flex items-center gap-8px">
@@ -954,64 +916,54 @@ onMounted(listSnapshots);
             {{ bi('检查更新', 'Check Update') }}
           </NButton>
         </template>
-        <NSpace vertical size="small">
-          <div class="rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] p-10px">
-            <div class="flex flex-wrap items-center justify-between gap-8px">
-              <div class="flex items-center gap-6px text-12px">
-                <span class="font-semibold text-[var(--sct-ink)]">
-                  {{ bi('启动时自动检测更新', 'Auto-check on Launch') }}
-                </span>
-                <NSwitch
-                  :value="updaterStore.autoCheckEnabled"
-                  size="small"
-                  @update:value="v => updaterStore.setAutoCheckEnabled(v)"
-                />
-              </div>
-              <div class="flex items-center gap-6px text-12px">
-                <span class="text-gray-500">{{ bi('国内镜像加速', 'CN Mirror') }}</span>
-                <NSwitch
-                  :value="updaterStore.useMirror"
-                  size="small"
-                  @update:value="v => updaterStore.setUseMirror(v)"
-                />
-              </div>
-            </div>
-            <div
-              v-if="updaterStore.hasAvailableUpdate || updaterStore.lastCheckedAt"
-              class="mt-6px flex flex-wrap items-center justify-between gap-6px text-11px text-gray-500"
-            >
-              <span v-if="updaterStore.hasAvailableUpdate && updaterStore.release" class="font-semibold text-[#A81C24]">
-                发现新版本 {{ updaterStore.release.latestVersion }}
+
+        <div class="flex flex-col divide-y divide-[var(--sct-border)]">
+          <!-- 版本与更新状态 -->
+          <div class="flex flex-wrap items-center justify-between gap-8px pb-10px">
+            <span class="text-13px font-medium text-[var(--sct-ink)]">{{ bi('当前版本', 'Version') }}</span>
+            <div class="flex flex-wrap items-center gap-8px">
+              <span class="font-mono text-13px font-bold text-[var(--sct-ink)]">{{ APP_VERSION }}</span>
+              <template v-if="updaterStore.hasAvailableUpdate && updaterStore.release">
+                <NTag size="tiny" type="error" :bordered="false" round>
+                  新版本 {{ updaterStore.release.latestVersion }}
+                </NTag>
+                <NButton size="tiny" type="primary" @click="updaterStore.popupVisible = true">查看更新</NButton>
+              </template>
+              <span v-else-if="updaterStore.lastCheckedAt" class="text-11.5px text-[var(--sct-muted)]">
+                已是最新 · {{ updaterStore.lastCheckedAt }}
               </span>
-              <span v-else-if="updaterStore.lastCheckedAt">
-                最近检查：{{ updaterStore.lastCheckedAt }} · 当前已是最新
-              </span>
-              <NButton
-                v-if="updaterStore.hasAvailableUpdate"
-                size="tiny"
-                type="primary"
-                @click="updaterStore.popupVisible = true"
-              >
-                打开更新弹窗
-              </NButton>
             </div>
           </div>
 
-          <NDescriptions :column="1" size="small" label-placement="left" bordered>
-            <NDescriptionsItem :label="bi('版本', 'Version')">{{ APP_VERSION }}</NDescriptionsItem>
-            <NDescriptionsItem :label="bi('开源技术栈', 'Open Source Stack')">
-              Vue 3 · Naive UI · FullCalendar · ECharts · Dexie · Tauri
-            </NDescriptionsItem>
-          </NDescriptions>
-
-          <!-- 演示数据操作区（并入「关于」卡片） -->
-          <div
-            class="flex flex-wrap items-center justify-between gap-8px border-t border-dashed border-[var(--sct-border)] pt-10px"
-          >
-            <span class="flex items-center gap-5px text-12px font-semibold text-[var(--sct-muted)]">
-              <SvgIcon icon="lucide:database-backup" class="text-14px text-[#d97706]" />
-              <span>{{ bi('演示数据', 'Demo Data') }}</span>
+          <!-- 启动自动检测更新 -->
+          <div class="flex items-center justify-between gap-8px py-10px">
+            <span class="text-13px font-medium text-[var(--sct-ink)]">
+              {{ bi('启动时自动检测更新', 'Auto-check on Launch') }}
             </span>
+            <NSwitch
+              :value="updaterStore.autoCheckEnabled"
+              size="small"
+              @update:value="v => updaterStore.setAutoCheckEnabled(v)"
+            />
+          </div>
+
+          <!-- 国内镜像加速 -->
+          <div class="flex items-center justify-between gap-8px py-10px">
+            <span class="text-13px font-medium text-[var(--sct-ink)]">{{ bi('国内镜像加速', 'CN Mirror') }}</span>
+            <NSwitch :value="updaterStore.useMirror" size="small" @update:value="v => updaterStore.setUseMirror(v)" />
+          </div>
+
+          <!-- 开源技术栈 -->
+          <div class="flex flex-wrap items-center justify-between gap-8px py-10px">
+            <span class="text-13px font-medium text-[var(--sct-ink)]">{{ bi('开源技术栈', 'Tech Stack') }}</span>
+            <span class="font-mono text-12px text-[var(--sct-muted)]">
+              Vue 3 · Naive UI · FullCalendar · ECharts · Dexie · Tauri
+            </span>
+          </div>
+
+          <!-- 演示数据维护 -->
+          <div class="flex flex-wrap items-center justify-between gap-8px pt-10px">
+            <span class="text-13px font-medium text-[var(--sct-ink)]">{{ bi('演示数据', 'Demo Data') }}</span>
             <div class="flex flex-wrap gap-6px">
               <NButton size="tiny" secondary :loading="resetting" @click="openDangerConfirm('reset')">
                 <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
@@ -1023,7 +975,7 @@ onMounted(listSnapshots);
               </NButton>
             </div>
           </div>
-        </NSpace>
+        </div>
       </NCard>
     </div>
 
