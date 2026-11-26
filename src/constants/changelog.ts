@@ -16,9 +16,9 @@ export interface ChangelogItem {
 }
 
 export interface ChangelogSection {
-  icon: string;
-  titleZh: string;
-  titleEn: string;
+  icon?: string;
+  titleZh?: string;
+  titleEn?: string;
   items: ChangelogItem[];
 }
 
@@ -34,9 +34,6 @@ export const CHANGELOG_HISTORY: ChangelogRelease[] = [
     date: '2026-11-26',
     sections: [
       {
-        icon: 'lucide:sparkles',
-        titleZh: '高校党建工作台重磅升级',
-        titleEn: 'Major University Workbench Upgrade',
         items: [
           {
             icon: 'lucide:send',

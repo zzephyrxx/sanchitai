@@ -124,10 +124,13 @@ function handleUpdateShow(val: boolean) {
 
       <!-- 版本更新条目（无底色无边框通透排版，每条小功能配专属小图标 + 悬浮「更多」） -->
       <div class="changelog-scroll flex flex-col gap-12px">
-        <div v-for="sec in currentRelease.sections" :key="sec.titleZh" class="flex flex-col gap-5px">
-          <div class="flex items-center gap-5px text-12px font-semibold text-[var(--sct-ink)]">
-            <SvgIcon :icon="sec.icon" class="text-13px text-[var(--sct-accent)]" />
-            <span>{{ bi(sec.titleZh, sec.titleEn) }}</span>
+        <div v-for="(sec, sIdx) in currentRelease.sections" :key="sec.titleZh || sIdx" class="flex flex-col gap-5px">
+          <div
+            v-if="sec.titleZh || sec.titleEn"
+            class="flex items-center gap-5px text-12px font-semibold text-[var(--sct-ink)]"
+          >
+            <SvgIcon v-if="sec.icon" :icon="sec.icon" class="text-13px text-[var(--sct-accent)]" />
+            <span>{{ bi(sec.titleZh || '', sec.titleEn || '') }}</span>
           </div>
           <ul
             class="m-0 flex flex-col text-12px leading-snug text-gray-600 dark:text-gray-300"
