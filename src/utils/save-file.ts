@@ -62,6 +62,11 @@ function inferTypeFromFilename(filename: string, blobMime: string): SaveFileType
     '.csv': { description: 'CSV 表格文件', mime: 'text/csv', extensions: ['.csv'] },
     '.md': { description: 'Markdown 文档', mime: 'text/markdown', extensions: ['.md'] },
     '.doc': { description: 'Word 文档', mime: 'application/msword', extensions: ['.doc'] },
+    '.docx': {
+      description: 'Word 公文文档 (.docx)',
+      mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      extensions: ['.docx']
+    },
     '.png': { description: 'PNG 图片', mime: 'image/png', extensions: ['.png'] },
     '.jpg': { description: 'JPEG 图片', mime: 'image/jpeg', extensions: ['.jpg', '.jpeg'] },
     '.zip': { description: 'ZIP 压缩包', mime: 'application/zip', extensions: ['.zip'] },

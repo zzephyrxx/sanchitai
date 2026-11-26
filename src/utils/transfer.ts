@@ -2,8 +2,8 @@
  * 组织关系转接与转入档案核查文档/报表生成工具（v0.3.0）
  *
  * - 导出《组织关系转接登记表》Excel（支持脱敏公示版 / 全量报送版）
- * - 一键生成《毕业生党员档案自提申请书》（.doc / .md）
- * - 一键生成《商请核实党员档案材料的函》（.doc / .md）
+ * - 一键生成《毕业生党员档案自提申请书》（.docx）
+ * - 一键生成《商请核实党员档案材料的函》（.docx）
  */
 import dayjs from 'dayjs';
 import { INCOMING_AUDIT_ITEMS } from '@/constants/workspace-presets';
@@ -133,28 +133,12 @@ export function buildArchiveVerifyLetterText(opts: {
   ].join('\n');
 }
 
-/** 导出公文为 Word (.doc) 兼容格式 */
+/** 导出公文为符合 GB/T 9704-2012 标准的 Word (.docx) 文档 */
 export async function downloadTextAsDoc(
   filename: string,
   title: string,
   plainText: string
 ): Promise<'saved' | 'cancelled'> {
-  const escapedHtml = plainText
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br/>');
-
-  const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-  const docHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapedTitle}</title>
-  <style>body{font-family:"FangSong","仿宋","Songti SC",serif;font-size:15pt;line-height:1.9;padding:36px 48px;color:#111;}</style>
-  </head><body><div>${escapedHtml}</div></body></html>`;
-
-  const blob = new Blob([docHtml], { type: 'application/msword;charset=utf-8' });
-  const res = await saveFileWithPicker(blob, {
-    suggestedName: filename.endsWith('.doc') ? filename : `${filename}.doc`,
-    types: [{ description: 'Word 文档 (.doc)', mime: 'application/msword', extensions: ['.doc'] }]
-  });
-  return res.status === 'saved' ? 'saved' : 'cancelled';
+  const { exportOfficialDocx } = await import('@/utils/official-docx');
+  return exportOfficialDocx(filename, title, plainText);
 }

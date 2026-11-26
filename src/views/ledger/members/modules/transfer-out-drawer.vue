@@ -219,7 +219,7 @@ async function exportSelfPickupDoc() {
     member: member.value,
     transfer: draftTransfer
   });
-  const res = await downloadTextAsDoc(`${member.value.name}_党员档案自提申请书.doc`, '党员档案自提申请书', content);
+  const res = await downloadTextAsDoc(`${member.value.name}_党员档案自提申请书.docx`, '党员档案自提申请书', content);
   if (res === 'saved') {
     window.$message?.success('《党员档案自提申请书》已导出');
   }
@@ -352,7 +352,7 @@ async function exportSelfPickupDoc() {
             </div>
             <NButton size="tiny" type="warning" secondary @click="exportSelfPickupDoc">
               <template #icon><SvgIcon icon="lucide:file-down" /></template>
-              导出申请书 (.doc)
+              导出申请书 (.docx)
             </NButton>
           </div>
         </div>

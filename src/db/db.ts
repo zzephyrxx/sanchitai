@@ -268,7 +268,7 @@ export function registerDiskSnapshotHooks(hooks: DiskSnapshotHooks) {
  * 增量式版本迁移（v1~v5 向上兼容，不丢弃未知字段）：
  * - 统一修正成员入党/转正身份
  * - 修正已完成归档的正式党员残留「材料归档」next_node
- * - 当材料模板为空时自动兜底内置 6 套默认模板
+ * - 当材料模板为空时自动兜底内置默认党支部模板
  */
 export function migrateBackupShape(raw: unknown): BackupShape {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
@@ -351,15 +351,30 @@ export function migrateBackupShape(raw: unknown): BackupShape {
   };
 }
 
-/** 确保材料库内置 6 套默认模板始终存在（若被清空则自动补回） */
+const BUILTIN_TPL_SYNC_KEY = 'doc-templates-v027-synced';
+
+/** 确保材料库内置党支部模板存在；首次升级至 v0.2.7 时无损补齐新增内置模板（不覆盖已有修改） */
 export async function ensureDefaultDocTemplates(): Promise<number> {
-  const count = await db.docTemplates.count();
-  if (count > 0) return 0;
   const builtins = getBuiltinDocTemplates();
-  if (builtins.length) {
+  if (!builtins.length) return 0;
+
+  const existing = await db.docTemplates.toArray();
+  if (existing.length === 0) {
     await db.docTemplates.bulkPut(builtins);
+    await setMeta(BUILTIN_TPL_SYNC_KEY, true);
+    return builtins.length;
   }
-  return builtins.length;
+
+  const synced = await getMeta<boolean>(BUILTIN_TPL_SYNC_KEY);
+  if (synced) return 0;
+
+  const existingIds = new Set(existing.map(t => t.id));
+  const missing = builtins.filter(t => !existingIds.has(t.id));
+  if (missing.length) {
+    await db.docTemplates.bulkPut(missing);
+  }
+  await setMeta(BUILTIN_TPL_SYNC_KEY, true);
+  return missing.length;
 }
 
 /** 全库导出为统一备份格式（schemaVersion = 8） */

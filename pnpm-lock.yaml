@@ -230,6 +230,9 @@ importers:
       dexie-export-import:
         specifier: ^4.4.2
         version: 4.4.2(dexie@4.4.7)
+      docx:
+        specifier: ^9.16.0
+        version: 9.16.0
       driver.js:
         specifier: ^1.14.0
         version: 1.14.0
@@ -3704,6 +3707,10 @@ packages:
 
   dexie@4.4.7:
     resolution: {integrity: sha512-wemFiCl3DTCnfzyqepUTX1ugbYbkTrw3aEZOG7YjAOUoEQB5g5PrEywPzk5JpbX/SxqQ9IvjUpxCDIEjoOWEfA==}
+
+  docx@9.16.0:
+    resolution: {integrity: sha512-fvAuqxV0705bEQ9OGPLt6onJqufGJTMS+b7PtRxNktea+iPWYgc1zO+OQBMW9ZmRLj9THTnOeiAoxTDz2ub0Fw==}
+    engines: {node: '>=16'}
 
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
@@ -9280,6 +9287,12 @@ snapshots:
       dexie: 4.4.7
 
   dexie@4.4.7: {}
+
+  docx@9.16.0:
+    dependencies:
+      '@types/node': 26.6.4
+      fflate: 0.8.3
+      nanoid: 6.0.2
 
   dom-accessibility-api@0.5.16: {}
 

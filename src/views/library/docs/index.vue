@@ -3,6 +3,7 @@ import { computed, h, nextTick, onMounted, reactive, ref } from 'vue';
 import { NButton, NDropdown, NPopconfirm, NTag } from 'naive-ui';
 import type { DataTableColumns, DropdownOption } from 'naive-ui';
 import dayjs from 'dayjs';
+import { exportOfficialDocx } from '@/utils/official-docx';
 import { saveFileWithPicker } from '@/utils/save-file';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
@@ -20,13 +21,14 @@ onMounted(() => {
   void ensureDefaultDocTemplates();
 });
 
-const BASE_CATEGORIES = ['会议', '活动', '总结', '发展', '谈心谈话', '其他'] as const;
+const BASE_CATEGORIES = ['会议', '组织建设', '发展', '活动', '总结', '谈心谈话', '其他'] as const;
 
 const CATEGORY_COLORS: Record<string, string> = {
   会议: '#A81C24',
+  组织建设: '#0f766e',
+  发展: '#7c5cd6',
   活动: '#d97706',
   总结: '#3f9d63',
-  发展: '#7c5cd6',
   谈心谈话: '#2080f0',
   其他: '#64748b'
 };
@@ -37,19 +39,30 @@ function categoryColor(cat?: string): string {
 }
 
 const currentBranchName = computed(() => workStore.branchName || '党支部');
-const secretaryName = computed(() => workStore.members.find(m => m.role === '书记')?.name ?? '');
+const secretaryName = computed(() => workStore.activeMembers.find(m => m.role === '书记')?.name ?? '');
+const formalMemberCount = computed(() => workStore.activeMembers.filter(m => m.type === '正式党员').length);
 
 const AUTO_FILL: Record<string, () => string> = {
   支部名称: () => currentBranchName.value,
+  主送单位: () => '中共××学院委员会',
   落款日期: () => dayjs().format('YYYY年M月D日'),
+  会议日期: () => dayjs().format('YYYY年M月D日'),
+  换届日期: () => dayjs().add(14, 'day').format('YYYY年M月D日'),
+  拟开会日期: () => dayjs().add(14, 'day').format('YYYY年M月D日'),
+  会议年度: () => String(dayjs().year()),
   会议时间: () => `${dayjs().format('YYYY年M月D日')} 14:00`,
   谈话时间: () => `${dayjs().format('YYYY年M月D日')} 14:00`,
   活动时间: () => `${dayjs().format('YYYY年M月D日')} 14:00`,
+  公示时间: () => `${dayjs().format('YYYY年M月D日')}至${dayjs().add(7, 'day').format('M月D日')}`,
   书记姓名: () => secretaryName.value,
   主持人: () => secretaryName.value,
+  联系人: () => secretaryName.value,
+  应到人数: () => String(formalMemberCount.value || ''),
+  差额比例: () => '20%',
+  委员名额: () => '5',
   学期区间: () => {
     const y = dayjs().year();
-    return dayjs().month() >= 7 ? `${y}-${y + 1}学年秋季学期` : `${y}-${y - 1}学年春季学期`;
+    return dayjs().month() >= 7 ? `${y}-${y + 1}学年秋季学期` : `${y - 1}-${y}学年春季学期`;
   }
 };
 
@@ -182,18 +195,14 @@ async function exportDocMarkdown(title: string, body: string) {
 }
 
 async function exportDocWord(title: string, body: string) {
-  const safeName = title.trim() || '材料文档';
-  const safeTitle = safeName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const safeBody = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeTitle}</title>
-<style>body{font-family:SimSun,serif;font-size:14pt;line-height:1.8;margin:40px;}h2{text-align:center;}</style>
-</head><body><pre style="font-family:SimSun,serif;font-size:14pt;white-space:pre-wrap;">${safeBody}</pre></body></html>`;
-  const res = await saveFileWithPicker(new Blob([html], { type: 'application/msword;charset=utf-8' }), {
-    suggestedName: `${safeName}.doc`,
-    types: [{ description: 'Word 文档', mime: 'application/msword', extensions: ['.doc'] }]
-  });
-  if (res.status === 'saved') {
-    window.$message?.success('已导出 .doc（Word 可直接打开）');
+  const safeName = title.trim() || '党支部工作材料';
+  try {
+    const res = await exportOfficialDocx(safeName, safeName, body);
+    if (res === 'saved') {
+      window.$message?.success('已按 GB/T 9704 公文格式导出标准 Word (.docx)');
+    }
+  } catch (err) {
+    window.$message?.error(`导出 .docx 失败：${(err as Error).message}`);
   }
 }
 
@@ -565,7 +574,7 @@ function colHeader(icon: string, text: string) {
 }
 
 const exportMenuOptions: DropdownOption[] = [
-  { label: '导出 Word (.doc)', key: 'word', icon: SvgIconVNode({ icon: 'lucide:file-text', fontSize: 13 }) },
+  { label: '导出标准公文 (.docx)', key: 'word', icon: SvgIconVNode({ icon: 'lucide:file-text', fontSize: 13 }) },
   { label: '导出 Markdown (.md)', key: 'md', icon: SvgIconVNode({ icon: 'lucide:file-code', fontSize: 13 }) },
   { label: '复制全文', key: 'copy', icon: SvgIconVNode({ icon: 'lucide:copy', fontSize: 13 }) }
 ];
@@ -1060,7 +1069,7 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
             </NButton>
             <NButton size="small" secondary @click="exportDocWord(createDocTitle, previewBody)">
               <template #icon><SvgIcon icon="lucide:file-text" /></template>
-              导出 Word(.doc)
+              导出公文 (.docx)
             </NButton>
             <NButton type="primary" size="small" @click="saveFromTemplateToArchive">
               <template #icon><SvgIcon icon="lucide:archive" /></template>
@@ -1181,7 +1190,7 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
             </NButton>
             <NButton size="small" secondary @click="exportDocWord(docForm.title, docForm.body)">
               <template #icon><SvgIcon icon="lucide:file-text" /></template>
-              导出 Word(.doc)
+              导出公文 (.docx)
             </NButton>
             <NButton size="small" type="primary" @click="handleSaveDocEditor">
               <template #icon><SvgIcon icon="lucide:save" /></template>

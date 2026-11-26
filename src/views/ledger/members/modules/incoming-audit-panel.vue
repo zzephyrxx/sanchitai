@@ -121,7 +121,7 @@ async function handleExportVerifyLetter() {
     }
   });
   const res = await downloadTextAsDoc(
-    `关于商请核实${activeRow.value.member.name}同志党员档案材料的函.doc`,
+    `关于商请核实${activeRow.value.member.name}同志党员档案材料的函.docx`,
     '关于商请核实党员档案材料的函',
     text
   );

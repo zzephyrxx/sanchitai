@@ -60,6 +60,7 @@
     "defu": "6.1.7",
     "dexie": "^4.4.7",
     "dexie-export-import": "^4.4.2",
+    "docx": "^9.16.0",
     "driver.js": "^1.14.0",
     "echarts": "6.1.0",
     "file-saver": "^2.0.5",
