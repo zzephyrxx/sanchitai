@@ -53,20 +53,22 @@ watch(
     if (!visible) return;
     selectedIds.value = [];
     lastCreatedRecords.value = [];
+    for (const key of Object.keys(rowDrafts)) {
+      delete rowDrafts[key];
+    }
     for (const m of workStore.activeMembers) {
-      if (!rowDrafts[m.id]) {
-        rowDrafts[m.id] = {
-          target_committee: '',
-          target_branch: '',
-          archive_dest: defaultArchiveDest.value,
-          is_internal: false
-        };
-      }
+      rowDrafts[m.id] = {
+        target_committee: '',
+        target_branch: '',
+        archive_dest: defaultArchiveDest.value,
+        is_internal: false
+      };
     }
   }
 );
 
 function toggleMember(id: string) {
+  lastCreatedRecords.value = [];
   const idx = selectedIds.value.indexOf(id);
   if (idx >= 0) {
     selectedIds.value.splice(idx, 1);
@@ -84,7 +86,8 @@ function toggleMember(id: string) {
 }
 
 function selectAllFiltered() {
-  selectedIds.value = candidateMembers.value.map(m => m.id);
+  lastCreatedRecords.value = [];
+  selectedIds.value = Array.from(new Set([...selectedIds.value, ...candidateMembers.value.map(m => m.id)]));
   for (const m of candidateMembers.value) {
     if (!rowDrafts[m.id]) {
       rowDrafts[m.id] = {
@@ -111,6 +114,27 @@ async function handleSubmitBatch() {
     window.$message?.warning('请至少勾选一位要办理关系转出的成员');
     return;
   }
+  if (!defaultDate.value) {
+    window.$message?.warning('请先选择办理日期');
+    return;
+  }
+  if (defaultFeeUntil.value.trim() && !/^\d{4}-\d{2}$/.test(defaultFeeUntil.value.trim())) {
+    window.$message?.warning('党费交至年月请填写 YYYY-MM 格式');
+    return;
+  }
+  const missingNames = selectedIds.value
+    .filter(id => {
+      const d = rowDrafts[id];
+      return !(d?.target_committee?.trim() || d?.target_branch?.trim());
+    })
+    .map(id => workStore.memberName(id));
+  if (missingNames.length) {
+    window.$message?.warning(
+      `请先填写接收党组织（上级党委或具体党支部）：${missingNames.slice(0, 4).join('、')}${missingNames.length > 4 ? ' 等' : ''}`
+    );
+    return;
+  }
+
   busy.value = true;
   try {
     const items = selectedIds.value.map(id => {
@@ -134,6 +158,7 @@ async function handleSubmitBatch() {
     });
     const created = await workStore.batchInitiateTransferOut(items);
     lastCreatedRecords.value = created;
+    selectedIds.value = [];
     window.$message?.success(
       completeImmediately.value
         ? `已批量办结 ${created.length} 名成员关系转出并归档（历史台账已保留）`

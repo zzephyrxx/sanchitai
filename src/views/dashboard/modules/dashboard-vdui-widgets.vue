@@ -279,6 +279,14 @@ const gaugeDataset = computed<VueUiGaugeDataset>(() => ({
   ]
 }));
 
+const gaugeLegendColor = computed(() => {
+  const avg = pointsStats.value.avg;
+  if (avg < 60) return palette.value.crimson;
+  if (avg < 75) return palette.value.amber;
+  if (avg < 85) return palette.value.secondary;
+  return palette.value.emerald;
+});
+
 const gaugeConfig = computed<VueUiGaugeConfig>(() => ({
   userOptions: { show: false },
   style: {
@@ -316,8 +324,9 @@ const gaugeConfig = computed<VueUiGaugeConfig>(() => ({
         fontSize: 34,
         suffix: ' 分',
         roundingValue: 1,
-        useRatingColor: true,
-        bold: true
+        showPlusSymbol: false,
+        useRatingColor: false,
+        color: gaugeLegendColor.value
       }
     }
   }
@@ -364,7 +373,7 @@ const volunteerDonutConfig = computed<VueUiDonutConfig>(() => ({
             show: true,
             total: {
               show: true,
-              label: bi('年度总时长', 'Hours'),
+              text: bi('年度总时长', 'Hours'),
               color: palette.value.muted,
               fontSize: 13,
               offsetY: -8,
@@ -446,7 +455,17 @@ const waffleConfig = computed<VueUiWaffleConfig>(() => ({
         rect: {
           rounded: !isEpaper.value,
           rounding: isEpaper.value ? 0 : 2,
-          useGradient: false
+          stroke: isDark.value ? '#12161f' : '#ffffff',
+          strokeWidth: 0.5,
+          useGradient: false,
+          selection: {
+            unselectedOpacity: 0.5,
+            wrap: {
+              show: true,
+              stroke: palette.value.ink,
+              strokeWidth: 2
+            }
+          }
         },
         labels: {
           captions: { show: false }
@@ -512,7 +531,6 @@ const thermometerConfig = computed<VueUiThermometerConfig>(() => ({
 
 // ---------------- 6. 党小组综合活力同心环（VueUiOnion） ----------------
 const groupOnionDataset = computed<VueUiOnionDatasetItem[]>(() => {
-  const groups = workStore.partyGroupNames.slice(0, 5);
   const yearEvents = new Set(
     workStore.calEvents.filter(e => e.date.startsWith(yearPrefix) && e.status !== '已取消').map(e => e.id)
   );
@@ -525,30 +543,34 @@ const groupOnionDataset = computed<VueUiOnionDatasetItem[]>(() => {
   }
   const talkedSet = new Set(workStore.talks.filter(t => t.date.startsWith(yearPrefix)).flatMap(t => t.member_ids));
 
-  return groups
-    .map((groupName, idx) => {
-      const members = workStore.activeMembers.filter(m => (m.group ?? '').trim() === groupName);
-      if (!members.length) return null;
-      const memberIds = new Set(members.map(m => m.id));
+  const nonEmptyGroups = workStore.partyGroupNames
+    .map(groupName => ({
+      groupName,
+      members: workStore.activeMembers.filter(m => (m.group ?? '').trim() === groupName)
+    }))
+    .filter(g => g.members.length > 0)
+    .slice(0, 5);
 
-      // 综合活力分：考勤出勤率 40% + 谈话覆盖率 30% + 志愿参与率 30%
-      const attRows = workStore.attendance.filter(a => yearEvents.has(a.event_id) && memberIds.has(a.member_id));
-      const attRate = attRows.length
-        ? (attRows.filter(a => a.status === '到会' || a.status === '迟到').length / attRows.length) * 100
-        : 80;
-      const talkedRate = (members.filter(m => talkedSet.has(m.id)).length / members.length) * 100;
-      const volRate = (members.filter(m => (volHoursByMember.get(m.id) ?? 0) > 0).length / members.length) * 100;
-      const composite = Math.round(attRate * 0.4 + talkedRate * 0.3 + volRate * 0.3);
+  return nonEmptyGroups.map(({ groupName, members }, idx) => {
+    const memberIds = new Set(members.map(m => m.id));
 
-      return {
-        name: `${groupName} (${members.length}人)`,
-        percentage: Math.min(100, Math.max(8, composite)),
-        value: composite,
-        suffix: '分',
-        color: palette.value.series[idx % palette.value.series.length]
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+    // 综合活力分：考勤出勤率 40% + 谈话覆盖率 30% + 志愿参与率 30%
+    const attRows = workStore.attendance.filter(a => yearEvents.has(a.event_id) && memberIds.has(a.member_id));
+    const attRate = attRows.length
+      ? (attRows.filter(a => a.status === '到会' || a.status === '迟到').length / attRows.length) * 100
+      : 80;
+    const talkedRate = (members.filter(m => talkedSet.has(m.id)).length / members.length) * 100;
+    const volRate = (members.filter(m => (volHoursByMember.get(m.id) ?? 0) > 0).length / members.length) * 100;
+    const composite = Math.min(100, Math.max(0, Math.round(attRate * 0.4 + talkedRate * 0.3 + volRate * 0.3)));
+
+    return {
+      name: `${groupName} (${members.length}人)`,
+      percentage: composite,
+      value: composite,
+      suffix: '分',
+      color: palette.value.series[idx % palette.value.series.length]
+    };
+  });
 });
 
 const onionConfig = computed<VueUiOnionConfig>(() => ({
@@ -570,8 +592,8 @@ const onionConfig = computed<VueUiOnionConfig>(() => ({
           roundingValue: 0,
           roundingPercentage: 0,
           bold: true,
-          value: { show: false },
-          percentage: { show: true }
+          value: { show: true },
+          percentage: { show: false }
         }
       },
       legend: {
@@ -580,7 +602,8 @@ const onionConfig = computed<VueUiOnionConfig>(() => ({
         color: palette.value.ink,
         fontSize: 11,
         roundingValue: 0,
-        roundingPercentage: 0
+        roundingPercentage: 0,
+        showPercentage: false
       },
       tooltip: {
         show: true,
@@ -778,10 +801,14 @@ const onionConfig = computed<VueUiOnionConfig>(() => ({
             </span>
           </div>
         </div>
-        <div v-else class="flex items-center gap-5px text-12px font-medium text-[#16a34a]">
+        <div
+          v-else-if="talksCoverageStats.total > 0"
+          class="flex items-center gap-5px text-12px font-medium text-[#16a34a]"
+        >
           <SvgIcon icon="lucide:check-circle-2" class="text-14px" />
           <span>本年度在册党员已全部完成谈话覆盖</span>
         </div>
+        <div v-else class="text-12px text-[var(--sct-muted)]">暂无在册正式/预备党员</div>
       </div>
     </div>
   </NCard>

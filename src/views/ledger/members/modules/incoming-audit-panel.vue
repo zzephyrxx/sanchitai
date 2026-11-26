@@ -59,13 +59,8 @@ function stateVisual(st?: Sct.AuditItemState): { symbol: string; cls: string; ti
 }
 
 async function cycleCell(member: Sct.Member, transfer: Sct.TransferRecord | undefined, itemKey: string) {
-  let tid = transfer?.id;
-  if (!tid) {
-    tid = await workStore.markMemberIncomingAudit(member.id, '');
-  }
-  const curItems = { ...transfer?.audit_items };
-  curItems[itemKey] = nextAuditState(curItems[itemKey]);
-  await workStore.updateIncomingAudit(tid, curItems);
+  const nextState = nextAuditState(transfer?.audit_items?.[itemKey]);
+  await workStore.patchIncomingAuditItem(member.id, itemKey, nextState, transfer?.id);
 }
 
 async function openDetailDrawer(member: Sct.Member, transfer?: Sct.TransferRecord) {
@@ -99,7 +94,15 @@ async function saveDetailNotes() {
   window.$message?.success('核查备注已保存');
 }
 
-async function handleApproveMember(transferId: string, name: string) {
+async function handleApproveMember(transferId: string, name: string, flushLocalDrawer = false) {
+  if (flushLocalDrawer && activeRow.value?.transfer?.id === transferId) {
+    await workStore.updateIncomingAudit(
+      transferId,
+      activeRow.value.transfer.audit_items ?? {},
+      { ...localNotes },
+      localSourceOrg.value
+    );
+  }
   await workStore.approveIncomingAudit(transferId);
   detailDrawerShow.value = false;
   window.$message?.success(`「${name}」档案核查通过，已正式入册`);
@@ -360,15 +363,22 @@ async function handleAddMemberToAudit() {
                 <template #icon><SvgIcon icon="lucide:file-down" /></template>
                 导出《商请核实函》
               </NButton>
-              <NButton
+              <NPopconfirm
                 v-if="activeRow?.transfer"
-                size="small"
-                type="primary"
-                @click="handleApproveMember(activeRow.transfer.id, activeRow.member.name)"
+                @positive-click="handleApproveMember(activeRow.transfer.id, activeRow.member.name, true)"
               >
-                <template #icon><SvgIcon icon="lucide:check-circle-2" /></template>
-                核查通过并入册
-              </NButton>
+                <template #trigger>
+                  <NButton size="small" type="primary">
+                    <template #icon><SvgIcon icon="lucide:check-circle-2" /></template>
+                    核查通过并入册
+                  </NButton>
+                </template>
+                {{
+                  activeRow.issueCount > 0
+                    ? `该同志仍有 ${activeRow.issueCount} 项缺失或存疑材料，确认保存备注并放行入册？`
+                    : `确认「${activeRow.member.name}」档案核查通过并转为在册正常？`
+                }}
+              </NPopconfirm>
             </div>
           </div>
         </template>

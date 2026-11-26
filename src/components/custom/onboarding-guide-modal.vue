@@ -8,7 +8,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router';
 import { GUIDE_GROUPS, USER_GUIDE_CHAPTERS } from '@/constants/user-guide';
 import type { GuideChapter } from '@/constants/user-guide';
-import { DEFAULT_BRANCH_NAME, ONBOARDING_CURRENT_VERSION } from '@/constants/workspace-presets';
+import {
+  DEFAULT_BRANCH_NAME,
+  ONBOARDING_CURRENT_VERSION,
+  normalizeWorkspaceConfig
+} from '@/constants/workspace-presets';
 import {
   closeOnboardingGuide,
   onboardingStage,
@@ -19,7 +23,7 @@ import {
 } from '@/utils/onboarding-bus';
 import { runSpotlightTour, stopSpotlightTour } from '@/utils/spotlight-tour';
 import { useWorkDataStore } from '@/store/modules/work-data';
-import { clearAllData } from '@/db/db';
+import { clearAllData, getMeta } from '@/db/db';
 
 defineOptions({ name: 'OnboardingGuideModal' });
 
@@ -30,15 +34,27 @@ function launchTour(startStepId?: string) {
   void runSpotlightTour(router, startStepId);
 }
 
-onMounted(() => {
+let unmounted = false;
+
+onMounted(async () => {
   registerSpotlightLauncher(launchTour);
-  if (!workStore.workspaceConfig.onboardingCompleted) {
+  const [rawCfg, persistedBranch] = await Promise.all([
+    getMeta<unknown>('workspace-config'),
+    getMeta<string>('branch-name')
+  ]);
+  if (unmounted) return;
+  const resolvedCfg = rawCfg ? normalizeWorkspaceConfig(rawCfg) : workStore.workspaceConfig;
+  if (persistedBranch) {
+    setupForm.branchName = persistedBranch;
+  }
+  if (!resolvedCfg.onboardingCompleted) {
     onboardingStage.value = 'setup';
     onboardingVisible.value = true;
   }
 });
 
 onBeforeUnmount(() => {
+  unmounted = true;
   unregisterSpotlightLauncher(launchTour);
   stopSpotlightTour();
 });

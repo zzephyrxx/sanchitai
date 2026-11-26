@@ -547,7 +547,7 @@ export async function syncMemberPartyStatuses(): Promise<number> {
   return updates.filter(u => u.typeChanged).length;
 }
 
-/** 写入核心党务台账分组 */
+/** 写入核心党务台账分组（原子写入含关联 meta 键，缺失可选字段时显式清理旧值防脏数据残留） */
 async function replaceCoreTables(shape: BackupShape): Promise<void> {
   await db.transaction(
     'rw',
@@ -562,7 +562,8 @@ async function replaceCoreTables(shape: BackupShape): Promise<void> {
       db.pointRecords,
       db.pointVetoes,
       db.transferRecords,
-      db.volunteerActivities
+      db.volunteerActivities,
+      db.meta
     ],
     async () => {
       await Promise.all([
@@ -591,63 +592,83 @@ async function replaceCoreTables(shape: BackupShape): Promise<void> {
         db.transferRecords.bulkPut(shape.transfer_records ?? []),
         db.volunteerActivities.bulkPut(shape.volunteer_activities ?? [])
       ]);
+
+      if (shape.branch_name && typeof shape.branch_name === 'string') {
+        await db.meta.put({ key: 'branch-name', value: shape.branch_name.trim() });
+      }
+      if (Array.isArray(shape.point_rules)) {
+        await db.meta.put({ key: 'point-rules', value: shape.point_rules });
+      } else {
+        await db.meta.delete('point-rules');
+      }
+      if (Array.isArray(shape.point_schemes)) {
+        await db.meta.put({ key: 'point-schemes', value: shape.point_schemes });
+      } else {
+        await db.meta.delete('point-schemes');
+      }
+      if (shape.point_year_scheme && typeof shape.point_year_scheme === 'object') {
+        await db.meta.put({ key: 'point-year-scheme', value: shape.point_year_scheme });
+      } else {
+        await db.meta.delete('point-year-scheme');
+      }
+      if (shape.point_year_snapshots && typeof shape.point_year_snapshots === 'object') {
+        await db.meta.put({ key: 'point-year-snapshots', value: shape.point_year_snapshots });
+      } else {
+        await db.meta.delete('point-year-snapshots');
+      }
+      if (shape.workspace_config && typeof shape.workspace_config === 'object') {
+        await db.meta.put({ key: 'workspace-config', value: shape.workspace_config });
+      }
+      if (Array.isArray(shape.party_groups)) {
+        await db.meta.put({ key: 'party-groups', value: shape.party_groups });
+      } else {
+        await db.meta.delete('party-groups');
+      }
+      if (Array.isArray(shape.youth_committee_slots)) {
+        await db.meta.put({ key: 'youth-committee-slots', value: shape.youth_committee_slots });
+      } else {
+        await db.meta.delete('youth-committee-slots');
+      }
     }
   );
-  if (shape.branch_name && typeof shape.branch_name === 'string') {
-    await setMeta('branch-name', shape.branch_name.trim());
-  }
-  if (Array.isArray(shape.point_rules)) {
-    await setMeta('point-rules', shape.point_rules);
-  }
-  if (Array.isArray(shape.point_schemes)) {
-    await setMeta('point-schemes', shape.point_schemes);
-  }
-  if (shape.point_year_scheme && typeof shape.point_year_scheme === 'object') {
-    await setMeta('point-year-scheme', shape.point_year_scheme);
-  }
-  if (shape.point_year_snapshots && typeof shape.point_year_snapshots === 'object') {
-    await setMeta('point-year-snapshots', shape.point_year_snapshots);
-  }
-  if (shape.workspace_config && typeof shape.workspace_config === 'object') {
-    await setMeta('workspace-config', shape.workspace_config);
-  }
-  if (Array.isArray(shape.party_groups)) {
-    await setMeta('party-groups', shape.party_groups);
-  }
-  if (Array.isArray(shape.youth_committee_slots)) {
-    await setMeta('youth-committee-slots', shape.youth_committee_slots);
-  }
 }
 
-/** 写入材料库、资料库与流程图分组 */
+/** 写入材料库、资料库与流程图分组（原子事务并清理缺失的旧归档文件） */
 async function replaceLibraryTables(shape: BackupShape): Promise<void> {
   const templates =
     Array.isArray(shape.doc_templates) && shape.doc_templates.length > 0
       ? shape.doc_templates
       : getBuiltinDocTemplates();
-  await db.transaction('rw', [db.docTemplates, db.docs], async () => {
+  await db.transaction('rw', [db.docTemplates, db.docs, db.meta], async () => {
     await Promise.all([db.docTemplates.clear(), db.docs.clear()]);
     await Promise.all([db.docTemplates.bulkPut(templates), db.docs.bulkPut(shape.docs ?? [])]);
-  });
-  if (shape.academy_flow !== undefined) {
-    await setMeta('academy-flow', shape.academy_flow);
-  }
-  if (shape.knowledge_custom_items !== undefined) {
-    await setMeta('knowledge-custom-items', shape.knowledge_custom_items);
-  }
-  if (shape.policy_cards !== undefined) {
-    await setMeta('policy-cards-v1', shape.policy_cards);
-  }
-  if (shape.policy_files && typeof shape.policy_files === 'object') {
+
+    if (shape.academy_flow !== undefined) {
+      await db.meta.put({ key: 'academy-flow', value: shape.academy_flow });
+    } else {
+      await db.meta.delete('academy-flow');
+    }
+    if (shape.knowledge_custom_items !== undefined) {
+      await db.meta.put({ key: 'knowledge-custom-items', value: shape.knowledge_custom_items });
+    } else {
+      await db.meta.delete('knowledge-custom-items');
+    }
+    if (shape.policy_cards !== undefined) {
+      await db.meta.put({ key: 'policy-cards-v1', value: shape.policy_cards });
+    } else {
+      await db.meta.delete('policy-cards-v1');
+    }
     const oldFileKeys = (await db.meta.filter(r => r.key.startsWith('policy-file-')).primaryKeys()) as string[];
     if (oldFileKeys.length) {
       await db.meta.bulkDelete(oldFileKeys);
     }
-    const entries = Object.entries(shape.policy_files).map(([key, value]) => ({ key, value }));
-    if (entries.length) {
-      await db.meta.bulkPut(entries);
+    if (shape.policy_files && typeof shape.policy_files === 'object') {
+      const entries = Object.entries(shape.policy_files).map(([key, value]) => ({ key, value }));
+      if (entries.length) {
+        await db.meta.bulkPut(entries);
+      }
     }
-  }
+  });
 }
 
 /** 静默替换业务数据（供桌面端 ⇄ 浏览器本机微服务实时同步使用，不写入环形快照） */
@@ -678,7 +699,7 @@ export async function importBackup(shape: BackupShape): Promise<void> {
   await replaceDataFromSync(shape);
 }
 
-/** 清空全部业务数据（保留 meta 备份与种子标记，并保留材料库 6 套内置默认模板） */
+/** 清空全部业务数据（保留 meta 备份、工作台配置与种子标记，并保留材料库内置默认模板） */
 export async function clearAllData(): Promise<void> {
   const builtins = getBuiltinDocTemplates();
   await db.transaction(
@@ -696,7 +717,8 @@ export async function clearAllData(): Promise<void> {
       db.pointRecords,
       db.pointVetoes,
       db.transferRecords,
-      db.volunteerActivities
+      db.volunteerActivities,
+      db.meta
     ],
     async () => {
       await Promise.all([
@@ -713,6 +735,19 @@ export async function clearAllData(): Promise<void> {
         db.pointVetoes.clear(),
         db.transferRecords.clear(),
         db.volunteerActivities.clear()
+      ]);
+      const policyFileKeys = (await db.meta.filter(r => r.key.startsWith('policy-file-')).primaryKeys()) as string[];
+      await db.meta.bulkDelete([
+        'party-groups',
+        'youth-committee-slots',
+        'point-rules',
+        'point-schemes',
+        'point-year-scheme',
+        'point-year-snapshots',
+        'academy-flow',
+        'knowledge-custom-items',
+        'policy-cards-v1',
+        ...policyFileKeys
       ]);
       if (builtins.length) {
         await db.docTemplates.bulkPut(builtins);

@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import { buildUni6040Scheme } from '@/constants/party-points';
 import { esc } from '@/utils/print';
 import { formatIdCardForExport, privacyModeFileSuffix } from '@/utils/privacy-export';
+import { expandRecurrence } from '@/utils/recurrence';
 
 export interface DimensionScoreDetail {
   id: string;
@@ -71,6 +72,7 @@ export interface SyncPointDraftSuggestion {
   date: string;
   category: Sct.PointCategory;
   subCategory: string;
+  ruleId?: string;
   ruleLabel: string;
   content: string;
   score: number;
@@ -286,7 +288,7 @@ export function computeMemberYearPoints(
   };
 }
 
-/** 扫描本年度考勤缺席、党费欠缴、志愿时长，生成「待核实积分草稿建议」供支书勾选导入 */
+/** 扫描本年度考勤缺席、党费欠缴、志愿时长，生成「待核实积分草稿建议」供支书勾选导入（按单次/增量防重，兼容循环会议） */
 export function buildPointDraftSuggestions(opts: {
   year: number;
   scheme: Sct.PointScheme;
@@ -299,8 +301,21 @@ export function buildPointDraftSuggestions(opts: {
 }): SyncPointDraftSuggestion[] {
   const { year, scheme, members, calEvents, attendance, feeRecords, volunteerActivities, existingRecords } = opts;
   const yearPrefix = `${year}-`;
+  const rangeStart = `${year}-01-01`;
+  const rangeEnd = `${year}-12-31`;
+  const defaultSyncDate = year === dayjs().year() ? dayjs().format('YYYY-MM-DD') : rangeEnd;
+
   const memberMap = new Map(members.map(m => [m.id, m]));
-  const eventMap = new Map(calEvents.map(e => [e.id, e]));
+  // 展开循环事件以匹配 `-occ-YYYY-MM-DD` 考勤记录
+  const eventMap = new Map<string, Sct.CalEvent>();
+  for (const ev of calEvents) {
+    eventMap.set(ev.id, ev);
+    if (ev.recurrence) {
+      for (const occ of expandRecurrence(ev, rangeStart, rangeEnd)) {
+        eventMap.set(occ.id, occ);
+      }
+    }
+  }
   const importedRefs = new Set(existingRecords.map(r => r.source_ref).filter((v): v is string => Boolean(v)));
 
   const suggestions: SyncPointDraftSuggestion[] = [];
@@ -315,76 +330,79 @@ export function buildPointDraftSuggestions(opts: {
     scheme.dimensions.find(d => d.id.includes('volunteer') || d.label.includes('志愿')) ??
     scheme.dimensions.find(d => d.mode === 'add_capped' || d.mode === 'add_uncapped');
 
-  // 1. 考勤未到会（按人聚合本年度未到会场次）
+  const meetingRule = scheme.rules.find(
+    r => r.sub_category === meetingDim?.id && r.enabled !== false && r.id === 'base-meeting-absent'
+  );
+  const feeRule = scheme.rules.find(
+    r => r.sub_category === feeDim?.id && r.enabled !== false && r.id === 'base-fee-late'
+  );
+  const volRule = scheme.rules.find(r => r.calc_mode === 'hours_20' && r.enabled !== false);
+
+  // 1. 考勤未到会（按单场次粒度去重，彻底杜绝后续同步重复扣分）
   if (meetingDim) {
-    const absentByMember = new Map<string, string[]>();
+    const unitDeduct = -Math.abs(meetingRule?.default_score ?? -1);
     for (const att of attendance) {
       if (att.status !== '未到会') continue;
-      const ev = eventMap.get(att.event_id);
-      if (!ev || !ev.date.startsWith(yearPrefix)) continue;
-      if (!memberMap.has(att.member_id)) continue;
-      const arr = absentByMember.get(att.member_id) ?? [];
-      arr.push(`${ev.date.slice(5)} ${ev.title}`);
-      absentByMember.set(att.member_id, arr);
-    }
-    for (const [memberId, list] of absentByMember.entries()) {
-      const m = memberMap.get(memberId);
+      const m = memberMap.get(att.member_id);
       if (!m) continue;
-      const ref = `sync:att:${year}:${memberId}:${list.length}`;
+      let ev = eventMap.get(att.event_id);
+      if (!ev) {
+        const occMatch = att.event_id.match(/^(.+?)(?:-occ-|~occ~)(\d{4}-\d{2}-\d{2})$/);
+        if (occMatch) {
+          const baseEv = eventMap.get(occMatch[1]);
+          if (baseEv) ev = { ...baseEv, id: att.event_id, date: occMatch[2] };
+        }
+      }
+      if (!ev || !ev.date.startsWith(yearPrefix)) continue;
+      const ref = `sync:att:${year}:${att.member_id}:${att.event_id}`;
       suggestions.push({
         sourceRef: ref,
         sourceKind: 'attendance',
         sourceBadge: '三会一课考勤',
-        memberId,
+        memberId: att.member_id,
         memberName: m.name,
-        date: dayjs().format('YYYY-MM-DD'),
+        date: ev.date,
         category: meetingDim.category,
         subCategory: meetingDim.id,
-        ruleLabel: `缺席组织生活（本年 ${list.length} 次）`,
-        content: `考勤同步：本年未到会 ${list.length} 次（${list.slice(0, 3).join('、')}${list.length > 3 ? '…' : ''}）`,
-        score: -list.length,
-        calcMeta: { count: list.length, base_score: -1 },
+        ruleId: meetingRule?.id,
+        ruleLabel: meetingRule?.label ?? '缺席「三会一课」/ 主题党日',
+        content: `考勤同步：${ev.date} 未到会「${ev.title}」`,
+        score: roundScore(unitDeduct),
+        calcMeta: { count: 1, base_score: unitDeduct },
         alreadyImported: importedRefs.has(ref)
       });
     }
   }
 
-  // 2. 党费欠缴（按人聚合本年度欠缴月份）
+  // 2. 党费欠缴（按单月粒度去重，避免新增欠缴月份导致累计重复扣分）
   if (feeDim) {
-    const owedByMember = new Map<string, string[]>();
+    const unitDeduct = -Math.abs(feeRule?.default_score ?? -3);
     for (const fee of feeRecords) {
       if (fee.status !== '欠缴' || !fee.year_month.startsWith(yearPrefix)) continue;
-      if (!memberMap.has(fee.member_id)) continue;
-      const arr = owedByMember.get(fee.member_id) ?? [];
-      arr.push(fee.year_month);
-      owedByMember.set(fee.member_id, arr);
-    }
-    for (const [memberId, months] of owedByMember.entries()) {
-      const m = memberMap.get(memberId);
+      const m = memberMap.get(fee.member_id);
       if (!m) continue;
-      const sorted = months.slice().sort();
-      const ref = `sync:fee:${year}:${memberId}:${sorted.length}`;
+      const ref = `sync:fee:${year}:${fee.member_id}:${fee.year_month}`;
       suggestions.push({
         sourceRef: ref,
         sourceKind: 'fee',
         sourceBadge: '党费收缴台账',
-        memberId,
+        memberId: fee.member_id,
         memberName: m.name,
-        date: dayjs().format('YYYY-MM-DD'),
+        date: `${fee.year_month}-28`,
         category: feeDim.category,
         subCategory: feeDim.id,
-        ruleLabel: `本年党费欠缴（${sorted.length} 个月）`,
-        content: `党费同步：欠缴月份 ${sorted.join('、')}`,
-        score: -roundScore(sorted.length * 3),
-        calcMeta: { count: sorted.length, base_score: -3 },
+        ruleId: feeRule?.id,
+        ruleLabel: feeRule?.label ?? '无故迟交党费',
+        content: `党费同步：${fee.year_month} 党费欠缴`,
+        score: roundScore(unitDeduct),
+        calcMeta: { count: 1, base_score: unitDeduct },
         alreadyImported: importedRefs.has(ref)
       });
     }
   }
 
-  // 3. 志愿时长台账（仅统计本年「已认定」活动总时长，按每 20 小时换算）
+  // 3. 志愿时长台账（增量同步：扣除已通过志愿同步入账的时长，避免后续新增活动重复累计计分）
   if (volunteerDim) {
-    const volRule = scheme.rules.find(r => r.calc_mode === 'hours_20' && r.enabled !== false);
     const unitPer20h = Math.abs(volRule?.default_score ?? 1);
     const hoursByMember = new Map<string, { hours: number; count: number }>();
     for (const act of volunteerActivities) {
@@ -400,7 +418,21 @@ export function buildPointDraftSuggestions(opts: {
     for (const [memberId, stat] of hoursByMember.entries()) {
       const m = memberMap.get(memberId);
       if (!m || stat.hours <= 0) continue;
-      const score = roundScore((stat.hours / 20) * unitPer20h);
+      const prevSyncedHours = roundScore(
+        existingRecords
+          .filter(
+            r =>
+              r.member_id === memberId &&
+              r.status !== '未通过' &&
+              typeof r.source_ref === 'string' &&
+              r.source_ref.startsWith(`sync:vol:${year}:${memberId}`)
+          )
+          .reduce((acc, r) => acc + (Number(r.calc_meta?.hours) || 0), 0)
+      );
+      const deltaHours = roundScore(stat.hours - prevSyncedHours);
+      const alreadyFullySynced = prevSyncedHours > 0 && deltaHours <= 0;
+      const calcHours = alreadyFullySynced ? stat.hours : deltaHours;
+      const score = roundScore((calcHours / 20) * unitPer20h);
       if (score <= 0) continue;
       const ref = `sync:vol:${year}:${memberId}:${stat.hours}`;
       suggestions.push({
@@ -409,14 +441,18 @@ export function buildPointDraftSuggestions(opts: {
         sourceBadge: '志愿时长台账',
         memberId,
         memberName: m.name,
-        date: dayjs().format('YYYY-MM-DD'),
+        date: defaultSyncDate,
         category: volunteerDim.category,
         subCategory: volunteerDim.id,
+        ruleId: volRule?.id,
         ruleLabel: volRule?.label ?? `志愿服务时长换算（每 20h = ${unitPer20h} 分）`,
-        content: `志愿台账同步：${year} 年度已认定 ${stat.count} 场活动，累计 ${stat.hours} 小时`,
+        content:
+          prevSyncedHours > 0 && !alreadyFullySynced
+            ? `志愿台账增量同步：本年新增 ${deltaHours} 小时（累计 ${stat.hours} 小时 / ${stat.count} 场）`
+            : `志愿台账同步：${year} 年度已认定 ${stat.count} 场活动，累计 ${stat.hours} 小时`,
         score,
-        calcMeta: { hours: stat.hours, base_score: unitPer20h },
-        alreadyImported: importedRefs.has(ref)
+        calcMeta: { hours: calcHours, base_score: unitPer20h },
+        alreadyImported: alreadyFullySynced || importedRefs.has(ref)
       });
     }
   }
@@ -555,7 +591,7 @@ export function buildBranchPointsPrintHtml(opts: {
           <td class="c">${formatScore(volScore)}</td>
           <td class="c"><b>${formatScore(s.dutyScore)}</b></td>
           <td class="c">+${formatScore(s.bonusScore)} / -${formatScore(s.penaltyDeduction)}</td>
-          <td style="font-size:11px;line-height:1.45">${esc(s.additionSummary || s.deductionSummary || '无')}</td>
+          <td style="font-size:11px;line-height:1.45">${esc([s.deductionSummary, s.additionSummary].filter(Boolean).join('；') || '无')}</td>
           <td class="c" style="font-weight:700;font-size:14px;${s.isWarning ? 'color:#c0392b;' : ''}">${formatScore(s.totalScore)}</td>
           <td class="c">${statusText}</td>
         </tr>

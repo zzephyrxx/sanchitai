@@ -68,18 +68,20 @@ const yearRecordsByMember = computed(() => {
   return map;
 });
 
-/** 考核范围：在册正式/预备党员 + 该年度已有积分记录的历史归档党员（保证往年账实相符） */
-const partyMembers = computed(() => {
-  const hasRecIds = new Set(yearRecordsByMember.value.keys());
-  return workStore.members.filter(
-    m => (m.type === '正式党员' || m.type === '预备党员') && (isMemberActive(m) || hasRecIds.has(m.id))
-  );
-});
-
 const vetoMap = computed(() => {
   const m = new Map<string, Sct.PointVeto>();
   workStore.pointVetoes.filter(v => v.year === selectedYear.value).forEach(v => m.set(v.member_id, v));
   return m;
+});
+
+/** 考核范围：在册正式/预备党员 + 该年度已有积分记录或一票否决标记的历史归档党员（保证往年账实相符） */
+const partyMembers = computed(() => {
+  const hasRecIds = new Set(yearRecordsByMember.value.keys());
+  return workStore.members.filter(
+    m =>
+      (m.type === '正式党员' || m.type === '预备党员') &&
+      (isMemberActive(m) || hasRecIds.has(m.id) || vetoMap.value.has(m.id))
+  );
 });
 
 const allSummaries = computed<MemberYearPointSummary[]>(() => {

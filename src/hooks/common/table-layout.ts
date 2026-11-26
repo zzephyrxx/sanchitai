@@ -42,14 +42,15 @@ function loadLayoutState(storageKey: string, defaultOrder: readonly string[]): T
     if (!raw) return { order: [...defaultOrder], widths: {} };
     const parsed = JSON.parse(raw) as Partial<TableLayoutState>;
     const validSet = new Set(defaultOrder);
+    const isAllowedKey = (k: string) => validSet.has(k) || k.startsWith('cf_');
     const savedOrder = Array.isArray(parsed.order)
-      ? parsed.order.filter((k): k is string => typeof k === 'string' && validSet.has(k))
+      ? Array.from(new Set(parsed.order.filter((k): k is string => typeof k === 'string' && isAllowedKey(k))))
       : [];
     const missing = defaultOrder.filter(k => !savedOrder.includes(k));
     const widths: Record<string, number> = {};
     if (parsed.widths && typeof parsed.widths === 'object') {
       Object.entries(parsed.widths).forEach(([k, v]) => {
-        if (validSet.has(k) && typeof v === 'number' && Number.isFinite(v) && v >= 48 && v <= 900) {
+        if (isAllowedKey(k) && typeof v === 'number' && Number.isFinite(v) && v >= 48 && v <= 900) {
           widths[k] = Math.round(v);
         }
       });
@@ -85,9 +86,9 @@ export function useTableColumnLayout<T>(options: TableLayoutOptions<T>) {
 
   const hasCustomLayout = computed(() => {
     const hasCustomWidth = Object.keys(colWidths.value).length > 0;
+    const baseKeys = colOrder.value.filter(k => options.defaultOrder.includes(k));
     const hasCustomOrder =
-      colOrder.value.length === options.defaultOrder.length &&
-      colOrder.value.some((k, idx) => k !== options.defaultOrder[idx]);
+      baseKeys.length === options.defaultOrder.length && baseKeys.some((k, idx) => k !== options.defaultOrder[idx]);
     return hasCustomWidth || hasCustomOrder;
   });
 

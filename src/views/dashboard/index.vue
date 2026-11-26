@@ -198,14 +198,13 @@ function onWidgetPointerDown(w: WidgetDef, e: PointerEvent) {
 
 onBeforeUnmount(cleanupDashDrag);
 
-const activeWidgets = computed(() =>
-  widgetOrder.value
-    .map(id => WIDGET_DEFS.value.find(d => d.id === id))
-    .filter((d): d is WidgetDef =>
-      Boolean(d && (!d.moduleKey || workStore.workspaceConfig.enabledModules[d.moduleKey]))
-    )
+const enabledWidgetDefs = computed(() =>
+  WIDGET_DEFS.value.filter(d => !d.moduleKey || workStore.workspaceConfig.enabledModules[d.moduleKey])
 );
-const hiddenWidgets = computed(() => DEFAULT_ORDER.filter(id => !widgetOrder.value.includes(id)));
+const activeWidgets = computed(() =>
+  widgetOrder.value.map(id => enabledWidgetDefs.value.find(d => d.id === id)).filter((d): d is WidgetDef => Boolean(d))
+);
+const hiddenWidgets = computed(() => enabledWidgetDefs.value.filter(d => !widgetOrder.value.includes(d.id)));
 
 function persistWidgets() {
   localStorage.setItem(WIDGET_STORE_KEY, JSON.stringify(widgetOrder.value));
@@ -224,11 +223,14 @@ function addWidget(id: string) {
 }
 
 function moveWidget(id: string, dir: -1 | 1) {
-  const idx = widgetOrder.value.indexOf(id);
-  const next = idx + dir;
-  if (idx < 0 || next < 0 || next >= widgetOrder.value.length) return;
+  const activeIdx = activeWidgets.value.findIndex(w => w.id === id);
+  const targetWidget = activeWidgets.value[activeIdx + dir];
+  if (activeIdx < 0 || !targetWidget) return;
+  const fromIdx = widgetOrder.value.indexOf(id);
+  const toIdx = widgetOrder.value.indexOf(targetWidget.id);
+  if (fromIdx < 0 || toIdx < 0) return;
   const arr = [...widgetOrder.value];
-  arr.splice(next, 0, arr.splice(idx, 1)[0]);
+  arr.splice(toIdx, 0, arr.splice(fromIdx, 1)[0]);
   widgetOrder.value = arr;
   persistWidgets();
 }
@@ -401,28 +403,32 @@ const stageBars = computed(() => {
 
 // ---------------- 近 6 月党费缴纳率折线 ----------------
 const feeOption = computed(() => {
+  const currentYm = dayjs().format('YYYY-MM');
   const months: string[] = [];
   for (let i = 5; i >= 0; i -= 1) months.push(dayjs().subtract(i, 'month').format('YYYY-MM'));
   const rates = months.map(ym => {
-    const rows = workStore.feeRecords.filter(f => f.year_month === ym && f.status !== '未在校');
+    const rows = workStore.feeRecords.filter(
+      f => f.year_month === ym && f.status !== '未在校' && (ym !== currentYm || feeMemberIds.value.has(f.member_id))
+    );
     if (!rows.length) return 0;
     const paid = rows.filter(f => f.status === '已缴').length;
     return Math.round((paid / rows.length) * 100);
   });
+  const dark = themeStore.darkMode;
   return {
     tooltip: { trigger: 'axis' },
     grid: { left: 36, right: 14, top: 18, bottom: 22 },
-    textStyle: { color: '#71717a', fontSize: 11 },
+    textStyle: { color: dark ? '#9ca3af' : '#71717a', fontSize: 11 },
     xAxis: {
       type: 'category',
       data: months,
-      axisLine: { lineStyle: { color: 'var(--sct-border)' } },
+      axisLine: { lineStyle: { color: dark ? '#374151' : '#dcd9d0' } },
       axisTick: { show: false }
     },
     yAxis: {
       type: 'value',
       max: 100,
-      splitLine: { lineStyle: { color: '#f0ede8' } },
+      splitLine: { lineStyle: { color: dark ? '#2a303c' : '#f0ede8' } },
       axisLabel: { formatter: '{value}%' }
     },
     series: [
@@ -433,8 +439,8 @@ const feeOption = computed(() => {
         symbol: 'circle',
         symbolSize: 7,
         lineStyle: { color: inkColor.value, width: 2.5 },
-        itemStyle: { color: inkColor.value, borderColor: '#1f2430', borderWidth: 2 },
-        areaStyle: { color: 'rgba(140, 140, 140, 0.10)' }
+        itemStyle: { color: inkColor.value, borderColor: dark ? '#12161f' : '#ffffff', borderWidth: 2 },
+        areaStyle: { color: dark ? 'rgba(229, 227, 222, 0.12)' : 'rgba(140, 140, 140, 0.10)' }
       }
     ]
   };
@@ -474,13 +480,7 @@ const weekCategoryCount = computed(() => {
     >
       <div class="flex flex-wrap items-center gap-8px text-12px">
         <span class="font-bold text-gray-500">{{ bi('添加组件：', 'Add Widgets:') }}</span>
-        <NButton
-          v-for="d in WIDGET_DEFS.filter(x => !widgetOrder.includes(x.id))"
-          :key="d.id"
-          size="tiny"
-          secondary
-          @click="addWidget(d.id)"
-        >
+        <NButton v-for="d in hiddenWidgets" :key="d.id" size="tiny" secondary @click="addWidget(d.id)">
           <template #icon><SvgIcon icon="lucide:plus" /></template>
           {{ d.title }}
         </NButton>
@@ -707,7 +707,11 @@ const weekCategoryCount = computed(() => {
               <div v-if="!weekItems.length" class="text-12px text-gray-400">
                 {{ bi('未来一周无节点与会议', 'No milestones or meetings in the next 7 days') }}
               </div>
-              <div v-for="(it, i) in weekItems" :key="'w' + i" class="mb-4px text-12px leading-relaxed text-gray-600">
+              <div
+                v-for="(it, i) in weekItems"
+                :key="'w' + i"
+                class="mb-4px text-12px leading-relaxed text-[var(--sct-muted)]"
+              >
                 <span
                   class="mr-4px inline-block rounded-4px px-5px py-1px text-10px font-bold"
                   :style="{ background: 'var(--sct-container)', color: 'var(--sct-ink)' }"

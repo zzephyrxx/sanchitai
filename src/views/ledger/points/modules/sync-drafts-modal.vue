@@ -67,6 +67,7 @@ async function handleImport() {
         date: item.date,
         category: item.category,
         sub_category: item.subCategory,
+        rule_id: item.ruleId,
         rule_label: item.ruleLabel,
         content: item.content,
         score: item.score,

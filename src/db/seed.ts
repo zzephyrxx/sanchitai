@@ -29,11 +29,14 @@ function withIdentity<T>(rows: T[]): (T & { identity: string })[] {
   return rows.map(r => ({ ...r, identity: 'secretary' }));
 }
 
-/** 启动时调用：版本不符则 upsert 重播种（保留用户自增数据），打标记 */
+/** 启动时调用：仅在全新空白库（无 seed-flag）时播种演示数据；已存在旧版本标记时绝不覆盖或注入演示记录 */
 export async function ensureSeeded(): Promise<void> {
   const flag = await getMeta<string>(SEED_FLAG);
-  if (flag === SEED_VERSION) {
+  if (flag) {
     await ensureDefaultDocTemplates();
+    if (flag !== SEED_VERSION) {
+      await setMeta(SEED_FLAG, SEED_VERSION);
+    }
     return;
   }
 
@@ -257,21 +260,33 @@ export async function ensureSeeded(): Promise<void> {
         await db.devStages.bulkPut(withIdentity(SEED.developmentStages));
         await db.feeRecords.bulkPut(withIdentity(SEED.feeRecords));
         await db.talks.bulkPut(withIdentity(SEED.talks));
+        if (demoPoints.length && (await db.pointRecords.count()) === 0) {
+          await db.pointRecords.bulkPut(demoPoints);
+        }
+        if (demoVolunteers.length && (await db.volunteerActivities.count()) === 0) {
+          await db.volunteerActivities.bulkPut(demoVolunteers);
+        }
       }
       if ((await db.docTemplates.count()) === 0) {
         await db.docTemplates.bulkPut(withIdentity(SEED.docTemplates));
-      }
-      if (demoPoints.length && (await db.pointRecords.count()) === 0) {
-        await db.pointRecords.bulkPut(demoPoints);
-      }
-      if (demoVolunteers.length && (await db.volunteerActivities.count()) === 0) {
-        await db.volunteerActivities.bulkPut(demoVolunteers);
       }
     }
   );
 
   await setMeta(SEED_FLAG, SEED_VERSION);
 }
+
+const BUSINESS_META_KEYS = [
+  'party-groups',
+  'youth-committee-slots',
+  'point-rules',
+  'point-schemes',
+  'point-year-scheme',
+  'point-year-snapshots',
+  'academy-flow',
+  'knowledge-custom-items',
+  'policy-cards-v1'
+] as const;
 
 /** 重置为种子数据（设置页"重置演示数据"用） */
 export async function resetToSeed(): Promise<void> {
@@ -290,7 +305,8 @@ export async function resetToSeed(): Promise<void> {
       db.pointRecords,
       db.pointVetoes,
       db.transferRecords,
-      db.volunteerActivities
+      db.volunteerActivities,
+      db.meta
     ],
     async () => {
       await Promise.all([
@@ -308,8 +324,9 @@ export async function resetToSeed(): Promise<void> {
         db.transferRecords.clear(),
         db.volunteerActivities.clear()
       ]);
+      const policyFileKeys = (await db.meta.filter(r => r.key.startsWith('policy-file-')).primaryKeys()) as string[];
+      await db.meta.bulkDelete([...BUSINESS_META_KEYS, SEED_FLAG, ...policyFileKeys]);
     }
   );
-  await db.meta.delete(SEED_FLAG);
   await ensureSeeded();
 }

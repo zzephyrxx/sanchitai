@@ -7,18 +7,22 @@
  */
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import type { RouteKey } from '@elegant-router/types';
 import { DEFAULT_ENABLED_MODULES, WORKSHOP_MODULES, WORKSHOP_MODULE_GROUPS } from '@/constants/workspace-presets';
 import type { WorkshopModuleGroup } from '@/constants/workspace-presets';
+import { useTabStore } from '@/store/modules/tab';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 
 defineOptions({ name: 'ModuleManagerButton' });
 
-withDefaults(defineProps<{ collapsed?: boolean }>(), {
-  collapsed: false
+withDefaults(defineProps<{ collapsed?: boolean; floating?: boolean }>(), {
+  collapsed: false,
+  floating: false
 });
 
 const router = useRouter();
+const tabStore = useTabStore();
 const workStore = useWorkDataStore();
 const { bi } = useSctI18n();
 
@@ -34,13 +38,26 @@ const groupedModules = computed(() =>
   }))
 );
 
-async function toggleModule(key: Sct.OptionalModuleKey, val: boolean) {
-  await workStore.updateWorkspaceConfig({
-    enabledModules: {
-      ...enabledModules.value,
-      [key]: val
+async function redirectIfCurrentRouteDisabled(nextEnabled: Record<Sct.OptionalModuleKey, boolean>) {
+  const currentName = String(router.currentRoute.value.name ?? '');
+  const matchedMod = WORKSHOP_MODULES.find(m => m.routeName === currentName);
+  if (matchedMod && !nextEnabled[matchedMod.key]) {
+    await tabStore.removeTabByRouteName(currentName as RouteKey);
+    if (String(router.currentRoute.value.name ?? '') === currentName) {
+      await router.push({ name: 'dashboard' });
     }
-  });
+  }
+}
+
+async function toggleModule(key: Sct.OptionalModuleKey, val: boolean) {
+  const nextEnabled = {
+    ...enabledModules.value,
+    [key]: val
+  };
+  await workStore.updateWorkspaceConfig({ enabledModules: nextEnabled });
+  if (!val) {
+    await redirectIfCurrentRouteDisabled(nextEnabled);
+  }
 }
 
 async function enableAllModules() {
@@ -55,12 +72,14 @@ async function toggleGroupAll(group: WorkshopModuleGroup, val: boolean) {
   for (const m of WORKSHOP_MODULES) {
     if (m.group === group) patch[m.key] = val;
   }
-  await workStore.updateWorkspaceConfig({
-    enabledModules: {
-      ...enabledModules.value,
-      ...patch
-    }
-  });
+  const nextEnabled = {
+    ...enabledModules.value,
+    ...patch
+  };
+  await workStore.updateWorkspaceConfig({ enabledModules: nextEnabled });
+  if (!val) {
+    await redirectIfCurrentRouteDisabled(nextEnabled);
+  }
 }
 
 function jumpToModule(routeName?: string) {
@@ -71,11 +90,12 @@ function jumpToModule(routeName?: string) {
 </script>
 
 <template>
-  <div data-tour="module-manager" class="px-10px pt-6px pb-2px">
+  <div data-tour="module-manager" :class="floating ? '' : 'px-10px pt-6px pb-2px'">
     <button
       v-if="!collapsed"
       type="button"
       class="sider-mod-trigger w-full flex items-center justify-between gap-8px px-12px py-8px text-13.5px"
+      :class="{ 'sider-mod-trigger--floating': floating }"
       :title="bi('模块管理', 'Module Manager')"
       @click="modalShow = true"
     >
@@ -89,6 +109,7 @@ function jumpToModule(routeName?: string) {
       v-else
       type="button"
       class="sider-mod-trigger mx-auto flex size-36px items-center justify-center"
+      :class="{ 'sider-mod-trigger--floating': floating }"
       :title="bi('模块管理', 'Module Manager')"
       @click="modalShow = true"
     >
@@ -193,6 +214,17 @@ function jumpToModule(routeName?: string) {
 
 .sider-mod-trigger:hover {
   color: var(--sct-ink);
+  background: var(--sct-soft);
+}
+
+.sider-mod-trigger--floating {
+  border: 1px solid var(--sct-border);
+  background: var(--sct-container);
+  color: var(--sct-ink);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.sider-mod-trigger--floating:hover {
   background: var(--sct-soft);
 }
 </style>

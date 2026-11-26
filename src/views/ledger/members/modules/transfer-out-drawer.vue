@@ -152,6 +152,11 @@ async function saveAsInProgress() {
 
 async function confirmCompleteAndArchive() {
   if (!member.value) return;
+  if (!form.target_branch.trim() && !form.target_committee.trim()) {
+    window.$message?.warning('请先填写接收单位上级党委或具体党支部名称后再办结归档');
+    currentStep.value = 1;
+    return;
+  }
   busy.value = true;
   try {
     const id = await workStore.initiateTransferOut(member.value.id, {

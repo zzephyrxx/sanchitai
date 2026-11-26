@@ -12,7 +12,8 @@ export function maskIdCard(value?: string | null): string {
 export function maskPhone(value?: string | null): string {
   const raw = (value ?? '').trim();
   if (!raw) return '';
-  if (raw.length < 7) return `${raw.slice(0, 2)}****`;
+  if (raw.length <= 7) return `${raw.slice(0, 2)}****`;
+  if (raw.length === 8) return `${raw.slice(0, 2)}****${raw.slice(-2)}`;
   return `${raw.slice(0, 3)}****${raw.slice(-4)}`;
 }
 

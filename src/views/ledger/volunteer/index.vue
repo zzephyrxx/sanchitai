@@ -6,7 +6,7 @@
  * - 成员汇总含可视化进度条 + 可选「考核折算预览」+ 点击弹出个人志愿明细抽屉
  * - 双 Sheet Excel 导出（支持脱敏公示版/全量报送版）+ 电子纸风格一键打印公示单
  */
-import { computed, h, onBeforeUnmount, reactive, ref } from 'vue';
+import { computed, h, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { NButton, NTag } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import dayjs from 'dayjs';
@@ -34,8 +34,8 @@ const { bi } = useSctI18n();
 const viewMode = ref<'activities' | 'members'>('activities');
 const timeScope = ref<'year' | 'semester' | 'all' | 'custom'>('year');
 const customDateRange = ref<[string, string] | null>(null);
-const sourceFilter = ref<string>('');
-const typeFilter = ref<string>('');
+const sourceFilter = ref<string | null>(null);
+const typeFilter = ref<string | null>(null);
 const onlyPending = ref(false);
 const searchKeyword = ref('');
 
@@ -76,37 +76,51 @@ const currentRange = computed<{ start: string; end: string; label: string }>(() 
   return { start: '', end: '', label: '全部历史' };
 });
 
-const filteredActivities = computed(() => {
+const rangeScopedActivities = computed(() => {
   const { start, end } = currentRange.value;
-  const kw = searchKeyword.value.trim().toLowerCase();
   return workStore.volunteerActivities
     .filter(act => {
       if (start && act.date < start) return false;
       if (end && act.date > end) return false;
       if (sourceFilter.value && act.source !== sourceFilter.value) return false;
-      if (onlyPending.value && act.status !== '待核实') return false;
-      if (!kw) return true;
-      return (
-        act.title.toLowerCase().includes(kw) ||
-        (act.note ?? '').toLowerCase().includes(kw) ||
-        act.participants.some(p => p.name_snapshot.toLowerCase().includes(kw))
-      );
+      return true;
     })
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date));
 });
 
-const memberPoolForSummary = computed(() => {
-  const involvedIds = new Set<string>();
-  for (const act of filteredActivities.value) {
-    for (const p of act.participants) involvedIds.add(p.member_id);
-  }
-  return workStore.members.filter(m => {
-    if (!isMemberActive(m) && !involvedIds.has(m.id)) return false;
-    if (typeFilter.value && m.type !== typeFilter.value) return false;
-    return true;
+const filteredActivities = computed(() => {
+  const kw = searchKeyword.value.trim().toLowerCase();
+  return rangeScopedActivities.value.filter(act => {
+    if (onlyPending.value && act.status !== '待核实') return false;
+    if (!kw) return true;
+    return (
+      act.title.toLowerCase().includes(kw) ||
+      (act.note ?? '').toLowerCase().includes(kw) ||
+      act.participants.some(p => p.name_snapshot.toLowerCase().includes(kw))
+    );
   });
 });
+
+const memberPoolForSummary = computed(() => {
+  const involvedIds = new Set<string>();
+  for (const act of rangeScopedActivities.value) {
+    for (const p of act.participants) involvedIds.add(p.member_id);
+  }
+  return workStore.members.filter(m => isMemberActive(m) || involvedIds.has(m.id));
+});
+
+const baseMemberSummaries = computed<MemberVolunteerSummary[]>(() =>
+  computeVolunteerSummaries({
+    members: memberPoolForSummary.value,
+    activities: rangeScopedActivities.value,
+    conversion: {
+      enabled: conversionEnabled.value,
+      maxHours: conversionMaxHours.value,
+      semesters: conversionSemesters.value
+    }
+  })
+);
 
 const memberSummaries = computed<MemberVolunteerSummary[]>(() => {
   const kw = searchKeyword.value.trim().toLowerCase();
@@ -155,7 +169,7 @@ const kpiStats = computed(() => {
 });
 
 const activeDetailSummary = computed(() =>
-  detailMemberId.value ? (memberSummaries.value.find(s => s.member.id === detailMemberId.value) ?? null) : null
+  detailMemberId.value ? (baseMemberSummaries.value.find(s => s.member.id === detailMemberId.value) ?? null) : null
 );
 
 function openCreateActivity() {
@@ -239,6 +253,10 @@ const memberPagination = reactive({
     memberPagination.pageSize = ps;
     memberPagination.page = 1;
   }
+});
+
+watch([searchKeyword, typeFilter, timeScope, customDateRange, sourceFilter, onlyPending], () => {
+  memberPagination.page = 1;
 });
 
 const memberColumns = computed<DataTableColumns<MemberVolunteerSummary>>(() => {

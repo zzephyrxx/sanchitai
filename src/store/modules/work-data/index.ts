@@ -466,23 +466,28 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   /** 检测成员是否存在历史台账记录（有历史记录则拦截物理删除，引导走关系转出/归档） */
   async function canHardDeleteMember(memberId: string): Promise<{ allowed: boolean; reasons: string[] }> {
     const reasons: string[] = [];
-    const [feeCnt, attCnt, ptCnt, tfCnt, devRow, allTalks, allVols] = await Promise.all([
+    const [feeCnt, attCnt, ptCnt, vetoCnt, tfCnt, devRow, allTalks, allVols, allDocs] = await Promise.all([
       db.feeRecords.where('member_id').equals(memberId).count(),
       db.attendance.where('member_id').equals(memberId).count(),
       db.pointRecords.where('member_id').equals(memberId).count(),
+      db.pointVetoes.where('member_id').equals(memberId).count(),
       db.transferRecords.where('member_id').equals(memberId).count(),
       db.devStages.get(memberId),
       db.talks.toArray(),
-      db.volunteerActivities.toArray()
+      db.volunteerActivities.toArray(),
+      db.docs.toArray()
     ]);
     if (feeCnt > 0) reasons.push(`党费记录 ${feeCnt} 条`);
     if (attCnt > 0) reasons.push(`会议考勤 ${attCnt} 条`);
     if (ptCnt > 0) reasons.push(`积分记录 ${ptCnt} 条`);
+    if (vetoCnt > 0) reasons.push(`一票否决记录 ${vetoCnt} 条`);
     if (tfCnt > 0) reasons.push(`组织关系转接记录 ${tfCnt} 条`);
     const talkCnt = allTalks.filter(t => t.member_ids.includes(memberId)).length;
     if (talkCnt > 0) reasons.push(`谈心谈话 ${talkCnt} 条`);
     const volCnt = allVols.filter(v => v.participants.some(p => p.member_id === memberId)).length;
     if (volCnt > 0) reasons.push(`志愿服务 ${volCnt} 场`);
+    const docCnt = allDocs.filter(d => d.member_id === memberId).length;
+    if (docCnt > 0) reasons.push(`关联公文材料 ${docCnt} 篇`);
     const archivedMats = (devRow?.materials ?? []).filter(m => m.status === '已归档').length;
     if (archivedMats > 0) reasons.push(`已归档发展材料 ${archivedMats} 项`);
     return { allowed: reasons.length === 0, reasons };
@@ -498,27 +503,40 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
         return false;
       }
     }
-    await db.transaction(
-      'rw',
-      [db.members, db.devStages, db.feeRecords, db.pointRecords, db.pointVetoes, db.transferRecords, db.meta],
-      async () => {
-        await db.members.delete(id);
-        await db.devStages.delete(id);
-        await db.feeRecords.where('member_id').equals(id).delete();
-        await db.pointRecords.where('member_id').equals(id).delete();
-        await db.pointVetoes.where('member_id').equals(id).delete();
-        await db.transferRecords.where('member_id').equals(id).delete();
-        const youthRow = await db.meta.get('youth-committee-slots');
-        if (Array.isArray(youthRow?.value)) {
-          const slots = youthRow.value as Sct.YouthCommitteeSlot[];
-          if (slots.some(s => s.member_id === id)) {
-            await db.meta.put({
-              key: 'youth-committee-slots',
-              value: slots.map(s => (s.member_id === id ? { ...s, member_id: null } : s))
-            });
+    await guardWrite(
+      db.transaction(
+        'rw',
+        [
+          db.members,
+          db.devStages,
+          db.feeRecords,
+          db.attendance,
+          db.pointRecords,
+          db.pointVetoes,
+          db.transferRecords,
+          db.meta
+        ],
+        async () => {
+          await db.members.delete(id);
+          await db.devStages.delete(id);
+          await db.feeRecords.where('member_id').equals(id).delete();
+          await db.attendance.where('member_id').equals(id).delete();
+          await db.pointRecords.where('member_id').equals(id).delete();
+          await db.pointVetoes.where('member_id').equals(id).delete();
+          await db.transferRecords.where('member_id').equals(id).delete();
+          const youthRow = await db.meta.get('youth-committee-slots');
+          if (Array.isArray(youthRow?.value)) {
+            const slots = youthRow.value as Sct.YouthCommitteeSlot[];
+            if (slots.some(s => s.member_id === id)) {
+              await db.meta.put({
+                key: 'youth-committee-slots',
+                value: slots.map(s => (s.member_id === id ? { ...s, member_id: null } : s))
+              });
+            }
           }
         }
-      }
+      ),
+      '删除人员'
     );
     return true;
   }
@@ -1121,21 +1139,28 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     return rows.length;
   }
 
-  // ---------------- 工作台模块开关与自定义字段配置 ----------------
+  // ---------------- 工作台模块开关与自定义字段配置（事务读写防并发覆盖） ----------------
   async function updateWorkspaceConfig(patch: Partial<Sct.WorkspaceConfig>) {
-    const cur = workspaceConfig.value;
-    const next = normalizeWorkspaceConfig({
-      ...cur,
-      ...patch,
-      enabledModules: {
-        ...cur.enabledModules,
-        ...patch.enabledModules
-      },
-      customFields: patch.customFields ?? cur.customFields,
-      updatedAt: new Date().toISOString()
-    });
+    let next!: Sct.WorkspaceConfig;
+    await guardWrite(
+      db.transaction('rw', [db.meta], async () => {
+        const row = await db.meta.get('workspace-config');
+        const cur = row?.value ? normalizeWorkspaceConfig(row.value) : workspaceConfig.value;
+        next = normalizeWorkspaceConfig({
+          ...cur,
+          ...patch,
+          enabledModules: {
+            ...cur.enabledModules,
+            ...patch.enabledModules
+          },
+          customFields: patch.customFields ?? cur.customFields,
+          updatedAt: new Date().toISOString()
+        });
+        await db.meta.put({ key: 'workspace-config', value: plain(next) });
+      }),
+      '工作台配置'
+    );
     persistWorkspaceConfigSync(next);
-    await guardWrite(db.meta.put({ key: 'workspace-config', value: plain(next) }), '工作台配置');
     return next;
   }
 
@@ -1151,6 +1176,27 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
           value: slots.map(s => (s.member_id === memberId ? { ...s, member_id: null } : s))
         });
       }
+    }
+  }
+
+  /** 在成员生命周期流转时，自动关闭或取消同成员冲突的「办理中」旧转接记录，防止幽灵记录 */
+  async function closeConflictingOpenTransfers(memberId: string, closeStatus: '已完成' | '已取消', keepId?: string) {
+    const openRows = await db.transferRecords
+      .where('member_id')
+      .equals(memberId)
+      .filter(r => r.status === '办理中' && r.id !== keepId)
+      .toArray();
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const today = dayjs().format('YYYY-MM-DD');
+    for (const r of openRows) {
+      await db.transferRecords.put(
+        plain({
+          ...r,
+          status: closeStatus,
+          completed_date: closeStatus === '已完成' ? today : r.completed_date,
+          updated_at: now
+        })
+      );
     }
   }
 
@@ -1185,6 +1231,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     };
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await closeConflictingOpenTransfers(memberId, '已取消', id);
         await db.transferRecords.put(plain(row));
         await db.members.update(memberId, { lifecycle_status: '转出办理中' });
       }),
@@ -1213,11 +1260,12 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     transferId: string,
     receipt: { receipt_date?: string; receipt_no?: string; note?: string } = {}
   ) {
-    const existing = await db.transferRecords.get(transferId);
-    if (!existing) return;
     const completedDate = receipt.receipt_date || dayjs().format('YYYY-MM-DD');
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords, db.meta], async () => {
+        const existing = await db.transferRecords.get(transferId);
+        if (!existing || existing.direction !== 'out' || existing.status !== '办理中') return;
+        await closeConflictingOpenTransfers(existing.member_id, '已取消', transferId);
         await db.transferRecords.put(
           plain({
             ...existing,
@@ -1243,10 +1291,10 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   }
 
   async function cancelTransferOut(transferId: string) {
-    const existing = await db.transferRecords.get(transferId);
-    if (!existing) return;
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords], async () => {
+        const existing = await db.transferRecords.get(transferId);
+        if (!existing || existing.direction !== 'out' || existing.status !== '办理中') return;
         await db.transferRecords.put(
           plain({
             ...existing,
@@ -1281,8 +1329,10 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
           const m = await db.members.get(item.member_id);
           if (!m) continue;
           const done = Boolean(item.completeImmediately);
+          const recId = `tf-${nanoid(8)}`;
+          await closeConflictingOpenTransfers(item.member_id, '已取消', recId);
           const rec: Sct.TransferRecord = {
-            id: `tf-${nanoid(8)}`,
+            id: recId,
             member_id: item.member_id,
             member_name_snapshot: m.name,
             direction: 'out',
@@ -1322,28 +1372,48 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
   async function markMemberIncomingAudit(memberId: string, sourceOrg = '') {
     const m = memberOf(memberId);
-    const id = `tf-${nanoid(8)}`;
-    const row: Sct.TransferRecord = {
-      id,
-      member_id: memberId,
-      member_name_snapshot: m?.name ?? '',
-      direction: 'in',
-      status: '办理中',
-      initiated_date: dayjs().format('YYYY-MM-DD'),
-      source_org: sourceOrg.trim(),
-      audit_items: {},
-      audit_notes: {},
-      updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-      identity: 'secretary'
-    };
+    let resultId = '';
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords], async () => {
-        await db.transferRecords.put(plain(row));
+        const existingOpenIn = await db.transferRecords
+          .where('member_id')
+          .equals(memberId)
+          .filter(r => r.direction === 'in' && r.status === '办理中')
+          .first();
+        if (existingOpenIn) {
+          resultId = existingOpenIn.id;
+          if (sourceOrg.trim()) {
+            await db.transferRecords.put(
+              plain({
+                ...existingOpenIn,
+                source_org: sourceOrg.trim(),
+                updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+              })
+            );
+          }
+        } else {
+          resultId = `tf-${nanoid(8)}`;
+          await closeConflictingOpenTransfers(memberId, '已取消', resultId);
+          const row: Sct.TransferRecord = {
+            id: resultId,
+            member_id: memberId,
+            member_name_snapshot: m?.name ?? '',
+            direction: 'in',
+            status: '办理中',
+            initiated_date: dayjs().format('YYYY-MM-DD'),
+            source_org: sourceOrg.trim(),
+            audit_items: {},
+            audit_notes: {},
+            updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+            identity: 'secretary'
+          };
+          await db.transferRecords.put(plain(row));
+        }
         await db.members.update(memberId, { lifecycle_status: '转入待核查' });
       }),
       '加入转入档案核查'
     );
-    return id;
+    return resultId;
   }
 
   async function updateIncomingAudit(
@@ -1352,28 +1422,79 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     auditNotes?: Record<string, string>,
     sourceOrg?: string
   ) {
-    const existing = await db.transferRecords.get(transferId);
-    if (!existing) return;
     await guardWrite(
-      db.transferRecords.put(
-        plain({
-          ...existing,
-          source_org: sourceOrg !== undefined ? sourceOrg : existing.source_org,
-          audit_items: auditItems,
-          audit_notes: auditNotes ?? existing.audit_notes ?? {},
-          updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
-        })
-      ),
+      db.transaction('rw', [db.transferRecords], async () => {
+        const existing = await db.transferRecords.get(transferId);
+        if (!existing) return;
+        await db.transferRecords.put(
+          plain({
+            ...existing,
+            source_org: sourceOrg !== undefined ? sourceOrg : existing.source_org,
+            audit_items: auditItems,
+            audit_notes: auditNotes ?? existing.audit_notes ?? {},
+            updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+          })
+        );
+      }),
       '保存档案核查状态'
     );
   }
 
+  /** 原子更新转入核查矩阵单项（事务内合并，彻底杜绝快速连点丢状态与并发重复建单） */
+  async function patchIncomingAuditItem(
+    memberId: string,
+    itemKey: string,
+    nextState: Sct.AuditItemState,
+    transferId?: string
+  ) {
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        let existing = transferId ? await db.transferRecords.get(transferId) : undefined;
+        if (!existing) {
+          existing = await db.transferRecords
+            .where('member_id')
+            .equals(memberId)
+            .filter(r => r.direction === 'in' && r.status === '办理中')
+            .first();
+        }
+        const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+        if (!existing) {
+          const m = await db.members.get(memberId);
+          existing = {
+            id: `tf-${nanoid(8)}`,
+            member_id: memberId,
+            member_name_snapshot: m?.name ?? '',
+            direction: 'in',
+            status: '办理中',
+            initiated_date: dayjs().format('YYYY-MM-DD'),
+            source_org: '',
+            audit_items: {},
+            audit_notes: {},
+            updated_at: now,
+            identity: 'secretary'
+          };
+        }
+        await db.transferRecords.put(
+          plain({
+            ...existing,
+            audit_items: {
+              ...existing.audit_items,
+              [itemKey]: nextState
+            },
+            updated_at: now
+          })
+        );
+      }),
+      '更新档案核查项'
+    );
+  }
+
   async function approveIncomingAudit(transferId: string) {
-    const existing = await db.transferRecords.get(transferId);
-    if (!existing) return;
     const today = dayjs().format('YYYY-MM-DD');
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords], async () => {
+        const existing = await db.transferRecords.get(transferId);
+        if (!existing || existing.direction !== 'in' || existing.status !== '办理中') return;
         await db.transferRecords.put(
           plain({
             ...existing,
@@ -1396,8 +1517,9 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   ) {
     const m = memberOf(memberId);
     const statusLabel: Sct.MemberLifecycleStatus = direction === 'float_out' ? '流出党员' : '流入党员';
+    const recId = `tf-${nanoid(8)}`;
     const row: Sct.TransferRecord = {
-      id: `tf-${nanoid(8)}`,
+      id: recId,
       member_id: memberId,
       member_name_snapshot: m?.name ?? '',
       direction,
@@ -1411,6 +1533,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     };
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await closeConflictingOpenTransfers(memberId, '已完成', recId);
         await db.transferRecords.put(plain(row));
         await db.members.update(memberId, { lifecycle_status: statusLabel });
       }),
@@ -1429,7 +1552,8 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   async function archiveMemberStopped(memberId: string, reason: string) {
     const today = dayjs().format('YYYY-MM-DD');
     await guardWrite(
-      db.transaction('rw', [db.members, db.meta], async () => {
+      db.transaction('rw', [db.members, db.transferRecords, db.meta], async () => {
+        await closeConflictingOpenTransfers(memberId, '已取消');
         await releaseMemberActiveSlots(memberId);
         await db.members.update(memberId, {
           lifecycle_status: '停止发展',
@@ -1444,26 +1568,12 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   async function restoreMemberToActive(memberId: string) {
     await guardWrite(
       db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await closeConflictingOpenTransfers(memberId, '已完成');
         await db.members.update(memberId, {
           lifecycle_status: '在册正常',
           archived_at: '',
           archive_reason: ''
         });
-        const pendingFloating = await db.transferRecords
-          .where('member_id')
-          .equals(memberId)
-          .filter(r => (r.direction === 'float_out' || r.direction === 'float_in') && r.status === '办理中')
-          .toArray();
-        for (const r of pendingFloating) {
-          await db.transferRecords.put(
-            plain({
-              ...r,
-              status: '已完成',
-              completed_date: dayjs().format('YYYY-MM-DD'),
-              updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
-            })
-          );
-        }
       }),
       '恢复为在册正常'
     );
@@ -1700,6 +1810,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     batchInitiateTransferOut,
     markMemberIncomingAudit,
     updateIncomingAudit,
+    patchIncomingAuditItem,
     approveIncomingAudit,
     setMemberFloating,
     addFloatingContactLog,

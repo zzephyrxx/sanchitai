@@ -82,13 +82,21 @@ const filteredRecords = computed(() => {
 const vetoActiveDraft = ref(false);
 const vetoReasonDraft = ref('');
 watch(
-  [veto, () => props.memberId, () => props.year],
-  () => {
+  [veto, () => props.memberId, () => props.year, show],
+  ([, , , visible]) => {
     vetoActiveDraft.value = Boolean(veto.value?.active);
     vetoReasonDraft.value = veto.value?.reason ?? '';
+    if (!visible) {
+      recordModalShow.value = false;
+    }
   },
   { immediate: true }
 );
+
+watch([() => props.memberId, () => props.year], () => {
+  statusFilter.value = 'all';
+  recordModalShow.value = false;
+});
 
 async function handleToggleVeto(val: boolean) {
   if (!props.memberId) return;
@@ -246,7 +254,8 @@ function openAddRecord(presetCategory: Sct.PointCategory = 'duty') {
 function openEditRecord(rec: Sct.PointRecord) {
   editingRecordId.value = rec.id;
   recordForm.category = rec.category;
-  recordForm.rule_id = rec.rule_id && workStore.pointRules.some(r => r.id === rec.rule_id) ? rec.rule_id : '__custom__';
+  recordForm.rule_id =
+    rec.rule_id && enabledRulesOfCat.value.some(r => r.id === rec.rule_id) ? rec.rule_id : '__custom__';
   recordForm.sub_category = rec.sub_category;
   recordForm.rule_label = rec.rule_label;
   recordForm.date = rec.date;

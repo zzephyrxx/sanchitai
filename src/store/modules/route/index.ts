@@ -151,8 +151,11 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
     excludeCacheRoutes.value = [];
   }
 
-  /** Global breadcrumbs */
-  const breadcrumbs = computed(() => getBreadcrumbsByRoute(router.currentRoute.value, menus.value));
+  /** Global breadcrumbs (fallback to rawMenus when current route's module was just hidden) */
+  const breadcrumbs = computed(() => {
+    const filtered = getBreadcrumbsByRoute(router.currentRoute.value, menus.value);
+    return filtered.length ? filtered : getBreadcrumbsByRoute(router.currentRoute.value, rawMenus.value);
+  });
 
   /** Reset store */
   async function resetStore() {

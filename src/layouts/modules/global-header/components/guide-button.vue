@@ -52,12 +52,13 @@ function handleSelect(key: string) {
 </script>
 
 <template>
-  <div data-tour="guide-entry" :class="floating ? 'fixed bottom-16px left-16px z-50' : 'px-10px py-8px'">
+  <div data-tour="guide-entry" :class="floating ? '' : 'px-10px py-8px'">
     <NDropdown trigger="click" placement="top-start" :options="menuOptions" @select="handleSelect">
       <button
         v-if="!collapsed"
         type="button"
         class="sider-guide-trigger w-full flex items-center gap-10px px-12px py-8px text-13.5px"
+        :class="{ 'sider-guide-trigger--floating': floating }"
         :title="bi('使用指南', 'Guide')"
       >
         <SvgIcon icon="lucide:book-open" class="shrink-0 text-17px opacity-80" />
@@ -67,6 +68,7 @@ function handleSelect(key: string) {
         v-else
         type="button"
         class="sider-guide-trigger mx-auto flex size-36px items-center justify-center"
+        :class="{ 'sider-guide-trigger--floating': floating }"
         :title="bi('使用指南', 'Guide')"
       >
         <SvgIcon icon="lucide:book-open" class="text-18px opacity-80" />
@@ -89,6 +91,17 @@ function handleSelect(key: string) {
 
 .sider-guide-trigger:hover {
   color: var(--sct-ink);
+  background: var(--sct-soft);
+}
+
+.sider-guide-trigger--floating {
+  border: 1px solid var(--sct-border);
+  background: var(--sct-container);
+  color: var(--sct-ink);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.sider-guide-trigger--floating:hover {
   background: var(--sct-soft);
 }
 </style>

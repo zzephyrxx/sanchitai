@@ -60,7 +60,7 @@ const ROUTE_TO_VIEW_KEY: Record<string, LastLevelRouteKey> = {
 
 let activeDriver: Driver | null = null;
 let activeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-let navigatingLock = false;
+let activeSessionId = 0;
 const preloadedKeys = new Set<LastLevelRouteKey>();
 
 function sleep(ms: number): Promise<void> {
@@ -137,6 +137,7 @@ function isEpaperPreset(): boolean {
 }
 
 export function stopSpotlightTour(): void {
+  activeSessionId += 1;
   if (activeKeyHandler) {
     window.removeEventListener('keydown', activeKeyHandler, true);
     activeKeyHandler = null;
@@ -152,16 +153,18 @@ export function stopSpotlightTour(): void {
 
 export async function runSpotlightTour(router: Router, startStepId?: string): Promise<void> {
   stopSpotlightTour();
+  const sessionId = ++activeSessionId;
 
   const appStore = useAppStore();
   const workStore = useWorkDataStore();
   const mods = workStore.workspaceConfig.enabledModules;
+  const landingRoute = mods.calendar !== false ? '/calendar' : '/dashboard';
 
   const allSteps: SpotlightStepDef[] = [
     // ==================== 一、侧栏与台历核心 ====================
     {
       id: 'sider',
-      route: '/calendar',
+      route: landingRoute,
       expandSider: true,
       expandMenuKeys: ['ledger', 'library'],
       beforeCommands: ['tour:cleanup'],
@@ -176,6 +179,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'calendar-topbar',
       route: '/calendar',
+      when: () => mods.calendar !== false,
       beforeCommands: ['calendar:close-drawer'],
       selector: '[data-tour="calendar-topbar"]',
       title: '台历顶栏',
@@ -187,6 +191,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'calendar-body',
       route: '/calendar',
+      when: () => mods.calendar !== false,
       beforeCommands: ['calendar:close-drawer'],
       selector: '[data-tour="calendar-body"]',
       title: '台历主网格',
@@ -198,6 +203,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'calendar-drawer',
       route: '/calendar',
+      when: () => mods.calendar !== false,
       beforeCommands: ['calendar:open-first-event'],
       settleMs: 220,
       skipIfMissing: true,
@@ -211,6 +217,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'calendar-sidebar',
       route: '/calendar',
+      when: () => mods.calendar !== false,
       beforeCommands: ['calendar:close-drawer'],
       settleMs: 140,
       selector: '[data-tour="calendar-sidebar"]',
@@ -224,7 +231,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     // ==================== 二、顶栏与统计总览 ====================
     {
       id: 'header-tools',
-      route: '/calendar',
+      route: landingRoute,
       beforeCommands: ['calendar:close-drawer'],
       selector: '[data-tour="header-tools"]',
       title: '全局工具与 ⌘K 速搜',
@@ -310,6 +317,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'meetings-actions',
       route: '/ledger/meetings',
+      when: () => mods.meetings !== false,
       beforeCommands: ['tour:cleanup'],
       selector: '[data-tour="meetings-actions"]',
       title: '三会一课 · 一键排期',
@@ -321,6 +329,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'meetings-toolbar',
       route: '/ledger/meetings',
+      when: () => mods.meetings !== false,
       selector: '[data-tour="meetings-toolbar"]',
       title: '学年 / 年度周期统计',
       description: '灵活切换学年学期或自然年度；点开会议可记录出勤与纪要，出勤直连党员积分草稿。',
@@ -333,6 +342,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'development-toolbar',
       route: '/ledger/development',
+      when: () => mods.development !== false,
       beforeCommands: ['dev:reset'],
       selector: '[data-tour="development-toolbar"]',
       title: '党员发展 · 搜索与折叠',
@@ -344,6 +354,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'development-lanes',
       route: '/ledger/development',
+      when: () => mods.development !== false,
       beforeCommands: ['dev:reset'],
       selector: '[data-tour="development-lanes"]',
       title: '五阶段泳道与拖拽流转',
@@ -355,6 +366,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'development-detail-stepper',
       route: '/ledger/development',
+      when: () => mods.development !== false,
       beforeCommands: ['dev:open-first-drawer'],
       settleMs: 220,
       skipIfMissing: true,
@@ -369,6 +381,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'development-detail-timeline-btn',
       route: '/ledger/development',
+      when: () => mods.development !== false,
       beforeCommands: ['dev:open-first-drawer'],
       settleMs: 120,
       skipIfMissing: true,
@@ -382,6 +395,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'development-timeline-modal',
       route: '/ledger/development',
+      when: () => mods.development !== false,
       beforeCommands: ['dev:open-timeline'],
       settleMs: 220,
       skipIfMissing: true,
@@ -399,6 +413,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'fees-actions',
       route: '/ledger/fees',
+      when: () => mods.fees !== false,
       beforeCommands: ['tour:cleanup'],
       selector: '[data-tour="fees-actions"]',
       title: '党费收缴 · 批量操作',
@@ -410,6 +425,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'fees-matrix',
       route: '/ledger/fees',
+      when: () => mods.fees !== false,
       selector: '[data-tour="fees-matrix"]',
       fallbackSelector: '[data-tour="fees-summary"]',
       title: '党费人×月一击矩阵',
@@ -422,6 +438,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'talks-coverage',
       route: '/ledger/talks',
+      when: () => mods.talks !== false,
       selector: '[data-tour="talks-coverage"]',
       title: '谈心谈话 · 年度覆盖矩阵',
       description: '追踪年度党员谈话覆盖率，一键筛出未覆盖名单；<strong>直接单击人头卡片</strong>秒建谈话记录。',
@@ -478,6 +495,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'structure-tabs',
       route: '/structure',
+      when: () => mods.structure !== false,
       beforeCommands: ['tour:cleanup', 'structure:show-org'],
       settleMs: 100,
       selector: '[data-tour="structure-tabs"]',
@@ -490,6 +508,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'structure-flowchart',
       route: '/structure',
+      when: () => mods.structure !== false,
       beforeCommands: ['structure:show-flow'],
       settleMs: 140,
       skipIfMissing: true,
@@ -503,6 +522,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'knowledge-bar',
       route: '/library/knowledge',
+      when: () => mods.knowledge !== false,
       beforeCommands: ['tour:cleanup'],
       selector: '[data-tour="knowledge-bar"]',
       title: '知识库 · 高清图解与笔记',
@@ -514,6 +534,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'policy-header',
       route: '/library/policy',
+      when: () => mods.policy !== false,
       selector: '[data-tour="policy-header"]',
       title: '政策文件与本单位归档',
       description: '内置高频条例要点卡；切至「本单位归档」可导入上级 PDF / Word / 图片本地集中留档。',
@@ -524,6 +545,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
     {
       id: 'docs-templates',
       route: '/library/docs',
+      when: () => mods.docs !== false,
       selector: '[data-tour="docs-templates"]',
       title: '标准公文模板库',
       description: '点击模板一键套用起草常用支部材料，支持新增模板或导入 <code>.md/.txt</code>。',
@@ -632,16 +654,20 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
   });
   activeDriver = drv;
 
+  let navigating = false;
+  const isStale = () => sessionId !== activeSessionId || activeDriver !== drv;
+
   async function showStep(idx: number, direction: 1 | -1 = 1) {
-    if (navigatingLock) return;
+    if (navigating || isStale()) return;
     if (idx < 0 || idx >= steps.length) return;
-    navigatingLock = true;
+    navigating = true;
     try {
       let targetIdx = idx;
       let targetEl: Element | null = null;
       let chosenStep = steps[targetIdx];
 
       while (targetIdx >= 0 && targetIdx < steps.length) {
+        if (isStale()) return;
         const step = steps[targetIdx];
         chosenStep = step;
 
@@ -665,34 +691,45 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
         if (routeChanged && step.route) {
           emitTourCommand('tour:cleanup');
           await router.push(step.route);
+          if (isStale()) return;
           await nextTick();
+          if (isStale()) return;
           await nextFrame();
+          if (isStale()) return;
         } else if (needSiderExpand || menuChanged) {
           await sleep(160);
+          if (isStale()) return;
         }
 
         if (step.beforeCommands?.length) {
           for (let ci = 0; ci < step.beforeCommands.length; ci += 1) {
+            if (isStale()) return;
             emitTourCommand(step.beforeCommands[ci]);
             await nextTick();
+            if (isStale()) return;
             if (ci < step.beforeCommands.length - 1) {
               await sleep(45);
+              if (isStale()) return;
             }
           }
           if (step.settleMs) {
             await sleep(step.settleMs);
+            if (isStale()) return;
           } else {
             await nextFrame();
+            if (isStale()) return;
           }
         }
 
         targetEl = await waitForElement(step.selector, step.fallbackSelector, step.skipIfMissing ? 650 : 1400);
+        if (isStale()) return;
         if (targetEl || !step.skipIfMissing) {
           break;
         }
         targetIdx += direction;
       }
 
+      if (isStale()) return;
       if (targetIdx < 0 || targetIdx >= steps.length) {
         drv.destroy();
         return;
@@ -705,6 +742,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
         if (outOfView) {
           targetEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
           await nextFrame();
+          if (isStale()) return;
         }
       }
 
@@ -745,7 +783,7 @@ export async function runSpotlightTour(router: Router, startStepId?: string): Pr
         }
       });
     } finally {
-      navigatingLock = false;
+      navigating = false;
     }
   }
 

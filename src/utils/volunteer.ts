@@ -45,6 +45,31 @@ export function roundHours(val: number): number {
  * - "1. 张三 2h\n2. 李四 1.5小时\n3. 王五（引导）"
  * - "张三、李四、王五，赵六"
  */
+/** 仅在括号外部按行内分隔符拆分（避免拆断「1、张三」序号或「（摄影/引导）」括号备注） */
+function splitLineOutsideParens(line: string): string[] {
+  const stripped = line.replace(/^[（(]?\d+[）).、\s]+/, '').trim();
+  if (!stripped) return [];
+  const parts: string[] = [];
+  let buf = '';
+  let depth = 0;
+  for (const ch of stripped) {
+    if (ch === '(' || ch === '（') {
+      depth += 1;
+      buf += ch;
+    } else if (ch === ')' || ch === '）') {
+      depth = Math.max(0, depth - 1);
+      buf += ch;
+    } else if (depth === 0 && /[、,，;；]/.test(ch)) {
+      if (buf.trim()) parts.push(buf.trim());
+      buf = '';
+    } else {
+      buf += ch;
+    }
+  }
+  if (buf.trim()) parts.push(buf.trim());
+  return parts;
+}
+
 export function parseWechatNameList(
   rawText: string,
   members: readonly Sct.Member[],
@@ -55,14 +80,19 @@ export function parseWechatNameList(
 } {
   const cleanLines = rawText
     .replace(/\r/g, '\n')
-    .split(/[\n、,，;；/]+/)
+    .split('\n')
     .map(s => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(rawLine => !/^(#接龙|接龙|例[:：]|活动|时间[:：]|地点[:：])/.test(rawLine))
+    .flatMap(splitLineOutsideParens);
 
-  // 构建花名册精确姓名映射（按姓名长度降序用于子串兜底匹配）
+  // 构建花名册精确姓名映射（先入优先，保证调用方传入的在册优先顺序不被归档同名覆盖）
   const exactMap = new Map<string, Sct.Member>();
   for (const m of members) {
-    exactMap.set(m.name.trim(), m);
+    const key = m.name.trim();
+    if (key && !exactMap.has(key)) {
+      exactMap.set(key, m);
+    }
   }
   const sortedByNameLen = members.slice().sort((a, b) => b.name.length - a.name.length);
 
@@ -71,15 +101,13 @@ export function parseWechatNameList(
   const unmatched: string[] = [];
 
   for (const rawLine of cleanLines) {
-    // 跳过常见微信接龙表头行
-    if (/^(#接龙|接龙|例[:：]|活动|时间[:：]|地点[:：])/.test(rawLine)) continue;
-    // 剥离行首序号 "1." "1、" "（1）"
+    // 剥离拆分后可能残余的序号
     let line = rawLine.replace(/^[（(]?\d+[）).、\s]+/, '').trim();
     if (!line) continue;
 
-    // 尝试提取时长（如 2h / 1.5H / 2小时 / 1.5时）
+    // 尝试提取时长（支持 2h / 1.5H / 2小时 / 1.5时，兼容中文非 \w 边界）
     let extractedHours = defaultHours;
-    const hoursMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:小时|时|h|H)\b/);
+    const hoursMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:小时|时|[hH](?![a-zA-Z]))/);
     if (hoursMatch) {
       extractedHours = roundHours(Number(hoursMatch[1]));
       line = line.replace(hoursMatch[0], '').trim();
@@ -195,11 +223,10 @@ export function computeVolunteerSummaries(opts: {
   const list = Array.from(map.values()).map(item => {
     item.records.sort((a, b) => b.date.localeCompare(a.date));
     if (conversion?.enabled) {
-      const cap = Math.max(1, conversion.maxHours || 60);
+      const capPerSem = Math.max(1, conversion.maxHours || 60);
       const sem = Math.max(1, conversion.semesters || 1);
-      const effectivePerSem = Math.min(cap, item.totalHours) / sem;
-      const maxPerSem = cap / sem;
-      item.convertedScore = roundHours(Math.min(100, (effectivePerSem / maxPerSem) * 100));
+      const totalCap = capPerSem * sem;
+      item.convertedScore = roundHours(Math.min(100, (Math.min(totalCap, item.totalHours) / totalCap) * 100));
     }
     return item;
   });
@@ -304,7 +331,12 @@ export function buildVolunteerPrintHtml(opts: {
   summaries: readonly MemberVolunteerSummary[];
   includeConversion?: boolean;
 }): string {
-  const activeRows = opts.summaries.filter(s => s.totalHours > 0 || s.activityCount > 0);
+  const activeRows = opts.summaries
+    .map(s => ({
+      ...s,
+      certifiedRecords: s.records.filter(r => r.status === '已认定')
+    }))
+    .filter(s => s.totalHours > 0 || s.certifiedRecords.length > 0);
   const grandTotal = roundHours(activeRows.reduce((acc, s) => acc + s.totalHours, 0));
 
   const bodyHtml = activeRows
@@ -316,13 +348,10 @@ export function buildVolunteerPrintHtml(opts: {
         <td class="c">${esc(s.member.type)}</td>
         <td class="c">${esc(s.member.group || '—')}</td>
         <td class="c" style="font-weight:700">${s.totalHours} h</td>
-        <td class="c">${s.activityCount}</td>
+        <td class="c">${s.certifiedRecords.length}</td>
         ${opts.includeConversion ? `<td class="c">${s.convertedScore ?? '—'}</td>` : ''}
         <td style="font-size:11px;line-height:1.45">${esc(
-          s.records
-            .filter(r => r.status === '已认定')
-            .map(r => `${r.date.slice(5)} ${r.title}(${r.hours}h)`)
-            .join('；') || '—'
+          s.certifiedRecords.map(r => `${r.date.slice(5)} ${r.title}(${r.hours}h)`).join('；') || '—'
         )}</td>
       </tr>
     `

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { NPopconfirm } from 'naive-ui';
 import { DEV_NODES } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
@@ -78,8 +78,9 @@ async function handleAssign() {
   if (member && member.role) {
     await workStore.updateMember(member.id, { role: '' });
   }
-  const prev = memberOfRole(assignState.role);
-  if (prev && prev.id !== memberId) {
+  // 清理全库中历史上仍持有该岗位的记录（含转出中成员，避免取消转出后出现双书记/双支委）
+  const prevHolders = workStore.members.filter(m => m.role === assignState.role && m.id !== memberId);
+  for (const prev of prevHolders) {
     await workStore.updateMember(prev.id, { role: '' });
   }
   await workStore.updateMember(memberId, { role: assignState.role });
@@ -665,6 +666,26 @@ const editingAcademyForm = reactive<AcademyNode>({
 });
 
 const academyStageOptions = ACADEMY_STAGES.map(s => ({ label: s.title, value: s.index }));
+const selectedAcademyStageMaxRows = computed(() => {
+  const st = ACADEMY_STAGES.find(s => s.index === editingAcademyForm.stageIndex);
+  return st ? st.rowDirections.length : 1;
+});
+const academyRowOptions = computed(() => [
+  { label: '第 1 行', value: 1 },
+  {
+    label: '第 2 行（用于四/五阶段双行折返）',
+    value: 2,
+    disabled: selectedAcademyStageMaxRows.value < 2
+  }
+]);
+watch(
+  () => editingAcademyForm.stageIndex,
+  () => {
+    if (editingAcademyForm.rowIndex > selectedAcademyStageMaxRows.value) {
+      editingAcademyForm.rowIndex = 1;
+    }
+  }
+);
 
 function openEditAcademyNode(node: AcademyNode) {
   isNewAcademyNode.value = false;
@@ -1071,13 +1092,7 @@ async function handleDeleteAcademyNode() {
               <span>阶段内行号</span>
             </span>
           </template>
-          <NSelect
-            v-model:value="editingAcademyForm.rowIndex"
-            :options="[
-              { label: '第 1 行', value: 1 },
-              { label: '第 2 行（用于四/五阶段双行折返）', value: 2 }
-            ]"
-          />
+          <NSelect v-model:value="editingAcademyForm.rowIndex" :options="academyRowOptions" />
         </NFormItem>
         <NFormItem required>
           <template #label>

@@ -157,7 +157,7 @@ async function handleRestore() {
               <span v-if="member.archived_at">（{{ member.archived_at }}）</span>
               <div v-if="member.archive_reason" class="mt-2px opacity-85">{{ member.archive_reason }}</div>
             </div>
-            <NPopconfirm @positive-click="handleRestore">
+            <NPopconfirm v-if="props.editable" @positive-click="handleRestore">
               <template #trigger>
                 <NButton size="tiny" type="primary" secondary>恢复在册</NButton>
               </template>

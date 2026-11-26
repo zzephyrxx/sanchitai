@@ -7,6 +7,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { MEMBER_TYPE_COLORS, MEMBER_TYPE_ORDER } from '@/constants/sanchitai';
+import { isMemberActive } from '@/constants/workspace-presets';
 import { onTourCommand } from '@/utils/onboarding-bus';
 import { parseWechatNameList, roundHours } from '@/utils/volunteer';
 import { useWorkDataStore } from '@/store/modules/work-data';
@@ -37,8 +38,8 @@ const form = reactive({
 
 const participants = ref<Sct.VolunteerParticipant[]>([]);
 const chipSearch = ref('');
-const chipGroupFilter = ref<string>('');
-const chipTypeFilter = ref<string>('');
+const chipGroupFilter = ref<string | null>(null);
+const chipTypeFilter = ref<string | null>(null);
 const wechatOpen = ref(false);
 const wechatText = ref('');
 const unmatchedNames = ref<string[]>([]);
@@ -51,8 +52,8 @@ watch(
     wechatText.value = '';
     unmatchedNames.value = [];
     chipSearch.value = '';
-    chipGroupFilter.value = '';
-    chipTypeFilter.value = '';
+    chipGroupFilter.value = null;
+    chipTypeFilter.value = null;
     const act = props.editingActivity;
     if (act) {
       form.title = act.title;
@@ -188,8 +189,8 @@ function handleParseWechatList() {
     window.$message?.warning('请先粘贴名单文本');
     return;
   }
-  // 优先匹配在册成员，若历史活动中确有归档人员则回退全库匹配
-  const prioritizedMembers = [...workStore.activeMembers, ...workStore.archivedMembers];
+  // 优先匹配在册成员，若历史活动中确有非在册人员（如归档/转出/待核查）则回退全库匹配
+  const prioritizedMembers = [...workStore.activeMembers, ...workStore.members.filter(m => !isMemberActive(m))];
   const { matched, unmatched } = parseWechatNameList(
     wechatText.value,
     prioritizedMembers,

@@ -59,10 +59,39 @@ function openAddCustomField() {
   customFieldModalShow.value = true;
 }
 
+const BUILTIN_EXPORT_HEADERS = new Set([
+  '序号',
+  '统一编号',
+  '支部名称',
+  '姓名',
+  '政治面貌',
+  '状态',
+  '党内职务',
+  '党小组',
+  '学号',
+  '性别',
+  '民族',
+  '出生年月',
+  '层次',
+  '年级',
+  '专业',
+  '班级',
+  '导师',
+  '宿舍',
+  '入党时间',
+  '转正时间',
+  '联系电话',
+  '身份证号'
+]);
+
 async function handleAddCustomField() {
   const cleanLabel = customFieldForm.label.trim();
   if (!cleanLabel) {
     window.$message?.warning('请输入字段名称');
+    return;
+  }
+  if (BUILTIN_EXPORT_HEADERS.has(cleanLabel)) {
+    window.$message?.warning(`「${cleanLabel}」为系统内置字段名，请更换其他名称`);
     return;
   }
   if (customFieldDefs.value.some(f => f.label === cleanLabel)) {
@@ -71,11 +100,19 @@ async function handleAddCustomField() {
   }
   const options =
     customFieldForm.type === 'select'
-      ? customFieldForm.optionsText
-          .split(/[,，、\n]+/)
-          .map(s => s.trim())
-          .filter(Boolean)
+      ? Array.from(
+          new Set(
+            customFieldForm.optionsText
+              .split(/[,，、\n]+/)
+              .map(s => s.trim())
+              .filter(Boolean)
+          )
+        )
       : undefined;
+  if (customFieldForm.type === 'select' && (!options || options.length === 0)) {
+    window.$message?.warning('单选下拉类型请至少填写一个可选项');
+    return;
+  }
   const newKey = `cf_${Date.now().toString(36).slice(-5)}`;
   const nextFields: Sct.CustomFieldDef[] = [
     ...customFieldDefs.value,
@@ -182,7 +219,7 @@ const seatMapOverflowCount = computed(() => {
   const rows = seatMapForm.rows;
   const cols = seatMapForm.cols;
   if (!rows || !cols) return 0;
-  return workStore.members.filter(
+  return workStore.activeMembers.filter(
     m => m.seat?.map_id === seatMapForm.mapId && (m.seat.x > cols || m.seat.y > rows || m.seat.x < 1 || m.seat.y < 1)
   ).length;
 });
@@ -275,7 +312,7 @@ interface SeatSnapshot {
 const undoStack = ref<SeatSnapshot[][]>([]);
 
 function snapshotSeats(): SeatSnapshot[] {
-  return workStore.members.map(m => ({ id: m.id, seat: m.seat ? { ...m.seat } : null }));
+  return workStore.activeMembers.map(m => ({ id: m.id, seat: m.seat ? { ...m.seat } : null }));
 }
 
 async function handleMove({
@@ -291,7 +328,7 @@ async function handleMove({
 
   const mover = workStore.memberOf(memberId);
   if (!mover) return;
-  const target = workStore.members.find(
+  const target = workStore.activeMembers.find(
     m => m.seat && m.seat.map_id === activeMapId.value && m.seat.x === to.x && m.seat.y === to.y && m.id !== memberId
   );
 
@@ -300,7 +337,7 @@ async function handleMove({
   if (target) {
     tasks.push(
       workStore.updateMember(target.id, {
-        seat: from ? { map_id: mapId, x: from.x, y: from.y } : (target.seat ?? null)
+        seat: from ? { map_id: mapId, x: from.x, y: from.y } : null
       })
     );
     tasks.push(workStore.updateMember(mover.id, { seat: { map_id: mapId, x: to.x, y: to.y } }));
@@ -321,8 +358,10 @@ async function handleUndo() {
     window.$message?.info('没有可撤销的操作');
     return;
   }
+  const activeIds = new Set(workStore.activeMembers.map(m => m.id));
+  const validSnap = snap.filter(s => activeIds.has(s.id));
   try {
-    await Promise.all(snap.map(s => workStore.updateMember(s.id, { seat: s.seat })));
+    await Promise.all(validSnap.map(s => workStore.updateMember(s.id, { seat: s.seat })));
     window.$message?.success('已撤销');
   } catch {
     // guardWrite 已弹出错误提示
@@ -332,7 +371,7 @@ async function handleUndo() {
 /** 打印座次/工位表 */
 function printSeatMap() {
   if (!activeMap.value) return;
-  const cells = workStore.members
+  const cells = workStore.activeMembers
     .filter(m => m.seat?.map_id === activeMapId.value)
     .map(m => ({ x: m.seat!.x, y: m.seat!.y, name: m.name, sub: `${m.type}${m.role ? `·${m.role}` : ''}` }));
   printHtml(
@@ -447,13 +486,16 @@ const outgoingTransferRows = computed(() => {
 
 const floatingTransferRows = computed(() => {
   return workStore.floatingMembers.map(member => {
-    const transfer = workStore.transferRecords.find(
-      r =>
-        r.member_id === member.id &&
-        (r.direction === 'float_out' || r.direction === 'float_in') &&
-        r.status === '办理中'
-    );
-    return { member, transfer };
+    const matching = workStore.transferRecords
+      .filter(
+        r =>
+          r.member_id === member.id &&
+          (r.direction === 'float_out' || r.direction === 'float_in') &&
+          r.status === '办理中'
+      )
+      .slice()
+      .sort((a, b) => (b.updated_at || b.initiated_date).localeCompare(a.updated_at || a.initiated_date));
+    return { member, transfer: matching[0] };
   });
 });
 
@@ -484,7 +526,14 @@ async function handleConfirmRosterExport(privacyMode: Sct.ExportPrivacyMode) {
     }
 
     const XLSX = await import('xlsx');
-    const sourceList = lifecycleScope.value === 'archived' ? workStore.archivedMembers : listRows.value;
+    const scopeExportMap: Record<LifecycleScope, { list: Sct.Member[]; sheetName: string }> = {
+      active: { list: listRows.value, sheetName: '在册人员花名册' },
+      transferring_out: { list: workStore.transferringOutMembers, sheetName: '转出办理中名册' },
+      incoming_audit: { list: workStore.incomingAuditMembers, sheetName: '转入待核查名册' },
+      floating: { list: workStore.floatingMembers, sheetName: '流动党员名册' },
+      archived: { list: workStore.archivedMembers, sheetName: '历史归档名册' }
+    };
+    const { list: sourceList, sheetName } = scopeExportMap[lifecycleScope.value];
     const rows = sourceList.map((m, idx) => {
       const row: Record<string, unknown> = {
         序号: idx + 1,
@@ -506,19 +555,20 @@ async function handleConfirmRosterExport(privacyMode: Sct.ExportPrivacyMode) {
         导师: m.advisor || '',
         宿舍: [m.dorm_building, m.dorm_room].filter(Boolean).join('-')
       };
-      for (const cf of customFieldDefs.value) {
-        row[cf.label] = m.custom_fields?.[cf.key] || '';
-      }
       row.入党时间 = m.join_date || '';
       row.转正时间 = resolveEffectiveFullDate(m.join_date, m.full_date, m.key_dates?.probation_end) || '';
       row.联系电话 = formatPhoneForExport(m.phone, privacyMode);
       row.身份证号 = formatIdCardForExport(m.id_card, privacyMode);
+      for (const cf of customFieldDefs.value) {
+        const colKey = cf.label in row ? `${cf.label}(自定义)` : cf.label;
+        row[colKey] = m.custom_fields?.[cf.key] || '';
+      }
       return row;
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 提示: '暂无人员记录' }]);
-    XLSX.utils.book_append_sheet(wb, ws, lifecycleScope.value === 'archived' ? '历史归档名册' : '在册人员花名册');
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const { saveFileWithPicker } = await import('@/utils/save-file');
@@ -732,7 +782,7 @@ function toggleRevealIdCardColumn(e: MouseEvent) {
   }
 }
 
-watch(activeTab, () => {
+watch([activeTab, lifecycleScope, () => visibleColKeys.value.includes('id_card')], () => {
   clearIdCardTimer();
   revealIdCardColumn.value = false;
 });
@@ -766,7 +816,7 @@ const listRows = computed<MemberRow[]>(() => {
     .filter(m => !typeFilter.value || m.type === typeFilter.value)
     .filter(m => {
       if (!kw) return true;
-      const customVals = Object.values(m.custom_fields ?? {});
+      const customVals = customFieldDefs.value.map(cf => m.custom_fields?.[cf.key]);
       return [
         m.code,
         m.branch_name,
@@ -1180,7 +1230,7 @@ const addForm = reactive({
   branch_name: '',
   name: '',
   student_id: '',
-  gender: '' as string,
+  gender: null as string | null,
   ethnicity: '',
   birth_date: '',
   dorm_building: '',
@@ -1192,7 +1242,7 @@ const addForm = reactive({
   department: '',
   job_title: '',
   office_location: '',
-  custom_fields: {} as Record<string, string>,
+  custom_fields: {} as Record<string, string | null | undefined>,
   id_card: '',
   phone: '',
   type: '申请人' as Sct.MemberType,
@@ -1200,7 +1250,7 @@ const addForm = reactive({
   full_date: null as string | null,
   fee_category: '学生党员' as Sct.FeeCategory,
   fee_monthly: FEE_STANDARD.studentMonthly,
-  group: '',
+  group: null as string | null,
   advisor: '',
   note: ''
 });
@@ -1269,12 +1319,16 @@ function handleFeeCategoryChange(val: Sct.FeeCategory) {
 function openAddMember() {
   editingMemberId.value = null;
   lastAutoFullDate.value = '';
+  const initialCustomFields: Record<string, string | null | undefined> = {};
+  for (const cf of customFieldDefs.value) {
+    initialCustomFields[cf.key] = cf.type === 'select' ? null : '';
+  }
   Object.assign(addForm, {
     code: '',
     branch_name: workStore.branchName,
     name: '',
     student_id: '',
-    gender: '',
+    gender: null,
     ethnicity: '',
     birth_date: '',
     dorm_building: '',
@@ -1286,7 +1340,7 @@ function openAddMember() {
     department: '',
     job_title: '',
     office_location: '',
-    custom_fields: {},
+    custom_fields: initialCustomFields,
     id_card: '',
     phone: '',
     type: '申请人',
@@ -1294,7 +1348,7 @@ function openAddMember() {
     full_date: null,
     fee_category: '学生党员',
     fee_monthly: FEE_STANDARD.studentMonthly,
-    group: '',
+    group: null,
     advisor: '',
     note: ''
   });
@@ -1306,12 +1360,17 @@ function openEditMember(row: Sct.Member) {
   const resolvedFull = resolveEffectiveFullDate(row.join_date, row.full_date, row.key_dates?.probation_end);
   const autoFull = computeDefaultFullDate(row.join_date);
   lastAutoFullDate.value = resolvedFull && resolvedFull === autoFull ? autoFull : '';
+  const editCustomFields: Record<string, string | null | undefined> = {};
+  for (const cf of customFieldDefs.value) {
+    const rawVal = row.custom_fields?.[cf.key] ?? '';
+    editCustomFields[cf.key] = cf.type === 'select' ? rawVal || null : rawVal;
+  }
   Object.assign(addForm, {
     code: row.code ?? '',
     branch_name: row.branch_name || workStore.branchName,
     name: row.name,
     student_id: row.student_id ?? '',
-    gender: row.gender ?? '',
+    gender: row.gender || null,
     ethnicity: row.ethnicity ?? '',
     birth_date: row.birth_date ?? '',
     dorm_building: row.dorm_building ?? '',
@@ -1323,7 +1382,7 @@ function openEditMember(row: Sct.Member) {
     department: row.department ?? '',
     job_title: row.job_title ?? '',
     office_location: row.office_location ?? '',
-    custom_fields: { ...row.custom_fields },
+    custom_fields: editCustomFields,
     id_card: row.id_card ?? '',
     phone: row.phone ?? '',
     type: resolveMemberTypeByDates(row.type, row.join_date, resolvedFull),
@@ -1331,7 +1390,7 @@ function openEditMember(row: Sct.Member) {
     full_date: resolvedFull || null,
     fee_category: row.fee_category ?? '学生党员',
     fee_monthly: workStore.memberMonthlyFee(row),
-    group: row.group ?? '',
+    group: row.group || null,
     advisor: row.advisor ?? '',
     note: row.note ?? ''
   });
@@ -1350,12 +1409,17 @@ async function handleSaveMember() {
   const finalType = effectiveFormType.value;
   const joinDate = addForm.join_date?.trim() ?? '';
   const fullDate = addForm.full_date?.trim() ?? '';
+  const sanitizedCustomFields: Record<string, string> = {};
+  for (const cf of customFieldDefs.value) {
+    const raw = addForm.custom_fields?.[cf.key];
+    sanitizedCustomFields[cf.key] = typeof raw === 'string' ? raw.trim() : '';
+  }
   const payload: Partial<Sct.Member> = {
     code: addForm.code.trim() || undefined,
     branch_name: addForm.branch_name.trim() || workStore.branchName,
     name: addForm.name.trim(),
     student_id: addForm.student_id.trim(),
-    gender: addForm.gender,
+    gender: addForm.gender ?? '',
     ethnicity: addForm.ethnicity.trim(),
     birth_date: addForm.birth_date.trim(),
     dorm_building: addForm.dorm_building.trim(),
@@ -1367,7 +1431,7 @@ async function handleSaveMember() {
     department: addForm.department.trim(),
     job_title: addForm.job_title.trim(),
     office_location: addForm.office_location.trim(),
-    custom_fields: { ...addForm.custom_fields },
+    custom_fields: sanitizedCustomFields,
     id_card: addForm.id_card.trim(),
     phone: addForm.phone.trim(),
     type: finalType,
@@ -1375,7 +1439,7 @@ async function handleSaveMember() {
     full_date: fullDate,
     fee_category: addForm.fee_category,
     fee_monthly: normalizedMonthly,
-    group: addForm.group.trim(),
+    group: (addForm.group ?? '').trim(),
     advisor: addForm.advisor.trim(),
     note: addForm.note.trim() || undefined
   };
@@ -1415,7 +1479,13 @@ async function handleMemberMoreAction(row: MemberRow, key: string) {
   } else if (key === 'stop') {
     openStopArchiveModal(row.id);
   } else if (key === 'delete') {
-    await removeMember(row.id);
+    window.$dialog?.warning({
+      title: '确认永久删除成员',
+      content: `确定要永久删除「${row.name}」吗？该操作不可恢复（若存在党费/积分/志愿/发展等历史台账，系统会自动拦截并建议改为归档）。`,
+      positiveText: '确认删除',
+      negativeText: '取消',
+      onPositiveClick: () => removeMember(row.id)
+    });
   }
 }
 

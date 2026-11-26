@@ -22,13 +22,19 @@ const months = computed(() => {
   return arr;
 });
 
+/** 当前在册需收缴党员（不含历史归档/已转出/流入未转入人员） */
+const activeFeeMembers = computed(() =>
+  workStore.inBranchRosterMembers.filter(m => m.type === '正式党员' || m.type === '预备党员')
+);
+const activeFeeMemberIdSet = computed(() => new Set(activeFeeMembers.value.map(m => m.id)));
+
 /** 缴费人员：在册正式+预备党员，并保留当前视窗月份内已有缴费记录的历史归档党员（保证往期账实相符） */
 const feeMembers = computed(() => {
   const monthSet = new Set(months.value);
   const hasFeeIds = new Set(workStore.feeRecords.filter(f => monthSet.has(f.year_month)).map(f => f.member_id));
-  const activeIds = new Set(workStore.inBranchRosterMembers.map(m => m.id));
   return workStore.members.filter(
-    m => (m.type === '正式党员' || m.type === '预备党员') && (activeIds.has(m.id) || hasFeeIds.has(m.id))
+    m =>
+      (m.type === '正式党员' || m.type === '预备党员') && (activeFeeMemberIdSet.value.has(m.id) || hasFeeIds.has(m.id))
   );
 });
 const searchKeyword = ref('');
@@ -240,11 +246,12 @@ function consecutiveOwed(memberId: string): boolean {
   return cur?.status === '欠缴' && prev?.status === '欠缴';
 }
 
-// ---------------- 生成名单（按每人各自的月应缴标准生成） ----------------
+// ---------------- 生成名单（按每人各自的月应缴标准生成，仅针对当前在册党员） ----------------
 async function generateMonth() {
-  const missing = feeMembers.value.filter(m => !cellOf(m.id, currentMonth));
+  const roster = activeFeeMembers.value;
+  const missing = roster.filter(m => !cellOf(m.id, currentMonth));
   if (!missing.length) {
-    window.$message?.info(`${currentMonth} 名单已完整（${feeMembers.value.length} 人），无新增需补录`);
+    window.$message?.info(`${currentMonth} 在册名单已完整（${roster.length} 人），无新增需补录`);
     return;
   }
   const rows: Sct.FeeRecord[] = missing.map(m => ({
@@ -255,9 +262,9 @@ async function generateMonth() {
     identity: 'secretary'
   }));
   await db.feeRecords.bulkPut(rows);
-  const totalDue = feeMembers.value.reduce((acc, m) => acc + workStore.memberMonthlyFee(m), 0);
+  const totalDue = roster.reduce((acc, m) => acc + workStore.memberMonthlyFee(m), 0);
   window.$message?.success(
-    `已补录 ${rows.length} 人（现名单 ${feeMembers.value.length} 人），本月应缴合计 ${totalDue.toFixed(1)} 元`
+    `已补录 ${rows.length} 人（在册名单 ${roster.length} 人），本月应缴合计 ${totalDue.toFixed(1)} 元`
   );
 }
 
@@ -278,13 +285,15 @@ interface BatchMemberRow {
 
 const batchMonthRows = computed<BatchMemberRow[]>(() => {
   const ym = batchPaidMonth.value;
-  return feeMembers.value.map(m => {
-    const rec = cellOf(m.id, ym);
-    const status: Sct.FeeStatus | '未生成' = rec?.status ?? '未生成';
-    const amount = rec ? rec.amount : workStore.memberMonthlyFee(m);
-    const needsPayment = status === '欠缴' || status === '未生成';
-    return { member: m, currentStatus: status, amount, needsPayment };
-  });
+  return feeMembers.value
+    .filter(m => activeFeeMemberIdSet.value.has(m.id) || Boolean(cellOf(m.id, ym)))
+    .map(m => {
+      const rec = cellOf(m.id, ym);
+      const status: Sct.FeeStatus | '未生成' = rec?.status ?? '未生成';
+      const amount = rec ? rec.amount : workStore.memberMonthlyFee(m);
+      const needsPayment = status === '欠缴' || (status === '未生成' && activeFeeMemberIdSet.value.has(m.id));
+      return { member: m, currentStatus: status, amount, needsPayment };
+    });
 });
 
 const filteredBatchMonthRows = computed(() => {
@@ -351,23 +360,23 @@ async function confirmBatchMarkPaid() {
   }
 }
 
-/** 统计指定月份待缴（欠缴 + 未生成）人数 */
+/** 统计指定月份待缴（在册欠缴/未生成 + 非在册历史欠缴）人数 */
 function unpaidCountOfMonth(ym: string): number {
   let cnt = 0;
   for (const m of feeMembers.value) {
     const st = cellOf(m.id, ym)?.status;
-    if (!st || st === '欠缴') cnt += 1;
+    if (st === '欠缴' || (!st && activeFeeMemberIdSet.value.has(m.id))) cnt += 1;
   }
   return cnt;
 }
 
-/** 表头快捷操作：将某月所有欠缴/未生成人员一键设为已缴 */
+/** 表头快捷操作：将某月所有欠缴人员及在册未生成人员一键设为已缴 */
 async function markWholeMonthPaid(ym: string) {
   const today = dayjs().format('YYYY-MM-DD');
   const rows: Sct.FeeRecord[] = [];
   for (const m of feeMembers.value) {
     const cur = cellOf(m.id, ym);
-    if (!cur || cur.status === '欠缴') {
+    if (cur?.status === '欠缴' || (!cur && activeFeeMemberIdSet.value.has(m.id))) {
       rows.push({
         member_id: m.id,
         year_month: ym,
@@ -533,15 +542,16 @@ async function saveStandardModal() {
   window.$message?.success(`已同步更新 ${stdForm.memberName} 的党费标准（人员表与党费台账已联动）`);
 }
 
-// ---------------- 汇总 ----------------
+// ---------------- 汇总（仅口径对齐本月在册应缴党员） ----------------
 const monthSummary = computed(() => {
-  const rows = feeMembers.value.map(m => cellOf(m.id, currentMonth)).filter(Boolean) as Sct.FeeRecord[];
+  const roster = activeFeeMembers.value;
+  const rows = roster.map(m => cellOf(m.id, currentMonth)).filter(Boolean) as Sct.FeeRecord[];
   const dueRows = rows.filter(r => r.status !== '未在校' && r.status !== '减免');
   const due = dueRows.reduce((acc, r) => acc + r.amount, 0);
   const paidRows = rows.filter(r => r.status === '已缴');
   const paidAmount = paidRows.reduce((acc, r) => acc + r.amount, 0);
   const owed = rows.filter(r => r.status === '欠缴').length;
-  const inServiceCount = feeMembers.value.filter(m => m.fee_category === '在职党员').length;
+  const inServiceCount = roster.filter(m => m.fee_category === '在职党员').length;
   return {
     count: rows.length,
     due: due.toFixed(1),

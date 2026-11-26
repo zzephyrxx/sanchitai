@@ -145,7 +145,9 @@ export async function downloadTextAsDoc(
     .replace(/>/g, '&gt;')
     .replace(/\n/g, '<br/>');
 
-  const docHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${title}</title>
+  const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const docHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapedTitle}</title>
   <style>body{font-family:"FangSong","仿宋","Songti SC",serif;font-size:15pt;line-height:1.9;padding:36px 48px;color:#111;}</style>
   </head><body><div>${escapedHtml}</div></body></html>`;
 
