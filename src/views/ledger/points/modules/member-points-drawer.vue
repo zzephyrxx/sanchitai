@@ -78,9 +78,12 @@ const filteredRecords = computed(() => {
   return memberRecords.value.filter(r => r.status === statusFilter.value);
 });
 
-// ---------------- 一票否决控制 ----------------
+// ---------------- 一票否决控制 & 录入弹窗状态 ----------------
 const vetoActiveDraft = ref(false);
 const vetoReasonDraft = ref('');
+const recordModalShow = ref(false);
+const editingRecordId = ref<string | null>(null);
+
 watch(
   [veto, () => props.memberId, () => props.year, show],
   ([, , , visible]) => {
@@ -129,10 +132,7 @@ async function handleDeleteRecord(record: Sct.PointRecord) {
   window.$message?.success('已删除该条积分记录');
 }
 
-// ---------------- 新增 / 编辑单条积分独立弹窗 ----------------
-const recordModalShow = ref(false);
-const editingRecordId = ref<string | null>(null);
-
+// ---------------- 新增 / 编辑单条积分独立弹窗表单 ----------------
 const recordForm = reactive<{
   category: Sct.PointCategory;
   rule_id: string;

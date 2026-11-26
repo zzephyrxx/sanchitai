@@ -75,18 +75,38 @@ interface WidgetDef {
   id: string;
   title: string;
   fullRow?: boolean;
+  /** 宽幅 2 列布局（xl 屏每行 2 张大卡，便于雷达/仪表/圆环/矩阵等可视化清晰展示） */
+  wide?: boolean;
   vdui?: boolean;
   moduleKey?: Sct.OptionalModuleKey;
 }
 const WIDGET_DEFS = computed<WidgetDef[]>(() => [
   { id: 'stats', title: bi('关键数字', 'Key Metrics'), fullRow: true },
   { id: 'reminders', title: bi('待办提醒中心', 'Action & Reminder Center'), fullRow: true },
-  { id: 'healthRadar', title: bi('支部党建健康雷达', 'Branch Health Radar'), vdui: true },
-  { id: 'pointsGauge', title: bi('党员积分 60+40 仪表', 'Party Points Gauge'), vdui: true, moduleKey: 'points' },
-  { id: 'volunteerDonut', title: bi('志愿服务时长统计', 'Volunteer Hours'), vdui: true, moduleKey: 'volunteer' },
-  { id: 'lifecycleWaffle', title: bi('成员生命周期矩阵', 'Lifecycle Matrix'), vdui: true },
-  { id: 'talksThermometer', title: bi('年度谈话覆盖温度计', 'Talks Coverage Meter'), vdui: true, moduleKey: 'talks' },
-  { id: 'groupOnion', title: bi('党小组活力同心环', 'Party Group Vitality'), vdui: true },
+  { id: 'healthRadar', title: bi('支部党建健康雷达', 'Branch Health Radar'), wide: true, vdui: true },
+  {
+    id: 'pointsGauge',
+    title: bi('党员积分 60+40 仪表', 'Party Points Gauge'),
+    wide: true,
+    vdui: true,
+    moduleKey: 'points'
+  },
+  {
+    id: 'volunteerDonut',
+    title: bi('志愿服务时长统计', 'Volunteer Hours'),
+    wide: true,
+    vdui: true,
+    moduleKey: 'volunteer'
+  },
+  { id: 'lifecycleWaffle', title: bi('成员生命周期矩阵', 'Lifecycle Matrix'), wide: true, vdui: true },
+  {
+    id: 'talksThermometer',
+    title: bi('年度谈话覆盖温度计', 'Talks Coverage Meter'),
+    wide: true,
+    vdui: true,
+    moduleKey: 'talks'
+  },
+  { id: 'groupOnion', title: bi('党小组活力同心环', 'Party Group Vitality'), wide: true, vdui: true },
   { id: 'feeRing', title: bi('本月党费', 'Monthly Dues'), moduleKey: 'fees' },
   { id: 'heatmap', title: bi('近半年日程热力', '6-Month Schedule Heatmap') },
   { id: 'feeTrend', title: bi('缴费率趋势', 'Dues Trend'), moduleKey: 'fees' },
@@ -508,15 +528,19 @@ const weekCategoryCount = computed(() => {
       </div>
     </div>
 
-    <!-- 组件自适应栅格：stats 与 reminders 占满整行；本月党费及以下卡片按屏幕宽度自适应每行 1~3 个 -->
-    <div data-tour="dashboard-grid" class="grid grid-cols-1 gap-14px md:grid-cols-2 xl:grid-cols-3">
+    <!-- 组件自适应 6 列栅格：stats/reminders 占满整行；6 大核心可视化卡占 3 列（xl 每行 2 张大卡）；经典小卡占 2 列（xl 每行 3 张） -->
+    <div data-tour="dashboard-grid" class="grid grid-cols-1 gap-14px md:grid-cols-2 xl:grid-cols-6">
       <div
         v-for="(w, wIdx) in activeWidgets"
         :key="w.id"
         :data-dash-widget="w.id"
         class="dash-widget-item"
         :class="[
-          w.fullRow ? 'col-span-full' : 'flex flex-col',
+          w.fullRow
+            ? 'col-span-full'
+            : w.wide
+              ? 'flex flex-col md:col-span-1 xl:col-span-3'
+              : 'flex flex-col md:col-span-1 xl:col-span-2',
           {
             'opacity-45': dragWidgetId === w.id,
             'ring-2 ring-[#A81C24]':
