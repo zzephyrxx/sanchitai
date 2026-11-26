@@ -27,6 +27,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   ledger_members: () => import("@/views/ledger/members/index.vue"),
   ledger_points: () => import("@/views/ledger/points/index.vue"),
   ledger_talks: () => import("@/views/ledger/talks/index.vue"),
+  ledger_volunteer: () => import("@/views/ledger/volunteer/index.vue"),
   library_birthday: () => import("@/views/library/birthday/index.vue"),
   library_docs: () => import("@/views/library/docs/index.vue"),
   library_knowledge: () => import("@/views/library/knowledge/index.vue"),

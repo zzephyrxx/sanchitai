@@ -3,12 +3,13 @@
  * 内容为纯虚构演示数据（见 docs/research/case-data-plan.md 脱敏声明）。
  */
 import dayjs from 'dayjs';
+import { DEFAULT_BRANCH_NAME } from '@/constants/workspace-presets';
 import { formatMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import { normalizeMemberRecord } from '@/utils/member-status';
 import { db, ensureDefaultDocTemplates, getMeta, setMeta } from './db';
 import seedJson from './seed/seed-data.json';
 
-const SEED_VERSION = 'v0.2.0';
+const SEED_VERSION = 'v0.3.0';
 const SEED_FLAG = 'seed-flag';
 
 const SEED = seedJson as unknown as {
@@ -38,14 +39,16 @@ export async function ensureSeeded(): Promise<void> {
 
   const today = dayjs().format('YYYY-MM-DD');
   const savedBranch = await getMeta<string>('branch-name');
-  const defaultBranch = typeof savedBranch === 'string' && savedBranch.trim() ? savedBranch.trim() : '智感硕博党支部';
+  const defaultBranch =
+    typeof savedBranch === 'string' && savedBranch.trim() ? savedBranch.trim() : DEFAULT_BRANCH_NAME;
   const codePrefix = getBranchAbbreviation(defaultBranch);
   const normalizedMembers = withIdentity(SEED.members).map((m, idx) =>
     normalizeMemberRecord(
       {
         ...m,
         code: formatMemberCode(codePrefix, idx + 1),
-        branch_name: m.branch_name || defaultBranch
+        branch_name: m.branch_name || defaultBranch,
+        lifecycle_status: m.lifecycle_status ?? '在册正常'
       },
       today
     )
@@ -177,19 +180,92 @@ export async function ensureSeeded(): Promise<void> {
     );
   }
 
+  const demoVolunteers: Sct.VolunteerActivity[] = [];
+  if (normalizedMembers.length >= 6) {
+    demoVolunteers.push(
+      {
+        id: 'vol-seed-1',
+        title: '迎新志愿引导与实验室安全巡查',
+        date: `${currentYear}-09-05`,
+        source: '支部内部',
+        default_hours: 3,
+        status: '已认定',
+        participants: normalizedMembers.slice(0, 5).map((m, idx) => ({
+          member_id: m.id,
+          name_snapshot: m.name,
+          hours: idx === 0 ? 4 : 3,
+          role_note: idx === 0 ? '现场统筹' : '引导服务'
+        })),
+        note: '秋季迎新党员先锋岗常规志愿服务',
+        created_at: today,
+        identity: 'secretary'
+      },
+      {
+        id: 'vol-seed-2',
+        title: '社区数字科普与反诈志愿宣讲',
+        date: `${currentYear}-10-18`,
+        source: '社会公益',
+        default_hours: 2.5,
+        status: '已认定',
+        participants: normalizedMembers.slice(2, 6).map(m => ({
+          member_id: m.id,
+          name_snapshot: m.name,
+          hours: 2.5,
+          role_note: '社区宣讲'
+        })),
+        note: '支部与社区联合开展公益服务',
+        created_at: today,
+        identity: 'secretary'
+      },
+      {
+        id: 'vol-seed-3',
+        title: '支部档案整理与理论学习资料装订',
+        date: `${currentYear}-11-12`,
+        source: '校院活动',
+        default_hours: 1.5,
+        status: '待核实',
+        participants: normalizedMembers.slice(4, 7).map(m => ({
+          member_id: m.id,
+          name_snapshot: m.name,
+          hours: 1.5
+        })),
+        note: '待支书核对签到照片后认定',
+        created_at: today,
+        identity: 'secretary'
+      }
+    );
+  }
+
   await db.transaction(
     'rw',
-    [db.members, db.seatMaps, db.calEvents, db.devStages, db.feeRecords, db.talks, db.docTemplates, db.pointRecords],
+    [
+      db.members,
+      db.seatMaps,
+      db.calEvents,
+      db.devStages,
+      db.feeRecords,
+      db.talks,
+      db.docTemplates,
+      db.pointRecords,
+      db.volunteerActivities
+    ],
     async () => {
-      await db.members.bulkPut(normalizedMembers);
-      await db.seatMaps.bulkPut(withIdentity(SEED.seat_maps));
-      await db.calEvents.bulkPut(withIdentity(SEED.calendarEvents));
-      await db.devStages.bulkPut(withIdentity(SEED.developmentStages));
-      await db.feeRecords.bulkPut(withIdentity(SEED.feeRecords));
-      await db.talks.bulkPut(withIdentity(SEED.talks));
-      await db.docTemplates.bulkPut(withIdentity(SEED.docTemplates));
+      if ((await db.members.count()) === 0) {
+        await db.members.bulkPut(normalizedMembers);
+        await db.seatMaps.bulkPut(withIdentity(SEED.seat_maps));
+        await db.calEvents.bulkPut(withIdentity(SEED.calendarEvents));
+        await db.devStages.bulkPut(withIdentity(SEED.developmentStages));
+        await db.feeRecords.bulkPut(withIdentity(SEED.feeRecords));
+        await db.talks.bulkPut(withIdentity(SEED.talks));
+      }
+      if ((await db.docTemplates.count()) === 0) {
+        await db.docTemplates.bulkPut(withIdentity(SEED.docTemplates));
+      }
       if (demoPoints.length && (await db.pointRecords.count()) === 0) {
         await db.pointRecords.bulkPut(demoPoints);
+      }
+      if (demoVolunteers.length && (await db.volunteerActivities.count()) === 0) {
+        await db.volunteerActivities.bulkPut(demoVolunteers);
       }
     }
   );
@@ -212,7 +288,9 @@ export async function resetToSeed(): Promise<void> {
       db.docs,
       db.attendance,
       db.pointRecords,
-      db.pointVetoes
+      db.pointVetoes,
+      db.transferRecords,
+      db.volunteerActivities
     ],
     async () => {
       await Promise.all([
@@ -226,7 +304,9 @@ export async function resetToSeed(): Promise<void> {
         db.docs.clear(),
         db.attendance.clear(),
         db.pointRecords.clear(),
-        db.pointVetoes.clear()
+        db.pointVetoes.clear(),
+        db.transferRecords.clear(),
+        db.volunteerActivities.clear()
       ]);
     }
   );

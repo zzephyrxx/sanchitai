@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { GLOBAL_SIDER_MENU_ID } from '@/constants/app';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
+import GuideButton from '../global-header/components/guide-button.vue';
 import GlobalLogo from '../global-logo/index.vue';
 
 defineOptions({
@@ -19,7 +20,7 @@ const darkMenu = computed(
     !themeStore.darkMode && !isTopHybridSidebarFirst.value && !isTopHybridHeaderFirst.value && themeStore.sider.inverted
 );
 const showLogo = computed(() => themeStore.layout.mode === 'vertical');
-const menuWrapperClass = computed(() => (showLogo.value ? 'flex-1-hidden' : 'h-full'));
+const menuWrapperClass = computed(() => 'flex-1-hidden');
 </script>
 
 <template>
@@ -29,7 +30,8 @@ const menuWrapperClass = computed(() => (showLogo.value ? 'flex-1-hidden' : 'h-f
       :show-title="!appStore.siderCollapse"
       :style="{ height: themeStore.header.height + 'px' }"
     />
-    <div :id="GLOBAL_SIDER_MENU_ID" :class="menuWrapperClass"></div>
+    <div :id="GLOBAL_SIDER_MENU_ID" data-tour="sider-nav" :class="menuWrapperClass"></div>
+    <GuideButton :collapsed="appStore.siderCollapse" />
   </DarkModeContainer>
 </template>
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { NPopconfirm } from 'naive-ui';
 import { DEV_NODES } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
+import { onTourCommand } from '@/utils/onboarding-bus';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import MemberCard from '@/views/ledger/members/modules/member-card.vue';
@@ -230,6 +231,18 @@ function handleSelectMember(m: Sct.Member) {
 // ---------------- 发展流程图 ----------------
 const flowTab = ref<'org' | 'flow'>('org');
 const flowMode = ref<'standard' | 'academy'>('standard');
+
+const offStructTour = onTourCommand(cmd => {
+  if (cmd === 'structure:show-org') {
+    flowTab.value = 'org';
+  } else if (cmd === 'structure:show-flow') {
+    flowTab.value = 'flow';
+    flowMode.value = 'academy';
+  } else if (cmd === 'tour:cleanup') {
+    flowTab.value = 'org';
+  }
+});
+onBeforeUnmount(offStructTour);
 
 const STAGES: Array<{ key: DevNodeDef['stage']; label: string; color: string; soft: string }> = [
   { key: '申请人', label: '一、申请入党阶段', color: '#64748b', soft: 'rgba(100, 116, 139, 0.10)' },
@@ -717,10 +730,12 @@ async function handleDeleteAcademyNode() {
         </div>
       </template>
 
-      <NTabs v-model:value="flowTab" type="segment" size="small" class="mb-18px w-260px">
-        <NTab name="org" :tab="bi('组织架构', 'Org Chart')" />
-        <NTab name="flow" :tab="bi('发展流程图', 'Flowcharts')" />
-      </NTabs>
+      <div data-tour="structure-tabs" class="inline-block">
+        <NTabs v-model:value="flowTab" type="segment" size="small" class="mb-18px w-260px">
+          <NTab name="org" :tab="bi('组织架构', 'Org Chart')" />
+          <NTab name="flow" :tab="bi('发展流程图', 'Flowcharts')" />
+        </NTabs>
+      </div>
 
       <!-- ============ 1. 组织架构 ============ -->
       <div v-if="flowTab === 'org'">
@@ -756,7 +771,7 @@ async function handleDeleteAcademyNode() {
       </div>
 
       <!-- ============ 2. 发展流程图（标准卡片版 & 学院蛇形可视化版） ============ -->
-      <div v-if="flowTab === 'flow'">
+      <div v-if="flowTab === 'flow'" data-tour="structure-flow-canvas">
         <div class="mb-16px flex flex-wrap items-center justify-between gap-12px">
           <NTabs v-model:value="flowMode" type="segment" size="small" class="w-360px">
             <NTab name="standard" :tab="bi('标准流程（细则详情版）', 'Standard Flow (Detailed)')" />
@@ -839,80 +854,81 @@ async function handleDeleteAcademyNode() {
           </template>
         </div>
 
-        <!-- 2B. 学院版：还原《计算机科学与工程学院党员发展工作程序（图）》5 阶段 25 步蛇形可视化流程图 -->
-        <div v-if="flowMode === 'academy' && academyLoaded" class="academy-flow-wrap">
+        <!-- 2B. 学院版：完全对齐「标准流程」阶段卡与小步骤卡美学，保留 5 阶段 25 步蛇形流向 -->
+        <div v-if="flowMode === 'academy' && academyLoaded" class="academy-flow-wrap flex flex-col gap-16px">
           <div
-            class="mb-14px flex flex-wrap items-center justify-between gap-8px rounded-10px bg-[var(--sct-soft)] px-14px py-10px"
+            class="flex flex-wrap items-center justify-between gap-8px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-14px py-10px"
           >
-            <div class="flex items-center gap-8px">
+            <div class="flex flex-wrap items-center gap-8px">
               <SvgIcon icon="lucide:workflow" class="text-16px text-[#A81C24]" />
-              <span class="text-14px font-bold text-[var(--sct-ink)]">计算机科学与工程学院党员发展工作程序（图）</span>
-              <NTag size="tiny" type="error" :bordered="false">蛇形可视化 · 点击任意节点卡片可编辑时间窗与责任人</NTag>
+              <span class="text-14px font-bold text-[var(--sct-ink)]">党员发展工作程序（25 步可视化图）</span>
+              <NTag size="tiny" :bordered="false" round>点击任意节点可编辑时间窗与责任人</NTag>
             </div>
-            <span class="text-12px text-gray-400">共 5 大阶段 · {{ academyNodes.length }} 个标准步骤</span>
+            <span class="text-12px text-gray-400">共 5 大阶段 · {{ academyNodes.length }} 个步骤</span>
           </div>
 
-          <div class="flex flex-col gap-14px">
-            <div v-for="st in academyStagesView" :key="st.index" class="academy-stage-box">
-              <!-- 阶段标题牌 + 流向提示 -->
-              <div class="academy-stage-box__head">
-                <div
-                  class="academy-stage-plaque"
-                  :style="{ borderColor: st.color, color: st.color, background: st.soft }"
-                >
-                  {{ st.title }}
-                </div>
+          <template v-for="(st, stIdx) in academyStagesView" :key="st.index">
+            <div class="stage-card">
+              <!-- 对齐标准流程的阶段顶栏：左侧 3.5px 竖条 + 彩色标题 + 右侧流向与加节点 -->
+              <div class="stage-card__header" :style="{ background: st.soft }">
                 <div class="flex items-center gap-8px">
-                  <span class="text-11px text-gray-400">
-                    流向：{{ st.rowDirections.map(d => (d === 'ltr' ? '左 → 右' : '右 → 左')).join(' ，折返 ') }}
+                  <span class="inline-block h-14px w-3.5px rounded-full" :style="{ background: st.color }" />
+                  <span class="text-14px font-bold" :style="{ color: st.color }">{{ st.title }}</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-8px">
+                  <span class="hidden text-11px text-[var(--sct-muted)] sm:inline">
+                    流向：{{ st.rowDirections.map(d => (d === 'ltr' ? '左 → 右' : '右 → 左')).join('，折返 ') }}
                   </span>
+                  <NTag size="tiny" :bordered="false" round>
+                    共 {{ st.rows.reduce((sum, r) => sum + r.nodes.length, 0) }} 个步骤
+                  </NTag>
                   <NButton size="tiny" quaternary type="primary" @click="openAddAcademyNode(st.index)">
                     <template #icon><SvgIcon icon="lucide:plus" /></template>
-                    本阶段加节点
+                    加节点
                   </NButton>
                 </div>
               </div>
 
-              <!-- 阶段内蛇形行 -->
-              <div class="flex flex-col gap-12px">
+              <!-- 对齐标准流程的浅底卡片主体（保留蛇形排列与方向箭头） -->
+              <div class="stage-card__body flex flex-col gap-12px">
                 <template v-for="(row, rIdx) in st.rows" :key="row.rowNum">
                   <div class="academy-serpentine-row">
                     <template v-for="(node, nIdx) in row.nodes" :key="node.id">
-                      <!-- 节点卡片 -->
-                      <div
-                        class="academy-node-card"
-                        :style="{ borderTop: `3px solid ${st.color}` }"
-                        @click="openEditAcademyNode(node)"
-                      >
-                        <div class="flex items-center justify-between gap-6px">
-                          <div class="flex items-center gap-6px">
-                            <span class="academy-node-card__no" :style="{ background: st.color }">
+                      <!-- 节点卡片：与 .step-node-card 完全统一（无顶部加粗色边） -->
+                      <div class="academy-node-card" @click="openEditAcademyNode(node)">
+                        <div class="flex items-start justify-between gap-8px">
+                          <div class="flex items-center gap-8px min-w-0">
+                            <span class="step-node-card__no shrink-0" :style="{ background: st.color }">
                               {{ node.no }}
                             </span>
-                            <span class="text-13px font-bold text-[var(--sct-ink)]">{{ node.name }}</span>
+                            <span class="truncate text-13px font-bold text-[var(--sct-ink)]">{{ node.name }}</span>
                           </div>
-                          <SvgIcon icon="lucide:pencil" class="academy-node-card__edit text-12px text-gray-400" />
+                          <SvgIcon
+                            icon="lucide:pencil"
+                            class="academy-node-card__edit shrink-0 text-12px text-gray-400"
+                          />
                         </div>
 
-                        <div class="mt-8px flex flex-wrap items-center gap-6px">
+                        <div
+                          v-if="node.note"
+                          class="mt-8px line-clamp-2 text-12px leading-relaxed text-[var(--sct-muted)]"
+                        >
+                          {{ node.note }}
+                        </div>
+
+                        <div
+                          class="mt-10px flex flex-wrap items-center justify-between gap-6px border-t border-[var(--sct-border)] pt-8px"
+                        >
+                          <span class="inline-flex items-center gap-3px text-11px text-gray-400">
+                            <SvgIcon v-if="node.owner" icon="lucide:user-check" class="text-11px" />
+                            <span>{{ node.owner || '点击配置责任人' }}</span>
+                          </span>
                           <span
                             v-if="node.window"
-                            class="inline-flex items-center gap-3px rounded-4px bg-[var(--sct-soft)] px-6px py-2px text-11px text-[var(--sct-ink)]"
+                            class="rounded-full bg-[var(--sct-warn-soft)] px-7px py-1px text-10px font-semibold text-[#d97706]"
                           >
-                            <SvgIcon icon="lucide:calendar-clock" class="text-11px text-[#A81C24]" />
-                            {{ node.window }}
+                            ⏱ {{ node.window }}
                           </span>
-                          <span
-                            v-if="node.owner"
-                            class="inline-flex items-center gap-3px rounded-4px bg-[var(--sct-soft)] px-6px py-2px text-11px text-gray-500"
-                          >
-                            <SvgIcon icon="lucide:user-check" class="text-11px" />
-                            {{ node.owner }}
-                          </span>
-                        </div>
-
-                        <div v-if="node.note" class="mt-6px line-clamp-2 text-11px leading-relaxed text-gray-400">
-                          {{ node.note }}
                         </div>
                       </div>
 
@@ -920,41 +936,47 @@ async function handleDeleteAcademyNode() {
                       <div v-if="nIdx < row.nodes.length - 1" class="academy-h-arrow">
                         <SvgIcon
                           :icon="row.dir === 'ltr' ? 'lucide:move-right' : 'lucide:move-left'"
-                          class="text-18px"
+                          class="text-16px opacity-75"
                           :style="{ color: st.color }"
                         />
                       </div>
                     </template>
                   </div>
 
-                  <!-- 阶段内部双行折返箭头（如阶段四 15→16、阶段五 22→23 从左侧向下折返） -->
-                  <div v-if="rIdx < st.rows.length - 1" class="flex justify-start pl-36px">
+                  <!-- 阶段内部双行折返箭头 -->
+                  <div v-if="rIdx < st.rows.length - 1" class="flex justify-start pl-24px">
                     <div
-                      class="inline-flex items-center gap-4px rounded-full bg-[var(--sct-soft)] px-10px py-2px text-11px font-semibold"
+                      class="inline-flex items-center gap-4px rounded-full bg-[var(--sct-container)] border border-[var(--sct-border)] px-10px py-2px text-11px font-semibold"
                       :style="{ color: st.color }"
                     >
-                      <SvgIcon icon="lucide:corner-down-right" class="text-14px" />
+                      <SvgIcon icon="lucide:corner-down-right" class="text-13px" />
                       接下一行（{{ row.nodes[0]?.no }} → {{ st.rows[rIdx + 1]?.nodes[0]?.no }}）
                     </div>
                   </div>
                 </template>
               </div>
+            </div>
 
-              <!-- 跨阶段蛇形折返向下的连接指示器（严格对齐学院 PNG 左右衔接位） -->
+            <!-- 阶段之间衔接指示器（对齐标准流程） -->
+            <div
+              v-if="stIdx < academyStagesView.length - 1"
+              class="flex py-2px"
+              :class="
+                st.exitSide === 'right'
+                  ? 'justify-end pr-36px'
+                  : st.exitSide === 'left'
+                    ? 'justify-start pl-36px'
+                    : 'justify-center'
+              "
+            >
               <div
-                v-if="st.exitSide !== 'none'"
-                class="mt-10px flex"
-                :class="st.exitSide === 'right' ? 'justify-end pr-36px' : 'justify-start pl-36px'"
+                class="inline-flex items-center gap-4px rounded-full bg-[var(--sct-soft)] px-12px py-3px text-11px font-bold text-gray-400"
               >
-                <div
-                  class="inline-flex items-center gap-5px rounded-full border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-3px text-11px font-bold text-[#A81C24]"
-                >
-                  <SvgIcon icon="lucide:arrow-down-circle" class="text-14px" />
-                  <span>流转至下一阶段</span>
-                </div>
+                <SvgIcon icon="lucide:arrow-down" class="text-13px text-[#A81C24]" />
+                <span>进入下一阶段</span>
               </div>
             </div>
-          </div>
+          </template>
         </div>
       </div>
     </NCard>
@@ -1277,52 +1299,27 @@ async function handleDeleteAcademyNode() {
   border-radius: 6px;
 }
 
-/* 学院版蛇形流程图 */
-.academy-stage-box {
-  padding: 16px;
-  background: var(--sct-container);
-  border: 1px solid var(--sct-border);
-  border-radius: 12px;
-}
-
-.academy-stage-box__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1.5px solid var(--sct-border);
-}
-
-.academy-stage-plaque {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 14px;
-  font-size: 14px;
-  font-weight: 800;
-  border: 2px solid;
-  border-radius: 6px;
-}
-
+/* 学院版蛇形流程图（与标准流程 .step-node-card 视觉完全统一） */
 .academy-serpentine-row {
   display: flex;
   flex-wrap: nowrap;
   align-items: stretch;
   gap: 8px;
   overflow-x: auto;
-  padding: 4px 2px;
+  padding: 2px;
 }
 
 .academy-node-card {
   flex: 1 1 0;
   min-width: 175px;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 14px;
   background: var(--sct-container);
   border: 1px solid var(--sct-border);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
   cursor: pointer;
   transition:
     transform 0.15s ease,
@@ -1333,24 +1330,11 @@ async function handleDeleteAcademyNode() {
 .academy-node-card:hover {
   transform: translateY(-2px);
   border-color: #a81c24;
-  box-shadow: 0 6px 16px rgba(168, 28, 36, 0.12);
-}
-
-.academy-node-card__no {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 20px;
-  padding: 0 5px;
-  font-size: 11px;
-  font-weight: 800;
-  color: #fff;
-  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(168, 28, 36, 0.1);
 }
 
 .academy-node-card__edit {
-  opacity: 0.4;
+  opacity: 0.45;
   transition: opacity 0.15s;
 }
 

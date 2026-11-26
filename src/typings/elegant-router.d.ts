@@ -30,6 +30,7 @@ declare module "@elegant-router/types" {
     "ledger_members": "/ledger/members";
     "ledger_points": "/ledger/points";
     "ledger_talks": "/ledger/talks";
+    "ledger_volunteer": "/ledger/volunteer";
     "library": "/library";
     "library_birthday": "/library/birthday";
     "library_docs": "/library/docs";
@@ -106,6 +107,7 @@ declare module "@elegant-router/types" {
     | "ledger_members"
     | "ledger_points"
     | "ledger_talks"
+    | "ledger_volunteer"
     | "library_birthday"
     | "library_docs"
     | "library_knowledge"

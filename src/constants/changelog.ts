@@ -30,6 +30,61 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_HISTORY: ChangelogRelease[] = [
   {
+    version: 'v0.3.0',
+    date: '2026-11-26',
+    sections: [
+      {
+        icon: 'lucide:sparkles',
+        titleZh: '重大通用化升级与新功能',
+        titleEn: 'Major Generalization & New Features',
+        items: [
+          {
+            icon: 'lucide:blocks',
+            titleZh: '工作台模块工坊与 5 套支部场景预设',
+            titleEn: 'Module Workshop & 5 Branch Scene Presets',
+            zh: '支持高校学生、高校教工、机关国企、社区两新及极简模式一键切换；座位图、党员积分、志愿时长、政治生日均可按需启停（隐藏菜单但安全保留数据），花名册支持场景字段组与自定义扩展字段',
+            en: 'Switch between 5 branch presets, toggle optional modules cleanly without data loss, and manage scene & custom member fields'
+          },
+          {
+            icon: 'lucide:send',
+            titleZh: '成员全生命周期与组织关系转接闭环',
+            titleEn: 'Member Lifecycle & Organization Transfer',
+            zh: '彻底告别「关系转出 = 直接删除」：顶部 5 枚状态胶囊（在册 / 转出办理中 / 转入待核查 / 流动党员 / 历史归档），配套单人 4 步转出抽屉、毕业季批量转出、转入多人档案核查矩阵与《核实函》《自提申请书》导出，历史台账永久留痕防误删',
+            en: 'Full member lifecycle pills, 4-step outgoing transfer drawer, batch graduation workbench, incoming audit matrix & delete protection'
+          },
+          {
+            icon: 'lucide:award',
+            titleZh: '党员积分与评定多方案引擎 + .sctpreset 分享',
+            titleEn: 'Multi-Scheme Points Engine & .sctpreset Pack',
+            zh: '内置通用百分制、高校 60+40 分桶制、五星党员评定模型、纯正向加分制及空白自定义，支持按年度锁定快照、行内分段色条微图、一键同步考勤/党费/志愿时长待核实草稿，以及 .sctpreset 单位配置包共享',
+            en: '4 built-in schemes + custom workshop, annual snapshots, stacked breakdown bars, cross-module draft sync & .sctpreset sharing'
+          },
+          {
+            icon: 'lucide:heart-handshake',
+            titleZh: '志愿时长台账（三合一快录）',
+            titleEn: 'Volunteer Hours Ledger',
+            zh: '新增志愿时长台账：支持按活动与按成员双视角、人头芯片勾选微调 + 台历活动引入 + 粘贴微信接龙名单自动识人，支持考核折算预览、双 Sheet Excel 公示表与电子纸打印公示单',
+            en: 'Dual activity/member views, WeChat list parser, calendar import, optional conversion score, Excel & print notice exports'
+          },
+          {
+            icon: 'lucide:compass',
+            titleZh: '两段式全屏画册引导 & 10 项核心秘籍',
+            titleEn: 'Two-Stage Onboarding & 10-Feature Tour',
+            zh: '首次启动提供 3 步支部初始化 + 10 项核心与隐藏功能翻页画廊，顶栏常驻「? 指南」按钮随时重温',
+            en: '3-step setup wizard + 10-feature interactive gallery with permanent top-bar Guide button'
+          },
+          {
+            icon: 'lucide:shield-check',
+            titleZh: '全局隐私脱敏双版导出',
+            titleEn: 'Dual-Mode Privacy Exports',
+            zh: '花名册、组织关系转接登记表、志愿时长公示表与党员积分导出统一默认「脱敏公示版（身份证/手机号掩码）」，切换「全量报送版」需显式二次确认',
+            en: 'All key exports default to Masked Public mode with explicit confirmation required for Full Sensitive reporting'
+          }
+        ]
+      }
+    ]
+  },
+  {
     version: 'v0.2.6',
     date: '2026-11-24',
     sections: [

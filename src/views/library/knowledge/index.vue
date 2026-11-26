@@ -374,7 +374,7 @@ function mdSummaryLines(md?: string): string[] {
         </div>
       </template>
 
-      <div class="mb-16px flex justify-center">
+      <div data-tour="knowledge-bar" class="mb-16px flex justify-center">
         <div class="lib-cat-tabs">
           <NTabs v-model:value="activeCat" type="segment" size="small">
             <NTab name="全部" :tab="allTabLabel" />

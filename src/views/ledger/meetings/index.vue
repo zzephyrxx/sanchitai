@@ -489,7 +489,7 @@ function handleResetMeetingLayout() {
         </div>
       </template>
       <template #header-extra>
-        <div class="flex items-center gap-8px">
+        <div data-tour="meetings-actions" class="flex items-center gap-8px">
           <NButton size="small" secondary @click="exportSchedule">
             <template #icon><SvgIcon icon="lucide:download" /></template>
             {{ bi('导出安排表', 'Export Schedule') }}
@@ -503,6 +503,7 @@ function handleResetMeetingLayout() {
 
       <!-- 学年 / 年度筛选条 -->
       <div
+        data-tour="meetings-toolbar"
         class="mb-14px flex flex-wrap items-center justify-between gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-8px"
       >
         <div class="flex flex-wrap items-center gap-8px">

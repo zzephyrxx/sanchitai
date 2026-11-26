@@ -103,7 +103,7 @@ function handleDelete() {
         这是重复事项的一个实例：拖拽改期或编辑仅更新本次实例，删除将移除整条重复规则。
       </NAlert>
 
-      <NSpace vertical size="large">
+      <NSpace data-tour="cal-event-drawer" vertical size="large">
         <div class="flex items-center gap-8px">
           <NTag
             :color="{

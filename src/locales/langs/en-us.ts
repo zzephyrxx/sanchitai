@@ -280,6 +280,7 @@ const local: App.I18n.Schema = {
     ledger_fees: 'Dues Collection',
     ledger_talks: 'Heart-to-Heart Talks',
     ledger_points: 'Party Points',
+    ledger_volunteer: 'Volunteer Hours',
     library: 'Resources',
     library_knowledge: 'Knowledge',
     library_policy: 'Policy',

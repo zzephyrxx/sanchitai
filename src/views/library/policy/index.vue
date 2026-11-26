@@ -480,7 +480,7 @@ function fmtSize(size: number) {
   <div class="min-h-500px">
     <NCard :bordered="false">
       <template #header>
-        <div class="flex items-center gap-10px">
+        <div data-tour="policy-header" class="flex items-center gap-10px">
           <span class="shrink-0 text-16px font-bold">{{ bi('政策文件', 'Policy Documents') }}</span>
           <NTag size="tiny" type="warning" :bordered="false" round class="shrink-0">Preview</NTag>
           <NTabs v-model:value="activeMainTab" type="segment" size="small" class="w-290px shrink-0">
@@ -713,11 +713,10 @@ function fmtSize(size: number) {
       </div>
     </NCard>
 
-    <!-- 精致纯阅读卡片弹窗（点击政策卡片弹出，专注阅读 / 复制 / 跳转原文） -->
+    <!-- 精致纯阅读卡片弹窗（对齐台历事项内缩圆头左竖条美学） -->
     <NModal v-model:show="readerShow" :mask-closable="true">
       <div v-if="readingCard" class="policy-reader-card">
-        <div class="policy-reader-ribbon" />
-        <div class="p-22px pb-18px">
+        <div class="py-20px pl-26px pr-22px pb-18px">
           <div class="flex items-start justify-between gap-12px">
             <div class="flex flex-wrap items-center gap-6px">
               <NTag size="small" type="error" :bordered="false" round>
@@ -866,14 +865,20 @@ function fmtSize(size: number) {
   z-index: 1;
   width: min(620px, 92vw);
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 10px;
   background-color: var(--sct-container);
-  border: 1px solid var(--sct-border);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  border: 1px solid color-mix(in srgb, var(--sct-accent, #a81c24) 36%, var(--sct-border));
+  box-shadow: 0 20px 52px rgba(15, 23, 42, 0.2);
   opacity: 1;
 }
-.policy-reader-ribbon {
-  height: 5px;
-  background: linear-gradient(90deg, #a81c24 0%, #d97706 60%, #a81c24 100%);
+.policy-reader-card::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 14px;
+  bottom: 14px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--sct-accent, #a81c24);
 }
 </style>

@@ -46,7 +46,7 @@ function useCountUp(source: () => number, duration = 850) {
   return computed(() => Math.round(shown.value));
 }
 
-const memberCount = computed(() => workStore.members.length);
+const memberCount = computed(() => workStore.activeMembers.length);
 const eventCount = computed(() => workStore.calEvents.length);
 const talkCount = computed(() => workStore.talks.length);
 const owedCount = computed(
@@ -457,14 +457,16 @@ const weekCategoryCount = computed(() => {
       </div>
     </div>
     <div v-else class="mb-12px flex justify-end">
-      <NButton size="small" secondary @click="widgetsEditable = true">
-        <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
-        {{ bi('自定义布局', 'Customize Layout') }}
-      </NButton>
+      <div data-tour="dashboard-customize">
+        <NButton size="small" secondary @click="widgetsEditable = true">
+          <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
+          {{ bi('自定义布局', 'Customize Layout') }}
+        </NButton>
+      </div>
     </div>
 
     <!-- 组件自适应栅格：stats 与 reminders 占满整行；本月党费及以下卡片按屏幕宽度自适应每行 1~3 个 -->
-    <div class="grid grid-cols-1 gap-14px md:grid-cols-2 xl:grid-cols-3">
+    <div data-tour="dashboard-grid" class="grid grid-cols-1 gap-14px md:grid-cols-2 xl:grid-cols-3">
       <div
         v-for="(w, wIdx) in activeWidgets"
         :key="w.id"

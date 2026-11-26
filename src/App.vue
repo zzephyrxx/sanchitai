@@ -11,6 +11,7 @@ import { useWorkDataStore } from './store/modules/work-data';
 import UpdateNotifier from './components/common/update-notifier.vue';
 import AppLockOverlay from './components/custom/app-lock-overlay.vue';
 import CloseConfirmModal from './components/custom/close-confirm-modal.vue';
+import OnboardingGuideModal from './components/custom/onboarding-guide-modal.vue';
 
 defineOptions({
   name: 'App'
@@ -41,6 +42,11 @@ watch(
     workStore.pointRecords,
     workStore.pointVetoes,
     workStore.pointRules,
+    workStore.allPointSchemes,
+    workStore.pointYearSchemeMap,
+    workStore.transferRecords,
+    workStore.volunteerActivities,
+    workStore.workspaceConfig,
     workStore.partyGroupNames,
     workStore.youthCommitteeSlots
   ],
@@ -99,6 +105,8 @@ const watermarkProps = computed<WatermarkProps>(() => {
       <CloseConfirmModal />
       <!-- 三尺台：GitHub Release 右上角更新提示弹窗 -->
       <UpdateNotifier />
+      <!-- 三尺台：首次两段式全屏画册引导 & 10 项核心秘籍 -->
+      <OnboardingGuideModal />
     </AppProvider>
   </NConfigProvider>
 </template>

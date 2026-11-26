@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router';
 import { defineStore } from 'pinia';
 import type { CustomRoute, ElegantConstRoute, LastLevelRouteKey, RouteKey, RouteMap } from '@elegant-router/types';
 import { useBoolean } from '@sa/hooks';
+import { ROUTE_TO_OPTIONAL_MODULE, reactiveEnabledModules } from '@/constants/workspace-presets';
 import { fetchGetConstantRoutes, fetchGetUserRoutes, fetchIsRouteExist } from '@/service/api';
 import { router } from '@/router';
 import { SetupStoreId } from '@/enum';
@@ -80,17 +81,39 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
   const removeRouteFns: (() => void)[] = [];
 
   /** Global menus */
-  const menus = ref<App.Global.Menu[]>([]);
+  const rawMenus = ref<App.Global.Menu[]>([]);
+
+  function filterMenusByModules(
+    list: App.Global.Menu[],
+    enabled: Record<Sct.OptionalModuleKey, boolean>
+  ): App.Global.Menu[] {
+    const out: App.Global.Menu[] = [];
+    for (const item of list) {
+      const modKey = ROUTE_TO_OPTIONAL_MODULE[item.routeKey];
+      if (modKey && !enabled[modKey]) continue;
+      if (item.children?.length) {
+        const nextChildren = filterMenusByModules(item.children, enabled);
+        if (nextChildren.length) {
+          out.push({ ...item, children: nextChildren });
+        }
+      } else {
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  const menus = computed<App.Global.Menu[]>(() => filterMenusByModules(rawMenus.value, reactiveEnabledModules.value));
   const searchMenus = computed(() => transformMenuToSearchMenus(menus.value));
 
   /** Get global menus */
   function getGlobalMenus(routes: ElegantConstRoute[]) {
-    menus.value = getGlobalMenusByAuthRoutes(routes);
+    rawMenus.value = getGlobalMenusByAuthRoutes(routes);
   }
 
   /** Update global menus by locale */
   function updateGlobalMenusByLocale() {
-    menus.value = updateLocaleOfGlobalMenus(menus.value);
+    rawMenus.value = updateLocaleOfGlobalMenus(rawMenus.value);
   }
 
   /** Cache routes */

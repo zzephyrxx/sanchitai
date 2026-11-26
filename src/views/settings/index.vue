@@ -24,6 +24,7 @@ import {
   pushBackupRing
 } from '@/db/db';
 import { resetToSeed } from '@/db/seed';
+import ModuleWorkshopCard from './modules/module-workshop-card.vue';
 
 defineOptions({ name: 'SettingsPage' });
 
@@ -157,26 +158,6 @@ async function copyBridgeUrl() {
   } catch {
     window.$message?.info(`本机访问地址：${url}/`);
   }
-}
-
-// ---------------- 支部名称设置 ----------------
-const branchNameInput = ref('');
-watch(
-  () => workStore.branchName,
-  val => {
-    branchNameInput.value = val;
-  },
-  { immediate: true }
-);
-
-async function saveBranchNameSetting() {
-  const clean = branchNameInput.value.trim();
-  if (!clean) {
-    window.$message?.warning('请输入党支部名称');
-    return;
-  }
-  await workStore.setBranchName(clean);
-  window.$message?.success('党支部名称已保存');
 }
 
 // ---------------- 专属格式 .sctpack 按模块勾选导出 & 交接文档 ----------------
@@ -581,10 +562,13 @@ onMounted(listSnapshots);
 
 <template>
   <div class="grid grid-cols-1 items-start gap-14px xl:grid-cols-12">
-    <!-- 左栏（7/12 宽）：备份与恢复（10+10 快照） + 数据存储路径 + 「一键交接 / 演示数据」 -->
+    <!-- 左栏（7/12 宽）：模块工坊 + 备份与恢复（10+10 快照） + 数据存储路径 + 「一键交接 / 演示数据」 -->
     <div class="flex flex-col gap-14px xl:col-span-7">
+      <!-- 工作台模块工坊与场景配置（v0.3.0） -->
+      <ModuleWorkshopCard />
+
       <!-- 备份与恢复 -->
-      <NCard :bordered="false">
+      <NCard :bordered="false" data-tour="settings-backup">
         <template #header>
           <div class="flex items-center gap-8px">
             <SvgIcon icon="lucide:hard-drive-download" class="text-17px text-[#A81C24]" />
@@ -703,147 +687,13 @@ onMounted(listSnapshots);
         </NSpace>
       </NCard>
 
-      <!-- 数据存储路径（桌面端可自定义目录，自动迁移业务数据、20 份快照与偏好设置） -->
-      <NCard :bordered="false">
-        <template #header>
-          <div class="flex items-center gap-8px">
-            <SvgIcon icon="lucide:folder-cog" class="text-17px text-[#2563eb]" />
-            <span class="font-bold">{{ bi('数据存储路径', 'Data Storage Location') }}</span>
-            <NTag
-              v-if="desktopBridge.dataDirInfo.value"
-              size="tiny"
-              :type="desktopBridge.dataDirInfo.value.isCustom ? 'success' : 'default'"
-              :bordered="false"
-              round
-            >
-              {{
-                desktopBridge.dataDirInfo.value.isCustom ? bi('自定义目录', 'Custom') : bi('系统默认目录', 'Default')
-              }}
-            </NTag>
-          </div>
-        </template>
-        <NSpace vertical size="medium">
-          <div
-            v-if="isDesktopManaged && desktopBridge.dataDirInfo.value"
-            class="rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-9px"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-8px">
-              <div class="min-w-0 flex-1">
-                <div class="text-11px text-gray-400">{{ bi('当前数据目录', 'Active Data Folder') }}</div>
-                <div class="mt-2px break-all font-mono text-12px font-semibold text-[var(--sct-ink)]">
-                  {{ desktopBridge.dataDirInfo.value.currentDir }}
-                </div>
-              </div>
-              <div class="flex shrink-0 flex-wrap gap-6px">
-                <NButton size="tiny" type="primary" :loading="dirBusy" @click="handlePickDataDir">
-                  <template #icon><SvgIcon icon="lucide:folder-input" /></template>
-                  {{ bi('更改存储路径…', 'Change Folder…') }}
-                </NButton>
-                <NButton size="tiny" secondary @click="handleOpenDataDir">
-                  <template #icon><SvgIcon icon="lucide:folder-open" /></template>
-                  {{ bi('打开文件夹', 'Open Folder') }}
-                </NButton>
-                <NPopconfirm
-                  v-if="desktopBridge.dataDirInfo.value.isCustom"
-                  @positive-click="applyDataDirChange('reset_default')"
-                >
-                  <template #trigger>
-                    <NButton size="tiny" quaternary>
-                      {{ bi('恢复默认路径', 'Reset Default') }}
-                    </NButton>
-                  </template>
-                  确认将数据迁移回系统默认目录？
-                </NPopconfirm>
-              </div>
-            </div>
-            <div class="mt-6px flex flex-wrap gap-12px text-11px text-gray-500">
-              <span>磁盘自动快照：{{ desktopBridge.dataDirInfo.value.autoSnapshotCount }} 份</span>
-              <span>磁盘手动快照：{{ desktopBridge.dataDirInfo.value.manualSnapshotCount }} 份</span>
-              <span>升级保护快照：{{ desktopBridge.dataDirInfo.value.protectedSnapshotCount }} 份</span>
-            </div>
-          </div>
-          <NAlert v-else type="info" :show-icon="false">
-            {{ bi('网页模式下暂不支持更改本地目录，请使用桌面端。', 'Custom folder requires desktop app.') }}
-          </NAlert>
-        </NSpace>
-      </NCard>
-
-      <!-- 左栏下方：一键交接 + 演示数据 并排双列 -->
-      <div class="grid grid-cols-1 gap-14px md:grid-cols-2">
-        <!-- 一键交接 -->
-        <NCard :bordered="false" class="h-full">
-          <template #header>
-            <div class="flex items-center gap-8px">
-              <SvgIcon icon="lucide:package-check" class="text-17px text-[#A81C24]" />
-              <span class="font-bold">{{ bi('一键交接', 'One-Click Handover') }}</span>
-            </div>
-          </template>
-          <div class="flex flex-wrap gap-8px">
-            <NButton type="primary" size="small" :loading="exportingPack" @click="openExportPackModal('handover')">
-              <template #icon><SvgIcon icon="lucide:package" /></template>
-              {{ bi('导出交接包', 'Export Handover') }}
-            </NButton>
-            <NButton size="small" type="info" secondary :loading="restoring" @click="pickImportFile">
-              <template #icon><SvgIcon icon="lucide:package-open" /></template>
-              {{ bi('导入交接包…', 'Import Handover…') }}
-            </NButton>
-            <NButton size="small" secondary :loading="handoverBusy" @click="exportHandoverDoc">
-              <template #icon><SvgIcon icon="lucide:printer" /></template>
-              {{ bi('生成交接文档', 'Handover Doc') }}
-            </NButton>
-          </div>
-        </NCard>
-
-        <!-- 演示数据 -->
-        <NCard :bordered="false" class="h-full">
-          <template #header>
-            <div class="flex items-center gap-8px">
-              <SvgIcon icon="lucide:database-backup" class="text-17px text-[#d97706]" />
-              <span class="font-bold">{{ bi('演示数据', 'Demo Seed Data') }}</span>
-            </div>
-          </template>
-          <div class="flex flex-wrap gap-8px">
-            <NButton size="small" secondary :loading="resetting" @click="openDangerConfirm('reset')">
-              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-              {{ bi('重置为演示种子', 'Reset Demo') }}
-            </NButton>
-            <NButton size="small" type="error" ghost @click="openDangerConfirm('clear')">
-              <template #icon><SvgIcon icon="lucide:trash-2" /></template>
-              {{ bi('清空业务数据', 'Clear All') }}
-            </NButton>
-          </div>
-        </NCard>
-      </div>
+      <!-- 左栏仅保留「工作台模块工坊」与「备份与恢复」，视觉舒展不拥挤 -->
     </div>
 
-    <!-- 右栏（5/12 宽）：「支部信息 + 应用锁」 + 「界面密度与缩放」 + 「窗口与打开方式」 + 「关于与自动更新」 -->
+    <!-- 右栏（5/12 宽）：「应用锁 + 界面密度与缩放」 → 「窗口与打开方式」 → 「数据存储路径 + 一键交接」 → 「关于（含演示数据）」 -->
     <div class="flex flex-col gap-14px xl:col-span-5">
+      <!-- 第 1 行：应用锁 + 界面密度与缩放 -->
       <div class="grid grid-cols-1 gap-14px md:grid-cols-2">
-        <!-- 支部基本信息 -->
-        <NCard :bordered="false" class="h-full">
-          <template #header>
-            <div class="flex items-center gap-8px">
-              <SvgIcon icon="lucide:landmark" class="text-17px text-[#A81C24]" />
-              <span class="font-bold">{{ bi('支部基本信息', 'Branch Profile') }}</span>
-            </div>
-          </template>
-          <div class="flex flex-col gap-8px">
-            <NInput
-              v-model:value="branchNameInput"
-              size="small"
-              :placeholder="bi('党支部全称…', 'Branch name…')"
-              maxlength="40"
-              @keyup.enter="saveBranchNameSetting"
-            />
-            <div class="flex justify-end">
-              <NButton type="primary" size="tiny" @click="saveBranchNameSetting">
-                <template #icon><SvgIcon icon="lucide:check" /></template>
-                {{ bi('保存名称', 'Save Name') }}
-              </NButton>
-            </div>
-          </div>
-        </NCard>
-
         <!-- 应用锁 -->
         <NCard :bordered="false" class="h-full">
           <template #header>
@@ -878,46 +728,46 @@ onMounted(listSnapshots);
             <span>{{ bi('未启用', 'Disabled') }}</span>
           </div>
         </NCard>
+
+        <!-- 界面密度与缩放 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex items-center gap-8px">
+              <SvgIcon icon="lucide:sliders-horizontal" class="text-17px text-[#A81C24]" />
+              <span class="font-bold">{{ bi('界面密度与缩放', 'Density & Scaling') }}</span>
+            </div>
+          </template>
+          <NSpace vertical size="small">
+            <div class="flex flex-col gap-5px">
+              <div class="text-12px font-medium text-[var(--sct-muted)]">{{ bi('界面密度', 'Density') }}</div>
+              <NRadioGroup :value="themeStore.density" size="small" @update:value="handleDensityChange">
+                <NRadioButton v-for="opt in DENSITY_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ bi(opt.zh, opt.en) }}
+                </NRadioButton>
+              </NRadioGroup>
+            </div>
+            <div class="flex flex-col gap-5px pt-2px">
+              <div class="flex items-center justify-between text-12px">
+                <span class="font-medium text-[var(--sct-muted)]">{{ bi('全局字号缩放', 'Font Scale') }}</span>
+                <div class="flex items-center gap-4px">
+                  <span class="font-mono font-bold text-[var(--sct-ink)]">{{ themeStore.fontConfig.scale }}%</span>
+                  <NButton
+                    v-if="themeStore.fontConfig.scale !== 100"
+                    size="tiny"
+                    quaternary
+                    @click="themeStore.fontConfig.scale = 100"
+                  >
+                    100%
+                  </NButton>
+                </div>
+              </div>
+              <NSlider v-model:value="themeStore.fontConfig.scale" :min="85" :max="150" :step="5" />
+            </div>
+          </NSpace>
+        </NCard>
       </div>
 
-      <!-- 界面密度与字号缩放（与右侧主题抽屉双向同步） -->
-      <NCard :bordered="false">
-        <template #header>
-          <div class="flex items-center gap-8px">
-            <SvgIcon icon="lucide:sliders-horizontal" class="text-17px text-[#A81C24]" />
-            <span class="font-bold">{{ bi('界面密度与缩放', 'Density & Scaling') }}</span>
-          </div>
-        </template>
-        <NSpace vertical size="medium">
-          <div class="flex flex-wrap items-center justify-between gap-8px">
-            <div class="text-13px font-medium">{{ bi('界面密度', 'Interface Density') }}</div>
-            <NRadioGroup :value="themeStore.density" size="small" @update:value="handleDensityChange">
-              <NRadioButton v-for="opt in DENSITY_OPTIONS" :key="opt.value" :value="opt.value">
-                {{ bi(opt.zh, opt.en) }}
-              </NRadioButton>
-            </NRadioGroup>
-          </div>
-          <div class="flex flex-wrap items-center justify-between gap-10px">
-            <div class="text-13px font-medium">{{ bi('全局字号缩放', 'Global Font Scale') }}</div>
-            <div class="flex items-center gap-8px">
-              <div class="w-130px">
-                <NSlider v-model:value="themeStore.fontConfig.scale" :min="85" :max="150" :step="5" />
-              </div>
-              <span class="w-42px text-right font-mono text-12px font-bold">{{ themeStore.fontConfig.scale }}%</span>
-              <NButton
-                v-if="themeStore.fontConfig.scale !== 100"
-                size="tiny"
-                quaternary
-                @click="themeStore.fontConfig.scale = 100"
-              >
-                100%
-              </NButton>
-            </div>
-          </div>
-        </NSpace>
-      </NCard>
-
-      <!-- 窗口与打开方式 -->
+      <!-- 第 2 行：窗口与打开方式（右栏通宽） -->
       <NCard :bordered="false">
         <template #header>
           <div class="flex items-center gap-8px">
@@ -1001,12 +851,101 @@ onMounted(listSnapshots);
         </NSpace>
       </NCard>
 
-      <!-- 关于三尺台与 GitHub Release 自动更新 -->
+      <!-- 第 3 行：数据存储路径 + 一键交接 -->
+      <div class="grid grid-cols-1 gap-14px md:grid-cols-2">
+        <!-- 数据存储路径 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex flex-wrap items-center gap-6px">
+              <SvgIcon icon="lucide:folder-cog" class="text-17px text-[#2563eb]" />
+              <span class="font-bold">{{ bi('数据存储路径', 'Storage Path') }}</span>
+              <NTag
+                v-if="desktopBridge.dataDirInfo.value"
+                size="tiny"
+                :type="desktopBridge.dataDirInfo.value.isCustom ? 'success' : 'default'"
+                :bordered="false"
+                round
+              >
+                {{ desktopBridge.dataDirInfo.value.isCustom ? bi('自定义', 'Custom') : bi('默认', 'Default') }}
+              </NTag>
+            </div>
+          </template>
+          <NSpace vertical size="small">
+            <div
+              v-if="isDesktopManaged && desktopBridge.dataDirInfo.value"
+              class="rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-10px py-8px"
+            >
+              <div class="break-all font-mono text-11px font-semibold text-[var(--sct-ink)]">
+                {{ desktopBridge.dataDirInfo.value.currentDir }}
+              </div>
+              <div class="mt-8px flex flex-wrap gap-5px">
+                <NButton size="tiny" type="primary" :loading="dirBusy" @click="handlePickDataDir">
+                  <template #icon><SvgIcon icon="lucide:folder-input" /></template>
+                  {{ bi('更改路径', 'Change') }}
+                </NButton>
+                <NButton size="tiny" secondary @click="handleOpenDataDir">
+                  <template #icon><SvgIcon icon="lucide:folder-open" /></template>
+                  {{ bi('打开', 'Open') }}
+                </NButton>
+                <NPopconfirm
+                  v-if="desktopBridge.dataDirInfo.value.isCustom"
+                  @positive-click="applyDataDirChange('reset_default')"
+                >
+                  <template #trigger>
+                    <NButton size="tiny" quaternary>{{ bi('恢复默认', 'Reset') }}</NButton>
+                  </template>
+                  确认将数据迁移回系统默认目录？
+                </NPopconfirm>
+              </div>
+              <div class="mt-6px flex flex-wrap gap-8px text-10.5px text-gray-500">
+                <span>自动 {{ desktopBridge.dataDirInfo.value.autoSnapshotCount }}</span>
+                <span>手动 {{ desktopBridge.dataDirInfo.value.manualSnapshotCount }}</span>
+                <span>保护 {{ desktopBridge.dataDirInfo.value.protectedSnapshotCount }}</span>
+              </div>
+            </div>
+            <NAlert v-else type="info" :show-icon="false">
+              {{ bi('网页模式下暂不支持更改本地目录，请使用桌面端。', 'Desktop app required.') }}
+            </NAlert>
+          </NSpace>
+        </NCard>
+
+        <!-- 一键交接 -->
+        <NCard :bordered="false" class="h-full">
+          <template #header>
+            <div class="flex items-center gap-8px">
+              <SvgIcon icon="lucide:package-check" class="text-17px text-[#A81C24]" />
+              <span class="font-bold">{{ bi('一键交接', 'One-Click Handover') }}</span>
+            </div>
+          </template>
+          <div class="flex flex-col gap-7px">
+            <NButton
+              type="primary"
+              size="small"
+              block
+              :loading="exportingPack"
+              @click="openExportPackModal('handover')"
+            >
+              <template #icon><SvgIcon icon="lucide:package" /></template>
+              {{ bi('导出交接包', 'Export Handover') }}
+            </NButton>
+            <NButton size="small" type="info" secondary block :loading="restoring" @click="pickImportFile">
+              <template #icon><SvgIcon icon="lucide:package-open" /></template>
+              {{ bi('导入交接包…', 'Import Handover…') }}
+            </NButton>
+            <NButton size="small" secondary block :loading="handoverBusy" @click="exportHandoverDoc">
+              <template #icon><SvgIcon icon="lucide:printer" /></template>
+              {{ bi('生成交接文档', 'Handover Doc') }}
+            </NButton>
+          </div>
+        </NCard>
+      </div>
+
+      <!-- 关于（更名自「关于三尺台与软件更新」，合并「演示数据」管理区） -->
       <NCard :bordered="false">
         <template #header>
           <div class="flex items-center gap-8px">
             <SvgIcon icon="lucide:info" class="text-17px text-[#A81C24]" />
-            <span class="font-bold">{{ bi('关于三尺台与软件更新', 'About & Auto Update') }}</span>
+            <span class="font-bold">{{ bi('关于', 'About') }}</span>
           </div>
         </template>
         <template #header-extra>
@@ -1070,6 +1009,26 @@ onMounted(listSnapshots);
               Vue 3 · Naive UI · FullCalendar · ECharts · Dexie · Tauri
             </NDescriptionsItem>
           </NDescriptions>
+
+          <!-- 演示数据操作区（并入「关于」卡片） -->
+          <div
+            class="flex flex-wrap items-center justify-between gap-8px border-t border-dashed border-[var(--sct-border)] pt-10px"
+          >
+            <span class="flex items-center gap-5px text-12px font-semibold text-[var(--sct-muted)]">
+              <SvgIcon icon="lucide:database-backup" class="text-14px text-[#d97706]" />
+              <span>{{ bi('演示数据', 'Demo Data') }}</span>
+            </span>
+            <div class="flex flex-wrap gap-6px">
+              <NButton size="tiny" secondary :loading="resetting" @click="openDangerConfirm('reset')">
+                <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+                {{ bi('重置为演示种子', 'Reset Demo') }}
+              </NButton>
+              <NButton size="tiny" type="error" ghost @click="openDangerConfirm('clear')">
+                <template #icon><SvgIcon icon="lucide:trash-2" /></template>
+                {{ bi('清空业务数据', 'Clear All') }}
+              </NButton>
+            </div>
+          </div>
         </NSpace>
       </NCard>
     </div>

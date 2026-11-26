@@ -3,15 +3,32 @@
  *
  * 视图订阅本 store 的 refs；任何写库动作都会实时反映到所有订阅者。
  */
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { defineStore } from 'pinia';
 import dayjs from 'dayjs';
 import type { EventInput } from '@fullcalendar/core';
 import { nanoid } from '@sa/utils';
 import { computeNextDevNode, findMatchedMaterial, nodesOfStage } from '@/constants/dev-nodes';
 import type { DevNodeDef } from '@/constants/dev-nodes';
-import { DEFAULT_POINT_RULES } from '@/constants/party-points';
+import {
+  BUILTIN_POINT_SCHEMES,
+  DEFAULT_POINT_RULES,
+  clonePointScheme,
+  getBuiltinPointScheme
+} from '@/constants/party-points';
 import { EVENT_CATEGORY_COLORS, FEE_STANDARD } from '@/constants/sanchitai';
+import {
+  DEFAULT_BRANCH_NAME,
+  getMemberLifecycle,
+  getScenePreset,
+  isMemberActive,
+  isMemberArchived,
+  isMemberFloating,
+  isMemberInBranchRoster,
+  loadWorkspaceConfigSync,
+  normalizeWorkspaceConfig,
+  persistWorkspaceConfigSync
+} from '@/constants/workspace-presets';
 import { formatMemberCode, generateNextMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import type { DuplicateStrategy, ImportPreviewRow } from '@/utils/member-import';
 import { computeDefaultFullDate, normalizeMemberRecord } from '@/utils/member-status';
@@ -67,8 +84,26 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
   const attendance = useDexieLive<Sct.Attendance[]>(() => db.attendance.toArray(), []);
   const pointRecords = useDexieLive<Sct.PointRecord[]>(() => db.pointRecords.toArray(), []);
   const pointVetoes = useDexieLive<Sct.PointVeto[]>(() => db.pointVetoes.toArray(), []);
+  const transferRecords = useDexieLive<Sct.TransferRecord[]>(() => db.transferRecords.toArray(), []);
+  const volunteerActivities = useDexieLive<Sct.VolunteerActivity[]>(() => db.volunteerActivities.toArray(), []);
   const pointRulesRow = useDexieLive<{ key: string; value: unknown } | undefined>(
     () => db.meta.get('point-rules'),
+    undefined
+  );
+  const pointSchemesRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('point-schemes'),
+    undefined
+  );
+  const pointYearSchemeRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('point-year-scheme'),
+    undefined
+  );
+  const pointYearSnapshotsRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('point-year-snapshots'),
+    undefined
+  );
+  const workspaceConfigRow = useDexieLive<{ key: string; value: unknown } | undefined>(
+    () => db.meta.get('workspace-config'),
     undefined
   );
   const partyGroupsRow = useDexieLive<{ key: string; value: unknown } | undefined>(
@@ -84,6 +119,21 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     undefined
   );
 
+  const workspaceConfig = computed<Sct.WorkspaceConfig>(() => {
+    if (workspaceConfigRow.value?.value) {
+      return normalizeWorkspaceConfig(workspaceConfigRow.value.value);
+    }
+    return loadWorkspaceConfigSync();
+  });
+
+  watch(
+    workspaceConfig,
+    cfg => {
+      persistWorkspaceConfigSync(cfg);
+    },
+    { immediate: true, deep: true }
+  );
+
   const pointRules = computed<Sct.PointRuleItem[]>(() => {
     const val = pointRulesRow.value?.value;
     if (Array.isArray(val) && val.length > 0) {
@@ -91,6 +141,50 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     }
     return DEFAULT_POINT_RULES;
   });
+
+  const allPointSchemes = computed<Sct.PointScheme[]>(() => {
+    const customList = Array.isArray(pointSchemesRow.value?.value)
+      ? (pointSchemesRow.value.value as Sct.PointScheme[])
+      : [];
+    const customById = new Map(customList.map(s => [s.id, s]));
+    const legacyCustomRules = Array.isArray(pointRulesRow.value?.value)
+      ? (pointRulesRow.value.value as Sct.PointRuleItem[])
+      : null;
+
+    const mergedBuiltins = BUILTIN_POINT_SCHEMES.map(b => {
+      const override = customById.get(b.id);
+      if (override) return override;
+      if (b.id === 'scheme-uni-60-40' && legacyCustomRules?.length) {
+        return { ...clonePointScheme(b), rules: legacyCustomRules };
+      }
+      return clonePointScheme(b);
+    });
+
+    const builtinIds = new Set(BUILTIN_POINT_SCHEMES.map(b => b.id));
+    const extras = customList.filter(s => !builtinIds.has(s.id));
+    return [...mergedBuiltins, ...extras];
+  });
+
+  const pointYearSchemeMap = computed<Record<string, string>>(() => {
+    const val = pointYearSchemeRow.value?.value;
+    return val && typeof val === 'object' ? (val as Record<string, string>) : {};
+  });
+
+  const pointYearSnapshots = computed<Record<string, Sct.PointScheme>>(() => {
+    const val = pointYearSnapshotsRow.value?.value;
+    return val && typeof val === 'object' ? (val as Record<string, Sct.PointScheme>) : {};
+  });
+
+  function getPointSchemeForYear(year: number): Sct.PointScheme {
+    const key = String(year);
+    const snap = pointYearSnapshots.value[key];
+    if (snap && Array.isArray(snap.dimensions) && snap.dimensions.length > 0) {
+      return snap;
+    }
+    const boundId = pointYearSchemeMap.value[key] || getScenePreset(workspaceConfig.value.scene).defaultPointSchemeId;
+    const hit = allPointSchemes.value.find(s => s.id === boundId);
+    return clonePointScheme(hit ?? getBuiltinPointScheme('scheme-uni-60-40'));
+  }
 
   const partyGroupNames = computed<string[]>(() => {
     const saved = Array.isArray(partyGroupsRow.value?.value)
@@ -111,8 +205,16 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
   const branchName = computed(() => {
     const val = branchNameRow.value?.value;
-    return typeof val === 'string' && val.trim() ? val.trim() : '智感硕博党支部';
+    return typeof val === 'string' && val.trim() ? val.trim() : DEFAULT_BRANCH_NAME;
   });
+
+  // ---------------- 生命周期派生名单 ----------------
+  const activeMembers = computed(() => members.value.filter(m => isMemberActive(m)));
+  const inBranchRosterMembers = computed(() => members.value.filter(m => isMemberInBranchRoster(m)));
+  const archivedMembers = computed(() => members.value.filter(m => isMemberArchived(m)));
+  const transferringOutMembers = computed(() => members.value.filter(m => getMemberLifecycle(m) === '转出办理中'));
+  const incomingAuditMembers = computed(() => members.value.filter(m => getMemberLifecycle(m) === '转入待核查'));
+  const floatingMembers = computed(() => members.value.filter(m => isMemberFloating(m)));
 
   async function setBranchName(name: string) {
     const clean = name.trim();
@@ -311,6 +413,10 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       dorm_building: '',
       dorm_room: '',
       class_name: '',
+      department: '',
+      job_title: '',
+      office_location: '',
+      custom_fields: {},
       id_card: '',
       phone: '',
       group: '',
@@ -321,8 +427,9 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
       join_date: '',
       full_date: '',
       role: '',
-      fee_category: '学生党员',
-      fee_monthly: FEE_STANDARD.studentMonthly,
+      lifecycle_status: '在册正常',
+      fee_category: getScenePreset(workspaceConfig.value.scene).defaultFeeCategory,
+      fee_monthly: getScenePreset(workspaceConfig.value.scene).defaultFeeMonthly,
       ...input,
       id,
       code: autoCode,
@@ -416,16 +523,51 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     );
   }
 
-  async function deleteMember(id: string) {
+  /** 检测成员是否存在历史台账记录（有历史记录则拦截物理删除，引导走关系转出/归档） */
+  async function canHardDeleteMember(memberId: string): Promise<{ allowed: boolean; reasons: string[] }> {
+    const reasons: string[] = [];
+    const [feeCnt, attCnt, ptCnt, tfCnt, devRow, allTalks, allVols] = await Promise.all([
+      db.feeRecords.where('member_id').equals(memberId).count(),
+      db.attendance.where('member_id').equals(memberId).count(),
+      db.pointRecords.where('member_id').equals(memberId).count(),
+      db.transferRecords.where('member_id').equals(memberId).count(),
+      db.devStages.get(memberId),
+      db.talks.toArray(),
+      db.volunteerActivities.toArray()
+    ]);
+    if (feeCnt > 0) reasons.push(`党费记录 ${feeCnt} 条`);
+    if (attCnt > 0) reasons.push(`会议考勤 ${attCnt} 条`);
+    if (ptCnt > 0) reasons.push(`积分记录 ${ptCnt} 条`);
+    if (tfCnt > 0) reasons.push(`组织关系转接记录 ${tfCnt} 条`);
+    const talkCnt = allTalks.filter(t => t.member_ids.includes(memberId)).length;
+    if (talkCnt > 0) reasons.push(`谈心谈话 ${talkCnt} 条`);
+    const volCnt = allVols.filter(v => v.participants.some(p => p.member_id === memberId)).length;
+    if (volCnt > 0) reasons.push(`志愿服务 ${volCnt} 场`);
+    const archivedMats = (devRow?.materials ?? []).filter(m => m.status === '已归档').length;
+    if (archivedMats > 0) reasons.push(`已归档发展材料 ${archivedMats} 项`);
+    return { allowed: reasons.length === 0, reasons };
+  }
+
+  async function deleteMember(id: string, force = false) {
+    if (!force) {
+      const check = await canHardDeleteMember(id);
+      if (!check.allowed) {
+        window.$message?.warning(
+          `该成员存在历史台账（${check.reasons.join('、')}），为保证账实相符禁止直接删除，请使用「关系转出」或「停止发展归档」`
+        );
+        return false;
+      }
+    }
     await db.transaction(
       'rw',
-      [db.members, db.devStages, db.feeRecords, db.pointRecords, db.pointVetoes, db.meta],
+      [db.members, db.devStages, db.feeRecords, db.pointRecords, db.pointVetoes, db.transferRecords, db.meta],
       async () => {
         await db.members.delete(id);
         await db.devStages.delete(id);
         await db.feeRecords.where('member_id').equals(id).delete();
         await db.pointRecords.where('member_id').equals(id).delete();
         await db.pointVetoes.where('member_id').equals(id).delete();
+        await db.transferRecords.where('member_id').equals(id).delete();
         const youthRow = await db.meta.get('youth-committee-slots');
         if (Array.isArray(youthRow?.value)) {
           const slots = youthRow.value as Sct.YouthCommitteeSlot[];
@@ -438,6 +580,7 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
         }
       }
     );
+    return true;
   }
 
   /** 批量导入成员（导入前自动创建本地快照；支持跳过 / 合并更新 / 追加） */
@@ -709,11 +852,11 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     return attendance.value.filter(a => a.event_id === eventId);
   }
 
-  /** 初始化某会议考勤：正式+预备党员默认"到会" */
+  /** 初始化某会议考勤：当前在册正式+预备党员默认"到会" */
   async function initAttendance(eventId: string) {
     const existing = attendanceOfEvent(eventId);
     if (existing.length) return existing;
-    const targets = members.value.filter(m => m.type === '正式党员' || m.type === '预备党员');
+    const targets = activeMembers.value.filter(m => m.type === '正式党员' || m.type === '预备党员');
     const rows: Sct.Attendance[] = targets.map(m => ({
       id: `${eventId}::${m.id}`,
       event_id: eventId,
@@ -1023,6 +1166,505 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     await guardWrite(db.meta.delete('point-rules'), '重置积分考核标准');
   }
 
+  async function saveCustomPointScheme(scheme: Sct.PointScheme) {
+    const cur = Array.isArray(pointSchemesRow.value?.value)
+      ? [...(pointSchemesRow.value.value as Sct.PointScheme[])]
+      : [];
+    const idx = cur.findIndex(s => s.id === scheme.id);
+    if (idx >= 0) {
+      cur[idx] = plain(scheme);
+    } else {
+      cur.push(plain(scheme));
+    }
+    await guardWrite(db.meta.put({ key: 'point-schemes', value: plain(cur) }), '保存积分考核方案');
+  }
+
+  async function deleteCustomPointScheme(schemeId: string) {
+    const cur = Array.isArray(pointSchemesRow.value?.value) ? (pointSchemesRow.value.value as Sct.PointScheme[]) : [];
+    const next = cur.filter(s => s.id !== schemeId);
+    await guardWrite(db.meta.put({ key: 'point-schemes', value: plain(next) }), '删除自定义积分方案');
+  }
+
+  /** 将指定方案快照绑定至目标年度（换年或改方案不影响其他年度历史成绩） */
+  async function bindYearPointScheme(year: number, scheme: Sct.PointScheme) {
+    const key = String(year);
+    const nextMap = { ...pointYearSchemeMap.value, [key]: scheme.id };
+    const nextSnaps = { ...pointYearSnapshots.value, [key]: plain(scheme) };
+    await guardWrite(
+      db.transaction('rw', [db.meta], async () => {
+        await db.meta.put({ key: 'point-year-scheme', value: plain(nextMap) });
+        await db.meta.put({ key: 'point-year-snapshots', value: plain(nextSnaps) });
+      }),
+      '绑定年度积分方案'
+    );
+  }
+
+  async function bulkAddPointRecords(
+    inputs: Array<Omit<Sct.PointRecord, 'id' | 'created_at' | 'identity'>>
+  ): Promise<number> {
+    if (!inputs.length) return 0;
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const rows: Sct.PointRecord[] = inputs.map(item => ({
+      ...item,
+      id: `pt-${nanoid(8)}`,
+      created_at: now,
+      identity: 'secretary'
+    }));
+    await guardWrite(db.pointRecords.bulkPut(plain(rows)), '批量导入积分草稿');
+    return rows.length;
+  }
+
+  // ---------------- 工作台通用配置、场景预设与 .sctpreset 单位配置包 ----------------
+  async function updateWorkspaceConfig(patch: Partial<Sct.WorkspaceConfig>) {
+    const cur = workspaceConfig.value;
+    const next = normalizeWorkspaceConfig({
+      ...cur,
+      ...patch,
+      enabledModules: {
+        ...cur.enabledModules,
+        ...patch.enabledModules
+      },
+      enabledFieldGroups: {
+        ...cur.enabledFieldGroups,
+        ...patch.enabledFieldGroups
+      },
+      customFields: patch.customFields ?? cur.customFields,
+      updatedAt: new Date().toISOString()
+    });
+    persistWorkspaceConfigSync(next);
+    await guardWrite(db.meta.put({ key: 'workspace-config', value: plain(next) }), '工作台配置');
+    return next;
+  }
+
+  async function applyBranchScenePreset(
+    scene: Sct.BranchSceneKey,
+    options: {
+      branchName?: string;
+      enabledModules?: Record<Sct.OptionalModuleKey, boolean>;
+      markOnboarded?: boolean;
+    } = {}
+  ) {
+    const preset = getScenePreset(scene);
+    const nextCfg = await updateWorkspaceConfig({
+      scene,
+      enabledModules: options.enabledModules ?? { ...preset.enabledModules },
+      enabledFieldGroups: { ...preset.enabledFieldGroups },
+      onboardingCompleted: options.markOnboarded ?? workspaceConfig.value.onboardingCompleted
+    });
+    if (options.branchName?.trim()) {
+      await setBranchName(options.branchName.trim());
+    }
+    const curYear = dayjs().year();
+    if (!pointYearSnapshots.value[String(curYear)]) {
+      await bindYearPointScheme(curYear, getBuiltinPointScheme(preset.defaultPointSchemeId));
+    }
+    return nextCfg;
+  }
+
+  async function applyUnitPresetPack(pack: Sct.UnitPresetPack, targetYear = dayjs().year()) {
+    const applied: string[] = [];
+    if (pack.includes.includes('scene') && pack.scene) {
+      await updateWorkspaceConfig({
+        scene: pack.scene,
+        enabledModules: pack.enabled_modules,
+        enabledFieldGroups: pack.enabled_field_groups
+      });
+      applied.push('支部场景与模块配置');
+    }
+    if (pack.includes.includes('custom_fields') && Array.isArray(pack.custom_fields)) {
+      await updateWorkspaceConfig({ customFields: pack.custom_fields });
+      applied.push(`花名册自定义字段(${pack.custom_fields.length}项)`);
+    }
+    if (pack.includes.includes('point_scheme') && pack.point_scheme) {
+      const importedScheme: Sct.PointScheme = {
+        ...plain(pack.point_scheme),
+        builtin: false
+      };
+      await saveCustomPointScheme(importedScheme);
+      await bindYearPointScheme(targetYear, importedScheme);
+      applied.push(`积分考核方案「${importedScheme.name}」`);
+    }
+    if (pack.includes.includes('doc_templates') && Array.isArray(pack.doc_templates) && pack.doc_templates.length) {
+      await guardWrite(
+        db.docTemplates.bulkPut(plain(pack.doc_templates.map(t => ({ ...t, identity: 'secretary' })))),
+        '导入配置包材料模板'
+      );
+      applied.push(`公文模板(${pack.doc_templates.length}套)`);
+    }
+    return applied;
+  }
+
+  // ---------------- 组织关系转接 / 转入核查 / 流动党员 / 归档与恢复 ----------------
+  async function releaseMemberActiveSlots(memberId: string) {
+    await db.members.update(memberId, { seat: null, role: '' });
+    const youthRow = await db.meta.get('youth-committee-slots');
+    if (Array.isArray(youthRow?.value)) {
+      const slots = youthRow.value as Sct.YouthCommitteeSlot[];
+      if (slots.some(s => s.member_id === memberId)) {
+        await db.meta.put({
+          key: 'youth-committee-slots',
+          value: slots.map(s => (s.member_id === memberId ? { ...s, member_id: null } : s))
+        });
+      }
+    }
+  }
+
+  async function initiateTransferOut(
+    memberId: string,
+    payload: Partial<Sct.TransferRecord> & { transferId?: string }
+  ): Promise<string> {
+    const m = memberOf(memberId);
+    const id = payload.transferId ?? `tf-${nanoid(8)}`;
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const row: Sct.TransferRecord = {
+      id,
+      member_id: memberId,
+      member_name_snapshot: m?.name ?? payload.member_name_snapshot ?? '',
+      direction: 'out',
+      status: '办理中',
+      step: payload.step ?? 1,
+      initiated_date: payload.initiated_date || dayjs().format('YYYY-MM-DD'),
+      transfer_mode: payload.transfer_mode ?? '线上系统转接',
+      target_committee: payload.target_committee ?? '',
+      target_branch: payload.target_branch ?? '',
+      is_internal: Boolean(payload.is_internal),
+      letter_no: payload.letter_no ?? '',
+      fee_paid_until: payload.fee_paid_until ?? dayjs().format('YYYY-MM'),
+      archive_dest: payload.archive_dest ?? '随人事档案',
+      receipt_received: Boolean(payload.receipt_received),
+      receipt_date: payload.receipt_date ?? '',
+      receipt_no: payload.receipt_no ?? '',
+      note: payload.note ?? '',
+      updated_at: now,
+      identity: 'secretary'
+    };
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await db.transferRecords.put(plain(row));
+        await db.members.update(memberId, { lifecycle_status: '转出办理中' });
+      }),
+      '保存组织关系转出单'
+    );
+    return id;
+  }
+
+  async function updateTransferRecord(id: string, patch: Partial<Sct.TransferRecord>) {
+    const existing = await db.transferRecords.get(id);
+    if (!existing) return;
+    await guardWrite(
+      db.transferRecords.put(
+        plain({
+          ...existing,
+          ...patch,
+          id,
+          updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+        })
+      ),
+      '更新组织关系转接记录'
+    );
+  }
+
+  async function completeTransferOut(
+    transferId: string,
+    receipt: { receipt_date?: string; receipt_no?: string; note?: string } = {}
+  ) {
+    const existing = await db.transferRecords.get(transferId);
+    if (!existing) return;
+    const completedDate = receipt.receipt_date || dayjs().format('YYYY-MM-DD');
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords, db.meta], async () => {
+        await db.transferRecords.put(
+          plain({
+            ...existing,
+            status: '已完成',
+            step: 4,
+            completed_date: completedDate,
+            receipt_received: true,
+            receipt_date: completedDate,
+            receipt_no: receipt.receipt_no ?? existing.receipt_no ?? '',
+            note: receipt.note ?? existing.note ?? '',
+            updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+          })
+        );
+        await releaseMemberActiveSlots(existing.member_id);
+        await db.members.update(existing.member_id, {
+          lifecycle_status: '已转出',
+          archived_at: completedDate,
+          archive_reason: `组织关系转往：${existing.target_branch || existing.target_committee || '接收党组织'}`
+        });
+      }),
+      '办结关系转出并归档'
+    );
+  }
+
+  async function cancelTransferOut(transferId: string) {
+    const existing = await db.transferRecords.get(transferId);
+    if (!existing) return;
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await db.transferRecords.put(
+          plain({
+            ...existing,
+            status: '已取消',
+            updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+          })
+        );
+        await db.members.update(existing.member_id, { lifecycle_status: '在册正常' });
+      }),
+      '撤回关系转出'
+    );
+  }
+
+  async function batchInitiateTransferOut(
+    items: Array<{
+      member_id: string;
+      transfer_mode: Sct.TransferMode;
+      target_committee: string;
+      target_branch: string;
+      fee_paid_until: string;
+      initiated_date: string;
+      archive_dest: Sct.ArchiveDest;
+      is_internal: boolean;
+      completeImmediately?: boolean;
+    }>
+  ): Promise<Sct.TransferRecord[]> {
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const created: Sct.TransferRecord[] = [];
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords, db.meta], async () => {
+        for (const item of items) {
+          const m = await db.members.get(item.member_id);
+          if (!m) continue;
+          const done = Boolean(item.completeImmediately);
+          const rec: Sct.TransferRecord = {
+            id: `tf-${nanoid(8)}`,
+            member_id: item.member_id,
+            member_name_snapshot: m.name,
+            direction: 'out',
+            status: done ? '已完成' : '办理中',
+            step: done ? 4 : 2,
+            initiated_date: item.initiated_date || dayjs().format('YYYY-MM-DD'),
+            completed_date: done ? item.initiated_date || dayjs().format('YYYY-MM-DD') : undefined,
+            transfer_mode: item.transfer_mode,
+            target_committee: item.target_committee,
+            target_branch: item.target_branch,
+            fee_paid_until: item.fee_paid_until,
+            archive_dest: item.archive_dest,
+            is_internal: item.is_internal,
+            receipt_received: done,
+            receipt_date: done ? item.initiated_date || dayjs().format('YYYY-MM-DD') : '',
+            updated_at: now,
+            identity: 'secretary'
+          };
+          created.push(rec);
+          await db.transferRecords.put(plain(rec));
+          if (done) {
+            await releaseMemberActiveSlots(item.member_id);
+            await db.members.update(item.member_id, {
+              lifecycle_status: '已转出',
+              archived_at: rec.completed_date,
+              archive_reason: `毕业/批量转往：${rec.target_branch || rec.target_committee || '接收党组织'}`
+            });
+          } else {
+            await db.members.update(item.member_id, { lifecycle_status: '转出办理中' });
+          }
+        }
+      }),
+      '批量发起组织关系转出'
+    );
+    return created;
+  }
+
+  async function markMemberIncomingAudit(memberId: string, sourceOrg = '') {
+    const m = memberOf(memberId);
+    const id = `tf-${nanoid(8)}`;
+    const row: Sct.TransferRecord = {
+      id,
+      member_id: memberId,
+      member_name_snapshot: m?.name ?? '',
+      direction: 'in',
+      status: '办理中',
+      initiated_date: dayjs().format('YYYY-MM-DD'),
+      source_org: sourceOrg.trim(),
+      audit_items: {},
+      audit_notes: {},
+      updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      identity: 'secretary'
+    };
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await db.transferRecords.put(plain(row));
+        await db.members.update(memberId, { lifecycle_status: '转入待核查' });
+      }),
+      '加入转入档案核查'
+    );
+    return id;
+  }
+
+  async function updateIncomingAudit(
+    transferId: string,
+    auditItems: Record<string, Sct.AuditItemState>,
+    auditNotes?: Record<string, string>,
+    sourceOrg?: string
+  ) {
+    const existing = await db.transferRecords.get(transferId);
+    if (!existing) return;
+    await guardWrite(
+      db.transferRecords.put(
+        plain({
+          ...existing,
+          source_org: sourceOrg !== undefined ? sourceOrg : existing.source_org,
+          audit_items: auditItems,
+          audit_notes: auditNotes ?? existing.audit_notes ?? {},
+          updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+        })
+      ),
+      '保存档案核查状态'
+    );
+  }
+
+  async function approveIncomingAudit(transferId: string) {
+    const existing = await db.transferRecords.get(transferId);
+    if (!existing) return;
+    const today = dayjs().format('YYYY-MM-DD');
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await db.transferRecords.put(
+          plain({
+            ...existing,
+            status: '已完成',
+            completed_date: today,
+            updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+          })
+        );
+        await db.members.update(existing.member_id, { lifecycle_status: '在册正常' });
+      }),
+      '核查通过并正式入册'
+    );
+  }
+
+  async function setMemberFloating(
+    memberId: string,
+    direction: 'float_out' | 'float_in',
+    sourceOrg: string,
+    note = ''
+  ) {
+    const m = memberOf(memberId);
+    const statusLabel: Sct.MemberLifecycleStatus = direction === 'float_out' ? '流出党员' : '流入党员';
+    const row: Sct.TransferRecord = {
+      id: `tf-${nanoid(8)}`,
+      member_id: memberId,
+      member_name_snapshot: m?.name ?? '',
+      direction,
+      status: '办理中',
+      initiated_date: dayjs().format('YYYY-MM-DD'),
+      source_org: sourceOrg.trim(),
+      contact_logs: [],
+      note: note.trim(),
+      updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      identity: 'secretary'
+    };
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await db.transferRecords.put(plain(row));
+        await db.members.update(memberId, { lifecycle_status: statusLabel });
+      }),
+      '登记流动党员'
+    );
+    return row.id;
+  }
+
+  async function addFloatingContactLog(transferId: string, summary: string, date = dayjs().format('YYYY-MM-DD')) {
+    const existing = await db.transferRecords.get(transferId);
+    if (!existing || !summary.trim()) return;
+    const logs = [...(existing.contact_logs ?? []), { date, summary: summary.trim() }];
+    await updateTransferRecord(transferId, { contact_logs: logs });
+  }
+
+  async function archiveMemberStopped(memberId: string, reason: string) {
+    const today = dayjs().format('YYYY-MM-DD');
+    await guardWrite(
+      db.transaction('rw', [db.members, db.meta], async () => {
+        await releaseMemberActiveSlots(memberId);
+        await db.members.update(memberId, {
+          lifecycle_status: '停止发展',
+          archived_at: today,
+          archive_reason: reason.trim() || '停止发展 / 历史离队归档'
+        });
+      }),
+      '停止发展归档'
+    );
+  }
+
+  async function restoreMemberToActive(memberId: string) {
+    await guardWrite(
+      db.transaction('rw', [db.members, db.transferRecords], async () => {
+        await db.members.update(memberId, {
+          lifecycle_status: '在册正常',
+          archived_at: '',
+          archive_reason: ''
+        });
+        const pendingFloating = await db.transferRecords
+          .where('member_id')
+          .equals(memberId)
+          .filter(r => (r.direction === 'float_out' || r.direction === 'float_in') && r.status === '办理中')
+          .toArray();
+        for (const r of pendingFloating) {
+          await db.transferRecords.put(
+            plain({
+              ...r,
+              status: '已完成',
+              completed_date: dayjs().format('YYYY-MM-DD'),
+              updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+            })
+          );
+        }
+      }),
+      '恢复为在册正常'
+    );
+  }
+
+  // ---------------- 志愿时长台账 CRUD ----------------
+  async function addVolunteerActivity(
+    input: Omit<Sct.VolunteerActivity, 'id' | 'created_at' | 'identity'> & { id?: string }
+  ): Promise<string> {
+    const id = input.id ?? `vol-${nanoid(8)}`;
+    const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const row: Sct.VolunteerActivity = {
+      ...input,
+      id,
+      created_at: now,
+      updated_at: now,
+      identity: 'secretary'
+    };
+    await guardWrite(db.volunteerActivities.put(plain(row)), '志愿服务活动');
+    return id;
+  }
+
+  async function updateVolunteerActivity(id: string, patch: Partial<Sct.VolunteerActivity>) {
+    const existing = await db.volunteerActivities.get(id);
+    if (!existing) return;
+    await guardWrite(
+      db.volunteerActivities.put(
+        plain({
+          ...existing,
+          ...patch,
+          id,
+          updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss')
+        })
+      ),
+      '更新志愿服务活动'
+    );
+  }
+
+  async function deleteVolunteerActivity(id: string) {
+    await guardWrite(db.volunteerActivities.delete(id), '删除志愿服务活动');
+  }
+
+  async function setVolunteerActivityStatus(id: string, status: Sct.VolunteerStatus) {
+    await updateVolunteerActivity(id, { status });
+  }
+
   // ---------------- 党小组管理（双向互通） ----------------
   async function addPartyGroup(name: string) {
     const clean = name.trim();
@@ -1154,6 +1796,15 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
 
   return {
     members,
+    activeMembers,
+    inBranchRosterMembers,
+    archivedMembers,
+    transferringOutMembers,
+    incomingAuditMembers,
+    floatingMembers,
+    transferRecords,
+    volunteerActivities,
+    workspaceConfig,
     seatMaps,
     calEvents,
     devStages,
@@ -1165,10 +1816,17 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     pointRecords,
     pointVetoes,
     pointRules,
+    allPointSchemes,
+    pointYearSchemeMap,
+    pointYearSnapshots,
+    getPointSchemeForYear,
     partyGroupNames,
     youthCommitteeSlots,
     branchName,
     setBranchName,
+    updateWorkspaceConfig,
+    applyBranchScenePreset,
+    applyUnitPresetPack,
     memberMonthlyFee,
     attendanceOfEvent,
     initAttendance,
@@ -1193,6 +1851,27 @@ export const useWorkDataStore = defineStore(SetupStoreId.WorkData, () => {
     setPointVeto,
     savePointRules,
     resetPointRules,
+    saveCustomPointScheme,
+    deleteCustomPointScheme,
+    bindYearPointScheme,
+    bulkAddPointRecords,
+    canHardDeleteMember,
+    initiateTransferOut,
+    updateTransferRecord,
+    completeTransferOut,
+    cancelTransferOut,
+    batchInitiateTransferOut,
+    markMemberIncomingAudit,
+    updateIncomingAudit,
+    approveIncomingAudit,
+    setMemberFloating,
+    addFloatingContactLog,
+    archiveMemberStopped,
+    restoreMemberToActive,
+    addVolunteerActivity,
+    updateVolunteerActivity,
+    deleteVolunteerActivity,
+    setVolunteerActivityStatus,
     addPartyGroup,
     renamePartyGroup,
     deletePartyGroup,

@@ -16,6 +16,7 @@
  * - 向下兼容：导入解析同时兼容历史明文 `.json` 备份文件。
  */
 import { APP_VERSION } from '@/constants/changelog';
+import { DEFAULT_BRANCH_NAME } from '@/constants/workspace-presets';
 import { CURRENT_SCHEMA_VERSION, exportBackup, importSelectiveBackup, migrateBackupShape } from '@/db/db';
 import type { BackupShape } from '@/db/db';
 
@@ -252,6 +253,12 @@ export async function buildSelectiveSctPackPayload(
     partialBackup.point_records = full.point_records;
     partialBackup.point_vetoes = full.point_vetoes;
     partialBackup.point_rules = full.point_rules;
+    partialBackup.point_schemes = full.point_schemes;
+    partialBackup.point_year_scheme = full.point_year_scheme;
+    partialBackup.point_year_snapshots = full.point_year_snapshots;
+    partialBackup.transfer_records = full.transfer_records;
+    partialBackup.volunteer_activities = full.volunteer_activities;
+    partialBackup.workspace_config = full.workspace_config;
     partialBackup.party_groups = full.party_groups;
     partialBackup.youth_committee_slots = full.youth_committee_slots;
   }
@@ -277,7 +284,7 @@ export async function buildSelectiveSctPackPayload(
     schemaVersion: CURRENT_SCHEMA_VERSION,
     appVersion: APP_VERSION,
     exported_at: full?.exported_at || new Date().toISOString(),
-    branch_name: full?.branch_name || '智感硕博党支部',
+    branch_name: full?.branch_name || DEFAULT_BRANCH_NAME,
     categories: uniqueCats,
     backup: needDb ? partialBackup : undefined,
     preferences
@@ -389,7 +396,7 @@ export async function inspectImportBytes(bytes: Uint8Array, passphrase?: string)
       schemaVersion: typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 4,
       appVersion: typeof raw.app_version === 'string' ? raw.app_version : 'v0.2.5 或更早',
       exported_at: migrated.exported_at,
-      branch_name: migrated.branch_name || '智感硕博党支部',
+      branch_name: migrated.branch_name || DEFAULT_BRANCH_NAME,
       categories: ['core', 'library'],
       backup: migrated
     };

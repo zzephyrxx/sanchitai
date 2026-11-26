@@ -680,7 +680,12 @@ async function handleBatchExport() {
 <template>
   <div class="min-h-560px flex flex-col gap-16px lg:flex-row">
     <!-- 左侧控制面板 -->
-    <NCard :bordered="false" class="w-full flex-shrink-0 lg:w-420px" :content-style="{ padding: '14px 16px' }">
+    <NCard
+      :bordered="false"
+      data-tour="birthday-studio"
+      class="w-full flex-shrink-0 lg:w-420px"
+      :content-style="{ padding: '14px 16px' }"
+    >
       <template #header>
         <div class="flex items-center gap-8px">
           <span class="inline-flex size-28px items-center justify-center rounded-8px bg-[#A81C24]/10 text-[#A81C24]">
@@ -1041,6 +1046,7 @@ async function handleBatchExport() {
 
     <!-- 右侧实时画布预览与导出工作区 -->
     <NCard
+      data-tour="birthday-preview"
       :bordered="false"
       class="min-w-0 flex-1"
       content-class="h-full flex flex-col justify-between"

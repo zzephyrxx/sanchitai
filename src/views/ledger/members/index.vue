@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, h, onUnmounted, reactive, ref, watch } from 'vue';
-import { NButton, NPopconfirm, NTag } from 'naive-ui';
+import { NButton, NDropdown, NTag } from 'naive-ui';
+import type { DropdownOption } from 'naive-ui';
 import dayjs from 'dayjs';
 import { FEE_STANDARD, MEMBER_TYPE_COLORS, MEMBER_TYPE_ORDER } from '@/constants/sanchitai';
+import { MEMBER_LIFECYCLE_META, getMemberLifecycle } from '@/constants/workspace-presets';
 import { generateNextMemberCode, getBranchAbbreviation, maskIdCard } from '@/utils/member-code';
 import {
   computeDefaultFullDate,
@@ -11,14 +13,21 @@ import {
   resolveEffectiveFullDate,
   resolveMemberTypeByDates
 } from '@/utils/member-status';
+import { onTourCommand } from '@/utils/onboarding-bus';
 import { buildSeatSheet, printHtml } from '@/utils/print';
+import { formatIdCardForExport, formatPhoneForExport, privacyModeFileSuffix } from '@/utils/privacy-export';
+import { exportTransferRegistryExcel } from '@/utils/transfer';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
 import { useTableColumnLayout } from '@/hooks/common/table-layout';
+import PrivacyExportModal from '@/components/custom/privacy-export-modal.vue';
+import BatchTransferOutModal from './modules/batch-transfer-out-modal.vue';
+import IncomingAuditPanel from './modules/incoming-audit-panel.vue';
 import MemberCard from './modules/member-card.vue';
 import MemberImportModal from './modules/member-import-modal.vue';
 import RosterBoard from './modules/roster-board.vue';
+import TransferOutDrawer from './modules/transfer-out-drawer.vue';
 
 defineOptions({ name: 'MembersPage' });
 
@@ -26,8 +35,21 @@ const workStore = useWorkDataStore();
 const { SvgIconVNode } = useSvgIcon();
 const { bi, tMemberType } = useSctI18n();
 
+// ---------------- 生命周期状态 KPI 胶囊切换 ----------------
+type LifecycleScope = 'active' | 'transferring_out' | 'incoming_audit' | 'floating' | 'archived';
+const lifecycleScope = ref<LifecycleScope>('active');
+
+const seatmapEnabled = computed(() => workStore.workspaceConfig.enabledModules.seatmap);
+const enabledFieldGroups = computed(() => workStore.workspaceConfig.enabledFieldGroups);
+const customFieldDefs = computed(() => workStore.workspaceConfig.customFields);
+
 // ---------------- 视图与布区（默认打开列表页） ----------------
 const activeTab = ref<'list' | 'roster'>('list');
+watch(seatmapEnabled, enabled => {
+  if (!enabled && activeTab.value === 'roster') {
+    activeTab.value = 'list';
+  }
+});
 const activeMapId = ref('');
 watch(
   () => workStore.seatMaps,
@@ -266,12 +288,205 @@ function printSeatMap() {
 }
 
 const statsText = computed(() => {
-  const total = workStore.members.length;
-  const typeCount = MEMBER_TYPE_ORDER.map(
-    t => `${tMemberType(t)} ${workStore.members.filter(m => m.type === t).length}`
-  ).join(' · ');
-  return bi(`共 ${total} 人 ｜ ${typeCount}`, `Total ${total} ｜ ${typeCount}`);
+  const active = workStore.activeMembers;
+  const total = active.length;
+  const typeCount = MEMBER_TYPE_ORDER.map(t => `${tMemberType(t)} ${active.filter(m => m.type === t).length}`).join(
+    ' · '
+  );
+  return bi(`在册 ${total} 人 ｜ ${typeCount}`, `Active ${total} ｜ ${typeCount}`);
 });
+
+// ---------------- 组织关系转出 / 批量转出 / 流动登记 / 停止发展归档 / 隐私分级导出 ----------------
+const transferDrawerShow = ref(false);
+const transferMemberId = ref<string | null>(null);
+const transferRecordId = ref<string | null>(null);
+const batchTransferShow = ref(false);
+
+function openTransferOut(memberId: string, recordId?: string | null) {
+  transferMemberId.value = memberId;
+  transferRecordId.value = recordId ?? null;
+  transferDrawerShow.value = true;
+}
+
+const floatingModalShow = ref(false);
+const floatingForm = reactive({
+  member_id: null as string | null,
+  direction: 'float_out' as 'float_out' | 'float_in',
+  source_org: '',
+  note: ''
+});
+
+function openFloatingModal(memberId?: string) {
+  floatingForm.member_id = memberId ?? null;
+  floatingForm.direction = 'float_out';
+  floatingForm.source_org = '';
+  floatingForm.note = '';
+  floatingModalShow.value = true;
+}
+
+async function handleSaveFloating() {
+  if (!floatingForm.member_id) {
+    window.$message?.warning('请选择成员');
+    return;
+  }
+  await workStore.setMemberFloating(
+    floatingForm.member_id,
+    floatingForm.direction,
+    floatingForm.source_org,
+    floatingForm.note
+  );
+  floatingModalShow.value = false;
+  window.$message?.success('已更新流动党员状态');
+}
+
+const contactLogModalShow = ref(false);
+const contactLogTransferId = ref<string | null>(null);
+const contactLogSummary = ref('');
+
+function openContactLogModal(transferId: string) {
+  contactLogTransferId.value = transferId;
+  contactLogSummary.value = '';
+  contactLogModalShow.value = true;
+}
+
+async function handleSaveContactLog() {
+  if (!contactLogTransferId.value || !contactLogSummary.value.trim()) {
+    window.$message?.warning('请填写联系情况摘要');
+    return;
+  }
+  await workStore.addFloatingContactLog(contactLogTransferId.value, contactLogSummary.value);
+  contactLogModalShow.value = false;
+  window.$message?.success('已记录流动党员联系日志');
+}
+
+const stopArchiveModalShow = ref(false);
+const stopArchiveMemberId = ref<string | null>(null);
+const stopArchiveReason = ref('');
+
+function openStopArchiveModal(memberId: string) {
+  stopArchiveMemberId.value = memberId;
+  stopArchiveReason.value = '';
+  stopArchiveModalShow.value = true;
+}
+
+async function handleConfirmStopArchive() {
+  if (!stopArchiveMemberId.value) return;
+  await workStore.archiveMemberStopped(stopArchiveMemberId.value, stopArchiveReason.value);
+  stopArchiveModalShow.value = false;
+  window.$message?.success('成员已移入历史归档（历史台账已完整保留）');
+}
+
+const outgoingTransferRows = computed(() => {
+  return workStore.transferringOutMembers.map(member => {
+    const transfer = workStore.transferRecords.find(
+      r => r.member_id === member.id && r.direction === 'out' && r.status === '办理中'
+    );
+    return { member, transfer };
+  });
+});
+
+const floatingTransferRows = computed(() => {
+  return workStore.floatingMembers.map(member => {
+    const transfer = workStore.transferRecords.find(
+      r =>
+        r.member_id === member.id &&
+        (r.direction === 'float_out' || r.direction === 'float_in') &&
+        r.status === '办理中'
+    );
+    return { member, transfer };
+  });
+});
+
+const rosterExportShow = ref(false);
+const rosterExportKind = ref<'roster' | 'transfer'>('roster');
+const rosterExporting = ref(false);
+
+function openRosterExport(kind: 'roster' | 'transfer') {
+  rosterExportKind.value = kind;
+  rosterExportShow.value = true;
+}
+
+async function handleConfirmRosterExport(privacyMode: Sct.ExportPrivacyMode) {
+  rosterExporting.value = true;
+  try {
+    if (rosterExportKind.value === 'transfer') {
+      const allOut = workStore.transferRecords.filter(r => r.direction === 'out' && r.status !== '已取消');
+      const res = await exportTransferRegistryExcel({
+        branchName: workStore.branchName,
+        records: allOut.map(t => ({ transfer: t, member: workStore.memberOf(t.member_id) })),
+        privacyMode
+      });
+      if (res === 'saved') {
+        rosterExportShow.value = false;
+        window.$message?.success('《组织关系转接登记表》已导出');
+      }
+      return;
+    }
+
+    const XLSX = await import('xlsx');
+    const sourceList = lifecycleScope.value === 'archived' ? workStore.archivedMembers : listRows.value;
+    const rows = sourceList.map((m, idx) => {
+      const row: Record<string, unknown> = {
+        序号: idx + 1,
+        统一编号: m.code,
+        支部名称: m.branch_name || workStore.branchName,
+        姓名: m.name,
+        政治面貌: m.type,
+        状态: getMemberLifecycle(m),
+        党内职务: m.role || '',
+        党小组: m.group || '',
+        '学号/工号': m.student_id || '',
+        性别: m.gender || '',
+        民族: m.ethnicity || '',
+        出生年月: m.birth_date || ''
+      };
+      if (enabledFieldGroups.value.university_student) {
+        row.层次 = m.level || '';
+        row.年级 = m.grade || '';
+        row.专业 = m.major || '';
+        row.班级 = m.class_name || '';
+        row.导师 = m.advisor || '';
+        row.宿舍 = [m.dorm_building, m.dorm_room].filter(Boolean).join('-');
+      }
+      if (enabledFieldGroups.value.org_workplace || enabledFieldGroups.value.community_grid) {
+        row[enabledFieldGroups.value.community_grid ? '所属网格' : '部门/科室'] = m.department || '';
+        row['岗位/职称'] = m.job_title || '';
+        row[enabledFieldGroups.value.community_grid ? '居住楼栋' : '办公地点'] = m.office_location || '';
+      }
+      for (const cf of customFieldDefs.value) {
+        row[cf.label] = m.custom_fields?.[cf.key] || '';
+      }
+      row.入党时间 = m.join_date || '';
+      row.转正时间 = resolveEffectiveFullDate(m.join_date, m.full_date, m.key_dates?.probation_end) || '';
+      row.联系电话 = formatPhoneForExport(m.phone, privacyMode);
+      row.身份证号 = formatIdCardForExport(m.id_card, privacyMode);
+      return row;
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 提示: '暂无人员记录' }]);
+    XLSX.utils.book_append_sheet(wb, ws, lifecycleScope.value === 'archived' ? '历史归档名册' : '在册人员花名册');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const { saveFileWithPicker } = await import('@/utils/save-file');
+    const res = await saveFileWithPicker(blob, {
+      suggestedName: `${workStore.branchName}_花名册${privacyModeFileSuffix(privacyMode)}_${dayjs().format('YYYYMMDD')}.xlsx`,
+      types: [
+        {
+          description: 'Excel 工作簿',
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          extensions: ['.xlsx']
+        }
+      ]
+    });
+    if (res.status === 'saved') {
+      rosterExportShow.value = false;
+      window.$message?.success('人员花名册已导出');
+    }
+  } finally {
+    rosterExporting.value = false;
+  }
+}
 
 // ---------------- 人员卡 ----------------
 const cardShow = ref(false);
@@ -281,11 +496,29 @@ function openCard(memberId: string) {
   cardShow.value = true;
 }
 
+const offMembersTour = onTourCommand(cmd => {
+  if (cmd === 'members:open-first-card') {
+    lifecycleScope.value = 'active';
+    activeTab.value = 'list';
+    const first = workStore.activeMembers[0];
+    if (first) openCard(first.id);
+  } else if (cmd === 'members:show-seatmap') {
+    cardShow.value = false;
+    lifecycleScope.value = 'active';
+    if (seatmapEnabled.value) activeTab.value = 'roster';
+  } else if (cmd === 'members:reset' || cmd === 'tour:cleanup') {
+    cardShow.value = false;
+    lifecycleScope.value = 'active';
+    activeTab.value = 'list';
+  }
+});
+onUnmounted(offMembersTour);
+
 // ---------------- 空位安排成员 ----------------
 const pickerShow = ref(false);
 const pickerPos = ref<{ x: number; y: number } | null>(null);
 const unseatedOptions = computed(() =>
-  workStore.members.filter(m => !m.seat).map(m => ({ label: `${m.name}（${m.type}）`, value: m.id }))
+  workStore.activeMembers.filter(m => !m.seat).map(m => ({ label: `${m.name}（${m.type}）`, value: m.id }))
 );
 function openPicker(pos: { x: number; y: number }) {
   pickerPos.value = pos;
@@ -476,10 +709,11 @@ type MemberRow = Sct.Member & {
 
 const listRows = computed<MemberRow[]>(() => {
   const kw = searchKeyword.value.trim().toLowerCase();
-  return workStore.members
+  return workStore.activeMembers
     .filter(m => !typeFilter.value || m.type === typeFilter.value)
     .filter(m => {
       if (!kw) return true;
+      const customVals = Object.values(m.custom_fields ?? {});
       return [
         m.code,
         m.branch_name,
@@ -493,11 +727,15 @@ const listRows = computed<MemberRow[]>(() => {
         m.grade,
         m.major,
         m.class_name,
+        m.department,
+        m.job_title,
+        m.office_location,
         m.phone,
         m.type,
         m.role,
         m.group,
-        m.advisor
+        m.advisor,
+        ...customVals
       ]
         .filter(Boolean)
         .some(v => String(v).toLowerCase().includes(kw));
@@ -766,13 +1004,20 @@ const allColumnMap = computed(() => ({
   },
   op: {
     key: 'op',
-    defaultWidth: 224,
+    defaultWidth: 256,
     fixed: 'right' as const,
     resizable: false,
     reorderable: false,
     titleContent: () => colHeader('lucide:sliders-horizontal', bi('操作', 'Actions')),
-    render: (row: MemberRow) =>
-      h('div', { class: 'flex items-center gap-6px', onClick: (e: MouseEvent) => e.stopPropagation() }, [
+    render: (row: MemberRow) => {
+      const moreOptions: DropdownOption[] = [
+        { label: bi('登记为流动党员', 'Mark Floating'), key: 'floating' },
+        { label: bi('加入转入档案核查', 'Incoming Audit'), key: 'audit' },
+        { label: bi('停止发展 / 历史归档', 'Archive (Stopped)'), key: 'stop' },
+        { type: 'divider', key: 'd1' },
+        { label: bi('永久删除（仅限误录入）', 'Permanent Delete'), key: 'delete' }
+      ];
+      return h('div', { class: 'flex items-center gap-6px', onClick: (e: MouseEvent) => e.stopPropagation() }, [
         h(
           NButton,
           {
@@ -798,29 +1043,40 @@ const allColumnMap = computed(() => ({
           }
         ),
         h(
-          NPopconfirm,
-          { onPositiveClick: () => removeMember(row.id) },
+          NButton,
           {
-            trigger: () =>
+            size: 'tiny',
+            class: 'sct-op-btn sct-op-btn--primary',
+            onClick: () => openTransferOut(row.id)
+          },
+          {
+            icon: SvgIconVNode({ icon: 'lucide:send', fontSize: 12 }),
+            default: () => bi('转出', 'Transfer')
+          }
+        ),
+        h(
+          NDropdown,
+          {
+            trigger: 'click',
+            options: moreOptions,
+            onSelect: (key: string) => handleMemberMoreAction(row, key)
+          },
+          {
+            default: () =>
               h(
                 NButton,
                 {
                   size: 'tiny',
-                  class: 'sct-op-btn sct-op-btn--danger'
+                  class: 'sct-op-btn sct-op-btn--neutral'
                 },
                 {
-                  icon: SvgIconVNode({ icon: 'lucide:trash-2', fontSize: 13 }),
-                  default: () => bi('删除', 'Delete')
+                  icon: SvgIconVNode({ icon: 'lucide:ellipsis', fontSize: 13 })
                 }
-              ),
-            default: () =>
-              bi(
-                `确认删除成员「${row.name}」？（同步清理发展台账与党费记录）`,
-                `Delete member "${row.name}"? (Also removes development & dues records)`
               )
           }
         )
-      ])
+      ]);
+    }
   }
 }));
 
@@ -864,6 +1120,10 @@ const addForm = reactive({
   grade: '',
   major: '',
   class_name: '',
+  department: '',
+  job_title: '',
+  office_location: '',
+  custom_fields: {} as Record<string, string>,
   id_card: '',
   phone: '',
   type: '申请人' as Sct.MemberType,
@@ -954,6 +1214,10 @@ function openAddMember() {
     grade: '',
     major: '',
     class_name: '',
+    department: '',
+    job_title: '',
+    office_location: '',
+    custom_fields: {},
     id_card: '',
     phone: '',
     type: '申请人',
@@ -987,6 +1251,10 @@ function openEditMember(row: Sct.Member) {
     grade: row.grade ?? '',
     major: row.major ?? '',
     class_name: row.class_name ?? '',
+    department: row.department ?? '',
+    job_title: row.job_title ?? '',
+    office_location: row.office_location ?? '',
+    custom_fields: { ...row.custom_fields },
     id_card: row.id_card ?? '',
     phone: row.phone ?? '',
     type: resolveMemberTypeByDates(row.type, row.join_date, resolvedFull),
@@ -1027,6 +1295,10 @@ async function handleSaveMember() {
     grade: addForm.grade.trim(),
     major: addForm.major.trim(),
     class_name: addForm.class_name.trim(),
+    department: addForm.department.trim(),
+    job_title: addForm.job_title.trim(),
+    office_location: addForm.office_location.trim(),
+    custom_fields: { ...addForm.custom_fields },
     id_card: addForm.id_card.trim(),
     phone: addForm.phone.trim(),
     type: finalType,
@@ -1058,8 +1330,29 @@ const typeOptions = MEMBER_TYPE_ORDER.map(v => ({ label: v, value: v }));
 const branchAbbrHint = computed(() => getBranchAbbreviation(addForm.branch_name || workStore.branchName));
 
 async function removeMember(id: string) {
-  await workStore.deleteMember(id);
-  window.$message?.success('成员已删除');
+  const ok = await workStore.deleteMember(id);
+  if (ok) {
+    window.$message?.success('成员已永久删除');
+  }
+}
+
+async function handleMemberMoreAction(row: MemberRow, key: string) {
+  if (key === 'floating') {
+    openFloatingModal(row.id);
+  } else if (key === 'audit') {
+    await workStore.markMemberIncomingAudit(row.id, '');
+    lifecycleScope.value = 'incoming_audit';
+    window.$message?.success(`已将「${row.name}」加入转入档案核查矩阵`);
+  } else if (key === 'stop') {
+    openStopArchiveModal(row.id);
+  } else if (key === 'delete') {
+    await removeMember(row.id);
+  }
+}
+
+async function handleRestoreMember(id: string, name: string) {
+  await workStore.restoreMemberToActive(id);
+  window.$message?.success(`已将「${name}」恢复为在册正常`);
 }
 </script>
 
@@ -1073,13 +1366,16 @@ async function removeMember(id: string) {
         </div>
       </template>
       <template #header-extra>
-        <div class="flex items-center gap-10px">
-          <span v-if="activeTab === 'roster'" class="flex items-center gap-6px text-13px">
+        <div data-tour="members-actions" class="flex flex-wrap items-center gap-8px">
+          <span
+            v-if="lifecycleScope === 'active' && activeTab === 'roster'"
+            class="flex items-center gap-6px text-13px"
+          >
             {{ bi('编排模式', 'Edit Layout') }}
             <NSwitch v-model:value="editable" size="small" />
           </span>
           <NButton
-            v-if="activeTab === 'roster' && editable"
+            v-if="lifecycleScope === 'active' && activeTab === 'roster' && editable"
             size="small"
             secondary
             :disabled="!undoStack.length"
@@ -1088,9 +1384,26 @@ async function removeMember(id: string) {
             <template #icon><SvgIcon icon="lucide:undo-2" /></template>
             {{ bi('撤销', 'Undo') }}
           </NButton>
-          <NButton v-if="activeTab === 'roster'" size="small" secondary @click="printSeatMap">
+          <NButton
+            v-if="lifecycleScope === 'active' && activeTab === 'roster'"
+            size="small"
+            secondary
+            @click="printSeatMap"
+          >
             <template #icon><SvgIcon icon="lucide:printer" /></template>
             {{ bi('打印座次表', 'Print Seat Map') }}
+          </NButton>
+          <NButton size="small" secondary @click="batchTransferShow = true">
+            <template #icon><SvgIcon icon="lucide:send" /></template>
+            {{ bi('批量转出', 'Batch Transfer') }}
+          </NButton>
+          <NButton
+            size="small"
+            secondary
+            @click="openRosterExport(lifecycleScope === 'transferring_out' ? 'transfer' : 'roster')"
+          >
+            <template #icon><SvgIcon icon="lucide:download" /></template>
+            {{ bi('导出', 'Export') }}
           </NButton>
           <NButton size="small" secondary @click="importShow = true">
             <template #icon><SvgIcon icon="lucide:file-spreadsheet" /></template>
@@ -1103,218 +1416,621 @@ async function removeMember(id: string) {
         </div>
       </template>
 
-      <NTabs v-model:value="activeTab" type="segment" size="small" class="mb-14px w-220px">
-        <NTab name="list" :tab="bi('列表', 'List View')" />
-        <NTab name="roster" :tab="bi('座位图', 'Seat Map')" />
-      </NTabs>
+      <!-- 顶部全生命周期 KPI 胶囊状态栏（对标台历事项内缩竖条与 KONTUR 电子纸直角框线） -->
+      <div data-tour="members-lifecycle" class="mb-14px flex flex-wrap items-center gap-8px">
+        <button
+          type="button"
+          class="lifecycle-kpi-pill"
+          :class="{ 'is-active': lifecycleScope === 'active' }"
+          @click="lifecycleScope = 'active'"
+        >
+          <SvgIcon icon="lucide:users" class="text-14px text-[#16a34a]" />
+          <span>{{ bi('在册人员', 'Active') }}</span>
+          <b class="font-mono">{{ workStore.activeMembers.length }}</b>
+        </button>
 
-      <!-- 列表（默认页） -->
-      <div v-if="activeTab === 'list'">
-        <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
-          <div class="flex flex-nowrap items-center gap-8px overflow-x-auto">
-            <div class="w-150px shrink-0">
-              <NSelect
-                v-model:value="typeFilter"
-                :options="[{ label: bi('全部身份', 'All Status'), value: '' }, ...typeOptions]"
-                size="small"
-                @update:value="pagination.page = 1"
-              />
-            </div>
-            <div class="w-230px shrink-0">
-              <NInput
-                v-model:value="searchKeyword"
-                size="small"
-                clearable
-                :placeholder="bi('搜索姓名、学号、编号、导师…', 'Search name, ID, code, advisor…')"
-                @update:value="pagination.page = 1"
-              >
-                <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
-              </NInput>
-            </div>
-            <NPopover trigger="click" placement="bottom-start" :width="400">
-              <template #trigger>
-                <NButton size="small" secondary class="shrink-0">
-                  <template #icon><SvgIcon icon="lucide:columns-3" /></template>
-                  {{ bi(`列设置（${visibleColKeys.length + 1}/${COLUMN_PICKER_META.length + 1}）`, 'Columns') }}
-                </NButton>
-              </template>
-              <div class="flex flex-col gap-10px p-4px">
-                <div class="flex items-center justify-between gap-8px">
-                  <span class="text-13px font-semibold">{{ bi('自定义显示列', 'Visible Columns') }}</span>
-                  <div class="flex items-center gap-6px">
-                    <NButton size="tiny" secondary @click="applyColPreset('default')">
-                      {{ bi('默认', 'Default') }}
-                    </NButton>
-                    <NButton size="tiny" secondary @click="applyColPreset('roster')">
-                      {{ bi('花名册全列', 'Roster') }}
-                    </NButton>
-                    <NButton size="tiny" secondary @click="applyColPreset('all')">{{ bi('全部', 'All') }}</NButton>
-                  </div>
-                </div>
-                <NCheckboxGroup v-model:value="visibleColKeys">
-                  <div class="grid grid-cols-2 gap-x-10px gap-y-6px">
-                    <NCheckbox v-for="col in COLUMN_PICKER_META" :key="col.key" :value="col.key" size="small">
-                      <span class="text-12px">{{ bi(col.labelZh, col.labelEn) }}</span>
-                    </NCheckbox>
-                  </div>
-                </NCheckboxGroup>
-                <div
-                  class="border-t border-gray-100 pt-6px text-11px leading-relaxed text-gray-400 dark:border-gray-800"
-                >
-                  {{
-                    bi(
-                      '「姓名」与「操作」列常驻显示；「身份证号」每次刷新自动恢复隐藏，展示时亦默认脱敏（点表头眼睛临时查看 15 秒后自动隐藏）。',
-                      'Name & Actions stay pinned; ID Card auto-hides on reload and masks values by default.'
-                    )
-                  }}
-                </div>
-              </div>
-            </NPopover>
-            <NButton
-              size="small"
-              secondary
-              class="shrink-0"
-              :disabled="!hasCustomLayout"
-              @click="handleResetTableLayout"
-            >
-              <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
-              {{ bi('重置列宽', 'Reset Columns') }}
-            </NButton>
-          </div>
-          <span class="text-12px text-gray-400">
-            {{
-              bi(
-                '拖拽表头可换列顺序 · 拖右侧边线调列宽（自动记忆）',
-                'Drag headers to reorder · Drag edge to resize (saved)'
-              )
-            }}
-          </span>
-        </div>
-        <NDataTable
-          :columns="listColumns"
-          :data="listRows"
-          :pagination="pagination"
-          :bordered="false"
-          size="small"
-          :scroll-x="tableScrollX"
-          :row-key="(r: MemberRow) => r.id"
-          :row-props="(r: MemberRow) => ({ style: 'cursor: pointer', onClick: () => openCard(r.id) })"
-        />
+        <button
+          type="button"
+          class="lifecycle-kpi-pill lifecycle-kpi-pill--warn"
+          :class="{ 'is-active': lifecycleScope === 'transferring_out' }"
+          @click="lifecycleScope = 'transferring_out'"
+        >
+          <SvgIcon icon="lucide:send" class="text-14px text-[#dc2626]" />
+          <span>{{ bi('转出办理中', 'Transferring Out') }}</span>
+          <b class="font-mono" :style="{ color: workStore.transferringOutMembers.length ? '#dc2626' : undefined }">
+            {{ workStore.transferringOutMembers.length }}
+          </b>
+          <span v-if="workStore.transferringOutMembers.length" class="lifecycle-dot lifecycle-dot--red" />
+        </button>
+
+        <button
+          type="button"
+          class="lifecycle-kpi-pill lifecycle-kpi-pill--amber"
+          :class="{ 'is-active': lifecycleScope === 'incoming_audit' }"
+          @click="lifecycleScope = 'incoming_audit'"
+        >
+          <SvgIcon icon="lucide:file-search" class="text-14px text-[#d97706]" />
+          <span>{{ bi('转入待核查', 'Incoming Audit') }}</span>
+          <b class="font-mono" :style="{ color: workStore.incomingAuditMembers.length ? '#d97706' : undefined }">
+            {{ workStore.incomingAuditMembers.length }}
+          </b>
+          <span v-if="workStore.incomingAuditMembers.length" class="lifecycle-dot lifecycle-dot--amber" />
+        </button>
+
+        <button
+          type="button"
+          class="lifecycle-kpi-pill lifecycle-kpi-pill--info"
+          :class="{ 'is-active': lifecycleScope === 'floating' }"
+          @click="lifecycleScope = 'floating'"
+        >
+          <SvgIcon icon="lucide:compass" class="text-14px text-[#2563eb]" />
+          <span>{{ bi('流动党员', 'Floating') }}</span>
+          <b class="font-mono">{{ workStore.floatingMembers.length }}</b>
+        </button>
+
+        <button
+          type="button"
+          class="lifecycle-kpi-pill"
+          :class="{ 'is-active': lifecycleScope === 'archived' }"
+          @click="lifecycleScope = 'archived'"
+        >
+          <SvgIcon icon="lucide:archive" class="text-14px text-[var(--sct-muted)]" />
+          <span>{{ bi('历史归档', 'Archived') }}</span>
+          <b class="font-mono">{{ workStore.archivedMembers.length }}</b>
+        </button>
       </div>
 
-      <!-- 座位图 -->
-      <div v-else>
-        <!-- 空布区时展示预设模板选择 + 自定义新建 -->
-        <div v-if="!workStore.seatMaps.length" class="flex flex-col gap-14px py-8px">
-          <div class="flex flex-wrap items-center justify-between gap-10px">
-            <NAlert type="info" :show-icon="true" class="flex-1">
-              {{
-                bi(
-                  '当前暂无座位图布区，可点击预设模板（支持自定义名称与行列数）或直接新建自定义尺寸布区：',
-                  'No seat maps yet. Pick a preset (customizable name & size) or create a custom layout:'
-                )
-              }}
-            </NAlert>
-            <NButton size="small" type="primary" @click="openCreateSeatMapModal()">
-              <template #icon><SvgIcon icon="lucide:plus" /></template>
-              {{ bi('自定义新建布区', 'Custom Seat Map') }}
-            </NButton>
-          </div>
-          <div class="grid grid-cols-1 gap-12px sm:grid-cols-2 lg:grid-cols-4">
-            <div
-              v-for="preset in SEAT_MAP_PRESETS"
-              :key="preset.id"
-              class="flex flex-col justify-between gap-10px border border-gray-200 rounded-10px bg-[var(--sct-soft)] p-14px transition-all dark:border-gray-700 hover:border-[var(--sct-accent)]"
-            >
-              <div class="flex flex-col gap-6px">
-                <div class="flex items-center justify-between">
-                  <span class="inline-flex items-center gap-6px text-14px font-bold">
-                    <SvgIcon :icon="preset.icon" class="text-16px text-[var(--sct-accent)]" />
-                    {{ preset.name }}
-                  </span>
-                  <NTag size="tiny" :bordered="false">{{ preset.rows }}×{{ preset.cols }}</NTag>
-                </div>
-                <div class="text-12px leading-relaxed text-gray-500">{{ preset.desc }}</div>
-              </div>
-              <NButton size="small" type="primary" secondary @click="openCreateSeatMapModal(preset)">
-                <template #icon><SvgIcon icon="lucide:sliders-horizontal" /></template>
-                使用并自定义
-              </NButton>
-            </div>
-          </div>
+      <!-- 视图 A：在册人员（列表 / 座位图双视图） -->
+      <template v-if="lifecycleScope === 'active'">
+        <div data-tour="members-view-tabs" class="inline-block">
+          <NTabs v-if="seatmapEnabled" v-model:value="activeTab" type="segment" size="small" class="mb-14px w-220px">
+            <NTab name="list" :tab="bi('列表', 'List View')" />
+            <NTab name="roster" :tab="bi('座位图', 'Seat Map')" />
+          </NTabs>
         </div>
 
-        <template v-else>
-          <div class="mb-12px flex flex-wrap items-center justify-between gap-10px">
-            <NTabs v-model:value="activeMapId" type="bar" size="small" class="min-w-0 flex-1">
-              <NTab v-for="m in workStore.seatMaps" :key="m.map_id" :name="m.map_id" :tab="m.name" />
-            </NTabs>
-            <div class="flex shrink-0 items-center gap-8px">
-              <NButton v-if="activeMap" size="tiny" secondary @click="openEditSeatMapModal">
-                <template #icon><SvgIcon icon="lucide:pencil" /></template>
-                {{ bi('编辑布区', 'Edit Map') }}
-              </NButton>
-              <NPopover trigger="click" placement="bottom-end" :width="290">
+        <!-- 列表（默认页） -->
+        <div v-if="activeTab === 'list'">
+          <div class="mb-10px flex flex-wrap items-center justify-between gap-10px">
+            <div class="flex flex-nowrap items-center gap-8px overflow-x-auto">
+              <div class="w-150px shrink-0">
+                <NSelect
+                  v-model:value="typeFilter"
+                  :options="[{ label: bi('全部身份', 'All Status'), value: '' }, ...typeOptions]"
+                  size="small"
+                  @update:value="pagination.page = 1"
+                />
+              </div>
+              <div class="w-230px shrink-0">
+                <NInput
+                  v-model:value="searchKeyword"
+                  size="small"
+                  clearable
+                  :placeholder="bi('搜索姓名、学号、编号、导师…', 'Search name, ID, code, advisor…')"
+                  @update:value="pagination.page = 1"
+                >
+                  <template #prefix><SvgIcon icon="lucide:search" class="text-gray-400" /></template>
+                </NInput>
+              </div>
+              <NPopover trigger="click" placement="bottom-start" :width="400">
                 <template #trigger>
-                  <NButton size="tiny" secondary>
-                    <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
-                    {{ bi('新建 / 预设模板', 'New / Presets') }}
+                  <NButton size="small" secondary class="shrink-0">
+                    <template #icon><SvgIcon icon="lucide:columns-3" /></template>
+                    {{ bi(`列设置（${visibleColKeys.length + 1}/${COLUMN_PICKER_META.length + 1}）`, 'Columns') }}
                   </NButton>
                 </template>
-                <div class="flex flex-col gap-6px p-2px">
-                  <div class="px-4px text-12px text-gray-500 font-semibold">
-                    {{ bi('选预设（可改名和行列）', 'Presets (Editable)') }}
-                  </div>
-                  <div
-                    v-for="preset in SEAT_MAP_PRESETS"
-                    :key="preset.id"
-                    class="flex cursor-pointer items-center justify-between rounded-6px px-8px py-6px hover:bg-[var(--sct-soft)]"
-                    @click="openCreateSeatMapModal(preset)"
-                  >
+                <div class="flex flex-col gap-10px p-4px">
+                  <div class="flex items-center justify-between gap-8px">
+                    <span class="text-13px font-semibold">{{ bi('自定义显示列', 'Visible Columns') }}</span>
                     <div class="flex items-center gap-6px">
-                      <SvgIcon :icon="preset.icon" class="text-14px text-[var(--sct-accent)]" />
-                      <div>
-                        <div class="text-12px font-medium">{{ preset.name }}</div>
-                        <div class="text-11px text-gray-400">{{ preset.rows }} 行 × {{ preset.cols }} 列</div>
-                      </div>
+                      <NButton size="tiny" secondary @click="applyColPreset('default')">
+                        {{ bi('默认', 'Default') }}
+                      </NButton>
+                      <NButton size="tiny" secondary @click="applyColPreset('roster')">
+                        {{ bi('花名册全列', 'Roster') }}
+                      </NButton>
+                      <NButton size="tiny" secondary @click="applyColPreset('all')">{{ bi('全部', 'All') }}</NButton>
                     </div>
-                    <SvgIcon icon="lucide:plus" class="text-13px text-gray-400" />
                   </div>
-                  <div class="mt-2px border-t border-gray-100 pt-6px dark:border-gray-800">
-                    <NButton size="tiny" type="primary" secondary block @click="openCreateSeatMapModal()">
-                      <template #icon><SvgIcon icon="lucide:plus-square" /></template>
-                      {{ bi('完全自定义新建布区…', 'Custom Rows & Cols…') }}
-                    </NButton>
+                  <NCheckboxGroup v-model:value="visibleColKeys">
+                    <div class="grid grid-cols-2 gap-x-10px gap-y-6px">
+                      <NCheckbox v-for="col in COLUMN_PICKER_META" :key="col.key" :value="col.key" size="small">
+                        <span class="text-12px">{{ bi(col.labelZh, col.labelEn) }}</span>
+                      </NCheckbox>
+                    </div>
+                  </NCheckboxGroup>
+                  <div
+                    class="border-t border-gray-100 pt-6px text-11px leading-relaxed text-gray-400 dark:border-gray-800"
+                  >
+                    {{
+                      bi(
+                        '「姓名」与「操作」列常驻显示；「身份证号」每次刷新自动恢复隐藏，展示时亦默认脱敏（点表头眼睛临时查看 15 秒后自动隐藏）。',
+                        'Name & Actions stay pinned; ID Card auto-hides on reload and masks values by default.'
+                      )
+                    }}
                   </div>
                 </div>
               </NPopover>
+              <NButton
+                size="small"
+                secondary
+                class="shrink-0"
+                :disabled="!hasCustomLayout"
+                @click="handleResetTableLayout"
+              >
+                <template #icon><SvgIcon icon="lucide:rotate-ccw" /></template>
+                {{ bi('重置列宽', 'Reset Columns') }}
+              </NButton>
+            </div>
+            <span class="text-12px text-gray-400">
+              {{
+                bi(
+                  '拖拽表头可换列顺序 · 拖右侧边线调列宽（自动记忆）',
+                  'Drag headers to reorder · Drag edge to resize (saved)'
+                )
+              }}
+            </span>
+          </div>
+          <NDataTable
+            :columns="listColumns"
+            :data="listRows"
+            :pagination="pagination"
+            :bordered="false"
+            size="small"
+            :scroll-x="tableScrollX"
+            :row-key="(r: MemberRow) => r.id"
+            :row-props="(r: MemberRow) => ({ style: 'cursor: pointer', onClick: () => openCard(r.id) })"
+          />
+        </div>
+
+        <!-- 座位图 -->
+        <div v-else data-tour="members-seatmap-area">
+          <!-- 空布区时展示预设模板选择 + 自定义新建 -->
+          <div v-if="!workStore.seatMaps.length" class="flex flex-col gap-14px py-8px">
+            <div class="flex flex-wrap items-center justify-between gap-10px">
+              <NAlert type="info" :show-icon="true" class="flex-1">
+                {{
+                  bi(
+                    '当前暂无座位图布区，可点击预设模板（支持自定义名称与行列数）或直接新建自定义尺寸布区：',
+                    'No seat maps yet. Pick a preset (customizable name & size) or create a custom layout:'
+                  )
+                }}
+              </NAlert>
+              <NButton size="small" type="primary" @click="openCreateSeatMapModal()">
+                <template #icon><SvgIcon icon="lucide:plus" /></template>
+                {{ bi('自定义新建布区', 'Custom Seat Map') }}
+              </NButton>
+            </div>
+            <div class="grid grid-cols-1 gap-12px sm:grid-cols-2 lg:grid-cols-4">
+              <div
+                v-for="preset in SEAT_MAP_PRESETS"
+                :key="preset.id"
+                class="flex flex-col justify-between gap-10px border border-gray-200 rounded-10px bg-[var(--sct-soft)] p-14px transition-all dark:border-gray-700 hover:border-[var(--sct-accent)]"
+              >
+                <div class="flex flex-col gap-6px">
+                  <div class="flex items-center justify-between">
+                    <span class="inline-flex items-center gap-6px text-14px font-bold">
+                      <SvgIcon :icon="preset.icon" class="text-16px text-[var(--sct-accent)]" />
+                      {{ preset.name }}
+                    </span>
+                    <NTag size="tiny" :bordered="false">{{ preset.rows }}×{{ preset.cols }}</NTag>
+                  </div>
+                  <div class="text-12px leading-relaxed text-gray-500">{{ preset.desc }}</div>
+                </div>
+                <NButton size="small" type="primary" secondary @click="openCreateSeatMapModal(preset)">
+                  <template #icon><SvgIcon icon="lucide:sliders-horizontal" /></template>
+                  使用并自定义
+                </NButton>
+              </div>
             </div>
           </div>
-          <div v-if="editable" class="mb-10px text-12px text-gray-400">
+
+          <template v-else>
+            <div class="mb-12px flex flex-wrap items-center justify-between gap-10px">
+              <NTabs v-model:value="activeMapId" type="bar" size="small" class="min-w-0 flex-1">
+                <NTab v-for="m in workStore.seatMaps" :key="m.map_id" :name="m.map_id" :tab="m.name" />
+              </NTabs>
+              <div class="flex shrink-0 items-center gap-8px">
+                <NButton v-if="activeMap" size="tiny" secondary @click="openEditSeatMapModal">
+                  <template #icon><SvgIcon icon="lucide:pencil" /></template>
+                  {{ bi('编辑布区', 'Edit Map') }}
+                </NButton>
+                <NPopover trigger="click" placement="bottom-end" :width="290">
+                  <template #trigger>
+                    <NButton size="tiny" secondary>
+                      <template #icon><SvgIcon icon="lucide:layout-grid" /></template>
+                      {{ bi('新建 / 预设模板', 'New / Presets') }}
+                    </NButton>
+                  </template>
+                  <div class="flex flex-col gap-6px p-2px">
+                    <div class="px-4px text-12px text-gray-500 font-semibold">
+                      {{ bi('选预设（可改名和行列）', 'Presets (Editable)') }}
+                    </div>
+                    <div
+                      v-for="preset in SEAT_MAP_PRESETS"
+                      :key="preset.id"
+                      class="flex cursor-pointer items-center justify-between rounded-6px px-8px py-6px hover:bg-[var(--sct-soft)]"
+                      @click="openCreateSeatMapModal(preset)"
+                    >
+                      <div class="flex items-center gap-6px">
+                        <SvgIcon :icon="preset.icon" class="text-14px text-[var(--sct-accent)]" />
+                        <div>
+                          <div class="text-12px font-medium">{{ preset.name }}</div>
+                          <div class="text-11px text-gray-400">{{ preset.rows }} 行 × {{ preset.cols }} 列</div>
+                        </div>
+                      </div>
+                      <SvgIcon icon="lucide:plus" class="text-13px text-gray-400" />
+                    </div>
+                    <div class="mt-2px border-t border-gray-100 pt-6px dark:border-gray-800">
+                      <NButton size="tiny" type="primary" secondary block @click="openCreateSeatMapModal()">
+                        <template #icon><SvgIcon icon="lucide:plus-square" /></template>
+                        {{ bi('完全自定义新建布区…', 'Custom Rows & Cols…') }}
+                      </NButton>
+                    </div>
+                  </div>
+                </NPopover>
+              </div>
+            </div>
+            <div v-if="editable" class="mb-10px text-12px text-gray-400">
+              {{
+                bi(
+                  '拖拽头像换位（目标有人则互换）· 或先点一人再点另一处；点空位可安排未布点成员',
+                  'Drag avatars to swap seats · or click one then another; click an empty seat to assign unseated members'
+                )
+              }}
+            </div>
+            <RosterBoard
+              v-if="activeMap"
+              :key="activeMap.map_id"
+              :map="activeMap"
+              :members="workStore.activeMembers"
+              :fee-badges="feeBadges"
+              :editable="editable"
+              @move="handleMove"
+              @open="openCard"
+              @place-empty="openPicker"
+            />
+          </template>
+        </div>
+      </template>
+
+      <!-- 视图 B：转出办理中 -->
+      <div v-else-if="lifecycleScope === 'transferring_out'" class="flex flex-col gap-12px">
+        <div class="flex flex-wrap items-center justify-between gap-8px">
+          <span class="text-12px text-[var(--sct-muted)]">
             {{
               bi(
-                '拖拽头像换位（目标有人则互换）· 或先点一人再点另一处；点空位可安排未布点成员',
-                'Drag avatars to swap seats · or click one then another; click an empty seat to assign unseated members'
+                '已发起转出但尚未收回回执/办结的成员；办结后将自动移入历史归档，历史账目完整保留。',
+                'Pending outgoing transfers awaiting receipt confirmation.'
               )
             }}
+          </span>
+          <div class="flex items-center gap-8px">
+            <NButton size="small" secondary @click="openRosterExport('transfer')">
+              <template #icon><SvgIcon icon="lucide:file-spreadsheet" /></template>
+              导出《转接登记表》
+            </NButton>
+            <NButton size="small" type="primary" secondary @click="batchTransferShow = true">
+              <template #icon><SvgIcon icon="lucide:send" /></template>
+              毕业季批量转出
+            </NButton>
           </div>
-          <RosterBoard
-            v-if="activeMap"
-            :key="activeMap.map_id"
-            :map="activeMap"
-            :members="workStore.members"
-            :fee-badges="feeBadges"
-            :editable="editable"
-            @move="handleMove"
-            @open="openCard"
-            @place-empty="openPicker"
-          />
-        </template>
+        </div>
+        <div
+          v-if="!outgoingTransferRows.length"
+          class="rounded-8px border border-dashed border-[var(--sct-border)] py-36px text-center text-13px text-[var(--sct-muted)]"
+        >
+          当前没有待办结的关系转出记录。在「在册人员」列表点击任意成员的「转出」或点击右上角「批量转出」即可发起。
+        </div>
+        <div v-else class="overflow-x-auto rounded-8px border border-[var(--sct-border)]">
+          <table class="w-full min-w-780px border-collapse text-12.5px">
+            <thead>
+              <tr
+                class="border-b border-[var(--sct-border)] bg-[var(--sct-soft)] text-left text-11px text-[var(--sct-muted)]"
+              >
+                <th class="px-12px py-8px">姓名 / 身份</th>
+                <th class="px-10px py-8px">转接方式</th>
+                <th class="px-10px py-8px">接收党组织</th>
+                <th class="px-10px py-8px">党费交至 / 档案去向</th>
+                <th class="px-10px py-8px">发起日期 / 进度</th>
+                <th class="px-10px py-8px text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in outgoingTransferRows"
+                :key="row.member.id"
+                class="border-b border-[var(--sct-border)] last:border-b-0 hover:bg-[var(--sct-page)]"
+              >
+                <td class="px-12px py-9px">
+                  <div class="font-bold">{{ row.member.name }}</div>
+                  <div class="text-11px text-[var(--sct-muted)]">{{ row.member.type }} · {{ row.member.code }}</div>
+                </td>
+                <td class="px-10px py-9px">
+                  <NTag size="tiny" :bordered="false">{{ row.transfer?.transfer_mode ?? '线上系统转接' }}</NTag>
+                  <div v-if="row.transfer?.letter_no" class="mt-2px font-mono text-11px text-[var(--sct-muted)]">
+                    号：{{ row.transfer.letter_no }}
+                  </div>
+                </td>
+                <td class="px-10px py-9px">
+                  <div class="font-medium">{{ row.transfer?.target_branch || '未填具体支部' }}</div>
+                  <div class="text-11px text-[var(--sct-muted)]">{{ row.transfer?.target_committee || '—' }}</div>
+                </td>
+                <td class="px-10px py-9px">
+                  <div class="font-mono">{{ row.transfer?.fee_paid_until || '—' }}</div>
+                  <div class="text-11px text-[var(--sct-muted)]">{{ row.transfer?.archive_dest || '—' }}</div>
+                </td>
+                <td class="px-10px py-9px">
+                  <div class="font-mono">{{ row.transfer?.initiated_date || '—' }}</div>
+                  <div class="text-11px text-[#dc2626]">第 {{ row.transfer?.step ?? 1 }} / 4 步 · 待回执</div>
+                </td>
+                <td class="px-10px py-9px text-right">
+                  <div class="flex items-center justify-end gap-6px">
+                    <NButton
+                      size="tiny"
+                      class="sct-op-btn sct-op-btn--primary"
+                      @click="openTransferOut(row.member.id, row.transfer?.id)"
+                    >
+                      继续办理 / 录回执
+                    </NButton>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 视图 C：转入待核查（多人核查矩阵 + 核实函） -->
+      <IncomingAuditPanel v-else-if="lifecycleScope === 'incoming_audit'" />
+
+      <!-- 视图 D：流动党员（流出/流入 + 定期联系日志） -->
+      <div v-else-if="lifecycleScope === 'floating'" class="flex flex-col gap-12px">
+        <div class="flex flex-wrap items-center justify-between gap-8px">
+          <span class="text-12px text-[var(--sct-muted)]">
+            追踪长期外出实习、联培、驻外等流出党员与来本支部参加组织生活的流入党员，留存定期联系日志。
+          </span>
+          <NButton size="small" type="primary" secondary @click="openFloatingModal()">
+            <template #icon><SvgIcon icon="lucide:compass" /></template>
+            登记流动党员
+          </NButton>
+        </div>
+        <div
+          v-if="!floatingTransferRows.length"
+          class="rounded-8px border border-dashed border-[var(--sct-border)] py-36px text-center text-13px text-[var(--sct-muted)]"
+        >
+          当前暂无流动党员记录。
+        </div>
+        <div v-else class="grid grid-cols-1 gap-10px md:grid-cols-2">
+          <div
+            v-for="row in floatingTransferRows"
+            :key="row.member.id"
+            class="flex flex-col justify-between gap-10px rounded-8px border border-[var(--sct-border)] bg-[var(--sct-page)] p-12px"
+          >
+            <div>
+              <div class="flex items-center justify-between gap-8px">
+                <div class="flex items-center gap-6px">
+                  <span class="text-14px font-bold">{{ row.member.name }}</span>
+                  <NTag
+                    size="tiny"
+                    :type="getMemberLifecycle(row.member) === '流出党员' ? 'info' : 'success'"
+                    :bordered="false"
+                  >
+                    {{ getMemberLifecycle(row.member) }}
+                  </NTag>
+                </div>
+                <span class="font-mono text-11px text-[var(--sct-muted)]">
+                  {{ row.transfer?.initiated_date || '' }}
+                </span>
+              </div>
+              <div class="mt-6px text-12px text-[var(--sct-muted)]">
+                去向/来源：{{ row.transfer?.source_org || '未填写' }}
+              </div>
+              <div
+                v-if="row.transfer?.contact_logs?.length"
+                class="mt-8px flex flex-col gap-4px border-t border-dashed border-[var(--sct-border)] pt-6px text-11.5px"
+              >
+                <div v-for="(log, idx) in row.transfer.contact_logs.slice(-3)" :key="idx" class="text-[var(--sct-ink)]">
+                  <span class="font-mono text-[var(--sct-muted)]">{{ log.date }}</span>
+                  · {{ log.summary }}
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center justify-end gap-6px">
+              <NButton
+                v-if="row.transfer"
+                size="tiny"
+                class="sct-op-btn sct-op-btn--info"
+                @click="openContactLogModal(row.transfer.id)"
+              >
+                记联系日志
+              </NButton>
+              <NButton
+                size="tiny"
+                class="sct-op-btn sct-op-btn--neutral"
+                @click="handleRestoreMember(row.member.id, row.member.name)"
+              >
+                结束流动回归
+              </NButton>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视图 E：历史归档库（已转出 / 停止发展） -->
+      <div v-else class="flex flex-col gap-12px">
+        <div class="flex flex-wrap items-center justify-between gap-8px">
+          <span class="text-12px text-[var(--sct-muted)]">
+            历史归档库永久保留已转出、停止发展成员的全部往年党费、考勤、发展材料、谈话、积分与志愿记录，支持随时查档或恢复在册。
+          </span>
+          <NButton size="small" secondary @click="openRosterExport('roster')">
+            <template #icon><SvgIcon icon="lucide:download" /></template>
+            导出历史归档名册
+          </NButton>
+        </div>
+        <div
+          v-if="!workStore.archivedMembers.length"
+          class="rounded-8px border border-dashed border-[var(--sct-border)] py-36px text-center text-13px text-[var(--sct-muted)]"
+        >
+          历史归档库为空。
+        </div>
+        <div v-else class="overflow-x-auto rounded-8px border border-[var(--sct-border)]">
+          <table class="w-full min-w-720px border-collapse text-12.5px">
+            <thead>
+              <tr
+                class="border-b border-[var(--sct-border)] bg-[var(--sct-soft)] text-left text-11px text-[var(--sct-muted)]"
+              >
+                <th class="px-12px py-8px">姓名 / 编号</th>
+                <th class="px-10px py-8px">原身份</th>
+                <th class="px-10px py-8px">归档状态</th>
+                <th class="px-10px py-8px">归档日期 / 去向说明</th>
+                <th class="px-10px py-8px text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="m in workStore.archivedMembers"
+                :key="m.id"
+                class="border-b border-[var(--sct-border)] last:border-b-0 hover:bg-[var(--sct-page)]"
+              >
+                <td class="px-12px py-9px">
+                  <div class="font-bold">{{ m.name }}</div>
+                  <div class="font-mono text-11px text-[var(--sct-muted)]">{{ m.code }}</div>
+                </td>
+                <td class="px-10px py-9px">{{ m.type }}</td>
+                <td class="px-10px py-9px">
+                  <NTag size="tiny" :type="MEMBER_LIFECYCLE_META[getMemberLifecycle(m)].tagType" :bordered="false">
+                    {{ getMemberLifecycle(m) }}
+                  </NTag>
+                </td>
+                <td class="px-10px py-9px">
+                  <div class="font-mono text-11.5px">{{ m.archived_at || '—' }}</div>
+                  <div class="text-11.5px text-[var(--sct-muted)]">{{ m.archive_reason || '—' }}</div>
+                </td>
+                <td class="px-10px py-9px text-right">
+                  <div class="flex items-center justify-end gap-6px">
+                    <NButton size="tiny" class="sct-op-btn sct-op-btn--info" @click="openCard(m.id)">
+                      历史全景卡
+                    </NButton>
+                    <NButton
+                      size="tiny"
+                      class="sct-op-btn sct-op-btn--neutral"
+                      @click="handleRestoreMember(m.id, m.name)"
+                    >
+                      恢复在册
+                    </NButton>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </NCard>
 
     <!-- 人员卡 -->
-    <MemberCard v-model:show="cardShow" :member-id="cardMemberId" @edit="openEditMember" />
+    <MemberCard
+      v-model:show="cardShow"
+      :member-id="cardMemberId"
+      @edit="openEditMember"
+      @transfer-out="openTransferOut"
+    />
+
+    <!-- 单人 4 步关系转出抽屉 -->
+    <TransferOutDrawer
+      v-model:show="transferDrawerShow"
+      :member-id="transferMemberId"
+      :transfer-id="transferRecordId"
+    />
+
+    <!-- 毕业季批量关系转出工作台 -->
+    <BatchTransferOutModal v-model:show="batchTransferShow" />
+
+    <!-- 全局隐私分级导出弹窗 -->
+    <PrivacyExportModal
+      v-model:show="rosterExportShow"
+      :title="rosterExportKind === 'transfer' ? '导出《组织关系转接登记表》' : '导出人员花名册'"
+      :loading="rosterExporting"
+      @confirm="handleConfirmRosterExport"
+    />
+
+    <!-- 登记流动党员弹窗 -->
+    <NModal
+      v-model:show="floatingModalShow"
+      preset="card"
+      title="登记流动党员（流出 / 流入）"
+      class="w-460px max-w-94vw"
+    >
+      <NForm label-placement="left" label-width="96" size="small">
+        <NFormItem required>
+          <template #label><span class="sct-field-label">选择成员</span></template>
+          <NSelect
+            v-model:value="floatingForm.member_id"
+            :options="workStore.activeMembers.map(m => ({ label: `${m.name}（${m.type}）`, value: m.id }))"
+            filterable
+            placeholder="请选择成员"
+          />
+        </NFormItem>
+        <NFormItem required>
+          <template #label><span class="sct-field-label">流动方向</span></template>
+          <NRadioGroup v-model:value="floatingForm.direction" size="small">
+            <NRadioButton value="float_out">流出党员</NRadioButton>
+            <NRadioButton value="float_in">流入党员</NRadioButton>
+          </NRadioGroup>
+        </NFormItem>
+        <NFormItem>
+          <template #label><span class="sct-field-label">去向 / 来源</span></template>
+          <NInput v-model:value="floatingForm.source_org" placeholder="流入地党组织/实习单位或原所属支部" />
+        </NFormItem>
+        <NFormItem>
+          <template #label><span class="sct-field-label">备注</span></template>
+          <NInput v-model:value="floatingForm.note" type="textarea" :rows="2" />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="floatingModalShow = false">取消</NButton>
+          <NButton size="small" type="primary" @click="handleSaveFloating">确认登记</NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <!-- 流动党员联系日志弹窗 -->
+    <NModal v-model:show="contactLogModalShow" preset="card" title="记录流动党员联系情况" class="w-440px max-w-94vw">
+      <NInput
+        v-model:value="contactLogSummary"
+        type="textarea"
+        :rows="3"
+        placeholder="填写本次电话/微信/线下联系的思想动态、学习与组织生活参与情况"
+      />
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="contactLogModalShow = false">取消</NButton>
+          <NButton size="small" type="primary" @click="handleSaveContactLog">保存联系日志</NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <!-- 停止发展 / 历史离队归档弹窗 -->
+    <NModal v-model:show="stopArchiveModalShow" preset="card" title="停止发展 / 历史归档" class="w-440px max-w-94vw">
+      <div class="flex flex-col gap-10px">
+        <div class="text-12px text-[var(--sct-muted)]">
+          该成员将移入「历史归档库」，退出当前在册花名册与未来统计，但完整保留其过往考察与活动记录，可随时恢复。
+        </div>
+        <NInput
+          v-model:value="stopArchiveReason"
+          type="textarea"
+          :rows="2"
+          placeholder="填写归档原因（如：毕业离校接续培养 / 本人撤回申请 / 考察调整）"
+        />
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-8px">
+          <NButton size="small" @click="stopArchiveModalShow = false">取消</NButton>
+          <NButton size="small" type="warning" @click="handleConfirmStopArchive">确认归档</NButton>
+        </div>
+      </template>
+    </NModal>
 
     <!-- 批量导入向导 -->
     <MemberImportModal v-model:show="importShow" />
@@ -1730,6 +2446,71 @@ async function removeMember(id: string) {
           </template>
           <NInput v-model:value="addForm.note" type="textarea" :rows="2" />
         </NFormItem>
+
+        <!-- 企事业 / 社区场景扩展字段（按工作台模块配置动态展示） -->
+        <div
+          v-if="enabledFieldGroups.org_workplace || enabledFieldGroups.community_grid"
+          class="mb-10px rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)]/50 p-10px"
+        >
+          <div class="mb-8px text-12px font-bold text-[var(--sct-ink)]">
+            {{ enabledFieldGroups.community_grid ? '社区 / 两新场景信息' : '单位 / 教工场景信息' }}
+          </div>
+          <div class="grid grid-cols-1 gap-x-14px sm:grid-cols-2">
+            <NFormItem>
+              <template #label>
+                <span class="sct-field-label">
+                  <SvgIcon icon="lucide:building" class="sct-field-icon" />
+                  <span>{{ enabledFieldGroups.community_grid ? '所属网格' : '部门/科室' }}</span>
+                </span>
+              </template>
+              <NInput v-model:value="addForm.department" placeholder="选填" />
+            </NFormItem>
+            <NFormItem>
+              <template #label>
+                <span class="sct-field-label">
+                  <SvgIcon icon="lucide:briefcase" class="sct-field-icon" />
+                  <span>岗位/职称</span>
+                </span>
+              </template>
+              <NInput v-model:value="addForm.job_title" placeholder="选填" />
+            </NFormItem>
+            <NFormItem>
+              <template #label>
+                <span class="sct-field-label">
+                  <SvgIcon icon="lucide:map-pin" class="sct-field-icon" />
+                  <span>{{ enabledFieldGroups.community_grid ? '居住楼栋' : '办公地点' }}</span>
+                </span>
+              </template>
+              <NInput v-model:value="addForm.office_location" placeholder="选填" />
+            </NFormItem>
+          </div>
+        </div>
+
+        <!-- 用户自定义扩展字段 -->
+        <div
+          v-if="customFieldDefs.length"
+          class="mb-10px rounded-8px border border-[var(--sct-border)] bg-[var(--sct-soft)]/50 p-10px"
+        >
+          <div class="mb-8px text-12px font-bold text-[var(--sct-ink)]">自定义扩展字段</div>
+          <div class="grid grid-cols-1 gap-x-14px sm:grid-cols-2">
+            <NFormItem v-for="cf in customFieldDefs" :key="cf.key">
+              <template #label>
+                <span class="sct-field-label">
+                  <SvgIcon icon="lucide:tag" class="sct-field-icon" />
+                  <span>{{ cf.label }}</span>
+                </span>
+              </template>
+              <NSelect
+                v-if="cf.type === 'select' && cf.options?.length"
+                v-model:value="addForm.custom_fields[cf.key]"
+                :options="cf.options.map(o => ({ label: o, value: o }))"
+                clearable
+                placeholder="请选择"
+              />
+              <NInput v-else v-model:value="addForm.custom_fields[cf.key]" placeholder="选填" />
+            </NFormItem>
+          </div>
+        </div>
       </NForm>
       <template #footer>
         <div class="flex justify-end gap-8px">
@@ -1744,4 +2525,82 @@ async function removeMember(id: string) {
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.lifecycle-kpi-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 14px;
+  border-radius: var(--sct-radius, 7px);
+  border: 1px solid var(--sct-border);
+  background: var(--sct-page);
+  color: var(--sct-ink);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    background-color 0.14s ease;
+}
+
+.lifecycle-kpi-pill::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 0.14s ease;
+}
+
+.lifecycle-kpi-pill:hover {
+  border-color: var(--sct-ink);
+}
+
+.lifecycle-kpi-pill.is-active {
+  border-color: color-mix(in srgb, var(--sct-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--sct-accent) 7%, var(--sct-container));
+  font-weight: 700;
+}
+.lifecycle-kpi-pill.is-active::before {
+  background: var(--sct-accent);
+}
+
+.lifecycle-kpi-pill--warn.is-active {
+  border-color: color-mix(in srgb, #dc2626 45%, transparent);
+  background: var(--sct-err-soft);
+}
+.lifecycle-kpi-pill--warn.is-active::before {
+  background: #dc2626;
+}
+
+.lifecycle-kpi-pill--amber.is-active {
+  border-color: color-mix(in srgb, #d97706 45%, transparent);
+  background: var(--sct-warn-soft);
+}
+.lifecycle-kpi-pill--amber.is-active::before {
+  background: #d97706;
+}
+
+.lifecycle-kpi-pill--info.is-active {
+  border-color: color-mix(in srgb, #2563eb 45%, transparent);
+  background: var(--sct-info-soft);
+}
+.lifecycle-kpi-pill--info.is-active::before {
+  background: #2563eb;
+}
+
+.lifecycle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+.lifecycle-dot--red {
+  background: #dc2626;
+}
+.lifecycle-dot--amber {
+  background: #d97706;
+}
+</style>

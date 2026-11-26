@@ -41,7 +41,7 @@ const { isFullscreen, toggle } = useFullscreen();
     <div v-else class="mr-8px h-full min-w-0 flex-y-center flex-1-hidden">
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-10px" />
     </div>
-    <div class="h-full flex-y-center flex-shrink-0 justify-end gap-4px">
+    <div data-tour="header-tools" class="h-full flex-y-center flex-shrink-0 justify-end gap-4px">
       <OpenModeButton />
       <BranchBadge />
       <IdentityBadge />

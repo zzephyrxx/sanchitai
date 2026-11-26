@@ -432,7 +432,7 @@ function matPillStyle(status: string) {
     :bordered="false"
   >
     <template #header-extra>
-      <div class="flex flex-wrap items-center gap-10px">
+      <div data-tour="dev-timeline-header" class="flex flex-wrap items-center gap-10px">
         <NTag v-if="devStage" size="small" :bordered="false" type="error">当前阶段：{{ devStage.stage }}</NTag>
         <NButton v-if="devStage" size="small" type="primary" secondary @click="batchArchiveShow = true">
           <template #icon><SvgIcon icon="lucide:folder-check" /></template>
@@ -445,7 +445,7 @@ function matPillStyle(status: string) {
       </div>
     </template>
 
-    <div v-if="member && devStage" class="flex flex-col gap-12px">
+    <div v-if="member && devStage" data-tour="dev-timeline-body" class="flex flex-col gap-12px">
       <!-- 顶部概览与轨道图例 -->
       <div
         class="flex flex-wrap items-center justify-between gap-10px rounded-10px border border-[var(--sct-border)] bg-[var(--sct-soft)] px-12px py-8px text-12px"

@@ -276,6 +276,7 @@ const local: App.I18n.Schema = {
     ledger_fees: '党费收缴',
     ledger_talks: '谈心谈话',
     ledger_points: '党员积分',
+    ledger_volunteer: '志愿时长',
     library: '党务资源',
     library_knowledge: '知识库',
     library_policy: '政策文件',

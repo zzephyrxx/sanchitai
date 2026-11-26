@@ -369,7 +369,11 @@ async function handleAdd() {
       </NAlert>
 
       <!-- 覆盖矩阵（仅覆盖预备/正式党员，大样本下支持按需展开防卡顿） -->
-      <div class="talks-coverage-wrap mb-14px" :class="{ 'talks-coverage-wrap--scroll': visibleCoverage.length > 35 }">
+      <div
+        data-tour="talks-coverage"
+        class="talks-coverage-wrap mb-14px"
+        :class="{ 'talks-coverage-wrap--scroll': visibleCoverage.length > 35 }"
+      >
         <div class="grid grid-cols-2 gap-8px sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7">
           <div
             v-for="c in visibleCoverage"

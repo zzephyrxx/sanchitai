@@ -14,8 +14,23 @@ const workStore = useWorkDataStore();
 const themeStore = useThemeStore();
 const { bi, tFeeStatus, tFeeCategory } = useSctI18n();
 
-/** 缴费人员：正式+预备党员（党费名单来源随类型自动同步，A13 联动） */
-const feeMembers = computed(() => workStore.members.filter(m => m.type === '正式党员' || m.type === '预备党员'));
+const currentMonth = dayjs().format('YYYY-MM');
+/** 展示的月份列：近 6 个月 */
+const months = computed(() => {
+  const arr: string[] = [];
+  for (let i = 5; i >= 0; i -= 1) arr.push(dayjs().subtract(i, 'month').format('YYYY-MM'));
+  return arr;
+});
+
+/** 缴费人员：在册正式+预备党员，并保留当前视窗月份内已有缴费记录的历史归档党员（保证往期账实相符） */
+const feeMembers = computed(() => {
+  const monthSet = new Set(months.value);
+  const hasFeeIds = new Set(workStore.feeRecords.filter(f => monthSet.has(f.year_month)).map(f => f.member_id));
+  const activeIds = new Set(workStore.inBranchRosterMembers.map(m => m.id));
+  return workStore.members.filter(
+    m => (m.type === '正式党员' || m.type === '预备党员') && (activeIds.has(m.id) || hasFeeIds.has(m.id))
+  );
+});
 const searchKeyword = ref('');
 const filteredFeeMembers = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase();
@@ -50,14 +65,6 @@ watch(
 const pagedFeeMembers = computed(() => {
   const start = (feePagination.page - 1) * feePagination.pageSize;
   return filteredFeeMembers.value.slice(start, start + feePagination.pageSize);
-});
-
-const currentMonth = dayjs().format('YYYY-MM');
-/** 展示的月份列：近 6 个月 */
-const months = computed(() => {
-  const arr: string[] = [];
-  for (let i = 5; i >= 0; i -= 1) arr.push(dayjs().subtract(i, 'month').format('YYYY-MM'));
-  return arr;
 });
 
 /** 全局字号缩放增强系数（对党费表格放大/缩小响应额外增强 ~10%） */
@@ -629,7 +636,7 @@ const owedMemberNames = computed(() => {
         </div>
       </template>
       <template #header-extra>
-        <div class="flex flex-wrap items-center gap-8px">
+        <div data-tour="fees-actions" class="flex flex-wrap items-center gap-8px">
           <NButton size="small" secondary @click="exportMatrix">
             <template #icon><SvgIcon icon="lucide:download" /></template>
             {{ bi('导出逐月矩阵', 'Export Matrix CSV') }}
@@ -646,7 +653,7 @@ const owedMemberNames = computed(() => {
       </template>
 
       <!-- 本月汇总 -->
-      <div class="mb-14px flex flex-wrap gap-10px">
+      <div data-tour="fees-summary" class="mb-14px flex flex-wrap gap-10px">
         <div class="rounded-8px bg-[var(--sct-soft)] px-12px py-8px text-13px">
           {{ bi('本月应缴', 'Due This Month') }}
           <b class="text-[#A81C24]">{{ monthSummary.count }}</b>
@@ -702,7 +709,7 @@ const owedMemberNames = computed(() => {
       </div>
 
       <!-- 人×月矩阵（支持列顺序拖拽 + 列宽调整 + 记忆 + 月表头一键全员已缴） -->
-      <div class="fee-matrix">
+      <div data-tour="fees-matrix" class="fee-matrix">
         <table>
           <thead>
             <tr>

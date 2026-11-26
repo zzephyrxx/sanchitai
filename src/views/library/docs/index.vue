@@ -705,7 +705,7 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
     />
 
     <!-- 1. 模板库区 -->
-    <NCard :bordered="false" class="mb-16px">
+    <NCard :bordered="false" data-tour="docs-templates" class="mb-16px">
       <template #header>
         <div class="flex items-center gap-8px">
           <SvgIcon icon="lucide:layout-template" class="text-16px text-[#A81C24]" />
@@ -1285,13 +1285,25 @@ const docsColumns = computed<DataTableColumns<Sct.Doc>>(() => [
 }
 
 .doc-paper-quote {
+  position: relative;
   margin: 6px 0 8px;
-  padding: 6px 10px;
-  border-left: 3px solid var(--sct-accent, #a81c24);
+  padding: 6px 10px 6px 15px;
+  border: 1px solid color-mix(in srgb, var(--sct-accent, #a81c24) 26%, var(--sct-border));
   background: var(--sct-container);
   border-radius: 6px;
   color: var(--sct-muted);
   white-space: pre-wrap;
+}
+
+.doc-paper-quote::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--sct-accent, #a81c24);
 }
 
 .doc-paper-hr {

@@ -8,6 +8,7 @@ import {
   findFirstMissingPriorNode,
   nextStage
 } from '@/constants/dev-nodes';
+import { onTourCommand } from '@/utils/onboarding-bus';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWorkDataStore } from '@/store/modules/work-data';
 import { useSctI18n } from '@/hooks/common/sct-i18n';
@@ -330,6 +331,38 @@ function openTimeline(memberId: string) {
   timelineShow.value = true;
 }
 
+function pickBestDemoDevMemberId(): string | null {
+  const preferOrder: string[] = ['发展对象', '预备党员', '入党积极分子', '申请人', '正式党员'];
+  for (const st of preferOrder) {
+    const lane = lanes.value.find(l => l.stage === st);
+    if (lane?.members.length) return lane.members[0].member.id;
+  }
+  return workStore.devStages[0]?.member_id ?? null;
+}
+
+const offDevTour = onTourCommand(cmd => {
+  if (cmd === 'dev:open-first-drawer') {
+    const id = detailMemberId.value || pickBestDemoDevMemberId();
+    if (!id) return;
+    timelineShow.value = false;
+    detailMemberId.value = id;
+    detailShow.value = true;
+  } else if (cmd === 'dev:open-timeline') {
+    const id = detailMemberId.value || pickBestDemoDevMemberId();
+    if (!id) return;
+    detailMemberId.value = id;
+    detailShow.value = true;
+    timelineMemberId.value = id;
+    timelineShow.value = true;
+  } else if (cmd === 'dev:close-timeline') {
+    timelineShow.value = false;
+  } else if (cmd === 'dev:reset' || cmd === 'tour:cleanup') {
+    timelineShow.value = false;
+    detailShow.value = false;
+  }
+});
+onBeforeUnmount(offDevTour);
+
 // ---------------- 按钮触发流转（同样走确认弹窗） ----------------
 function requestAdvance(member: Sct.Member) {
   const target = nextStage(member.type);
@@ -355,7 +388,7 @@ function requestAdvance(member: Sct.Member) {
         </div>
       </template>
       <template #header-extra>
-        <div class="flex flex-nowrap items-center gap-8px">
+        <div data-tour="development-toolbar" class="flex flex-nowrap items-center gap-8px">
           <div class="w-240px shrink-0">
             <NInput
               v-model:value="searchKeyword"
@@ -375,7 +408,7 @@ function requestAdvance(member: Sct.Member) {
         </div>
       </template>
 
-      <div class="dev-lanes">
+      <div data-tour="development-lanes" class="dev-lanes">
         <div
           v-for="lane in lanes"
           :key="lane.stage"

@@ -17,6 +17,7 @@ import type { DateClickArg, EventResizeDoneArg } from '@fullcalendar/interaction
 import timeGridPlugin from '@fullcalendar/timegrid';
 import FullCalendar from '@fullcalendar/vue3';
 import { EVENT_CATEGORY_COLORS } from '@/constants/sanchitai';
+import { onTourCommand } from '@/utils/onboarding-bus';
 import { $t } from '@/locales';
 import { useAppStore } from '@/store/modules/app';
 import { useWorkDataStore } from '@/store/modules/work-data';
@@ -655,6 +656,16 @@ function openDetail(_id: string, ev: Sct.CalEvent | null) {
   detailShow.value = true;
 }
 
+const offCalTour = onTourCommand(cmd => {
+  if (cmd === 'calendar:open-first-event') {
+    const first = workStore.calEvents.find(e => !e.merged_into && e.status !== '已取消') ?? workStore.calEvents[0];
+    if (first) openDetail(first.id, first);
+  } else if (cmd === 'calendar:close-drawer' || cmd === 'tour:cleanup') {
+    detailShow.value = false;
+  }
+});
+onBeforeUnmount(offCalTour);
+
 async function quickMarkDone(ev: Sct.CalEvent) {
   await workStore.setEventStatus(ev.id, '已完成');
   dismissHoverPopover();
@@ -710,7 +721,7 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       class="h-full min-w-0 flex flex-1 flex-col overflow-hidden rounded-16px border border-[var(--sct-border)] bg-[var(--sct-container)]"
     >
       <!-- Nuxt Calendar 风格定制顶栏（三列 Grid 布局，确保中间「日/周/月」固定正中、绝不随左侧日期文字宽度偏移） -->
-      <div class="cal-topbar border-b border-[var(--sct-border)] px-18px py-12px">
+      <div data-tour="calendar-topbar" class="cal-topbar border-b border-[var(--sct-border)] px-18px py-12px">
         <!-- 左：年月大标题 + 日期区间 + 今日/本周计数胶囊 -->
         <div class="min-w-0 flex flex-wrap items-center gap-12px justify-self-start">
           <div class="flex items-baseline gap-10px whitespace-nowrap">
@@ -791,13 +802,17 @@ function eventStatusTagType(status: Sct.EventStatus): 'success' | 'info' | 'warn
       </div>
 
       <!-- 日历主网格 -->
-      <div class="nuxt-cal-body min-h-0 flex-1" @pointerdown.capture="handleCalendarPointerDown">
+      <div
+        data-tour="calendar-body"
+        class="nuxt-cal-body min-h-0 flex-1"
+        @pointerdown.capture="handleCalendarPointerDown"
+      >
         <FullCalendar ref="calendarRef" :options="calendarOptions" />
       </div>
     </div>
 
     <!-- 右侧栏：常驻显示，采用内置胶囊色带卡片 -->
-    <div class="w-288px flex flex-shrink-0 flex-col gap-12px overflow-y-auto">
+    <div data-tour="calendar-sidebar" class="w-288px flex flex-shrink-0 flex-col gap-12px overflow-y-auto">
       <!-- 1. 今日日程 -->
       <NCard :bordered="false" size="small" class="rounded-16px">
         <template #header>

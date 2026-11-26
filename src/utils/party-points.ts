@@ -1,64 +1,82 @@
 /**
- * 党员积分计算引擎、汇总格式化、双 Sheet Excel 导出与《支部记录表》打印版生成
+ * 党员积分与评定多方案动态计算引擎（v0.3.0）
+ *
+ * - 支持任意动态维度（deduct_from_base / add_capped / add_uncapped / deduct_direct）
+ * - 支持「分数制」与「五星党员评定模型」双模式
+ * - 支持从「三会一课考勤」「党费欠缴」「志愿时长台账」一键生成待核实草稿建议
+ * - 支持脱敏公示版 / 全量报送版双模式 Excel 导出与《支部记录表》打印
  */
 import dayjs from 'dayjs';
-import {
-  BASE_BUCKETS,
-  DUTY_BUCKETS,
-  POINT_BUCKET_MAP,
-  POINT_CATEGORY_META,
-  POINT_DUTY_MAX,
-  POINT_PASS_LINE
-} from '@/constants/party-points';
+import { getBuiltinPointScheme } from '@/constants/party-points';
 import { esc } from '@/utils/print';
+import { formatIdCardForExport, privacyModeFileSuffix } from '@/utils/privacy-export';
 
-export interface BucketScoreDetail {
-  key: Sct.PointSubCategory;
+export interface DimensionScoreDetail {
+  id: string;
   label: string;
   shortLabel: string;
-  cap: number;
-  /** 基础分：累计扣分（正数）；履职分：原始累计加分 */
+  category: Sct.PointCategory;
+  mode: Sct.PointDimensionDef['mode'];
+  initialScore: number;
+  cap: number | null;
+  color: string;
+  /** 原始累计变动值（扣分维度为累计扣分正数，加分维度为累计加分正数） */
   raw: number;
-  /** 基础分：该子项剩余得分（0..cap）；履职分：封顶后有效得分（0..cap） */
+  /** 封顶/保底后的有效得分（deduct_direct 为正数表示扣减额） */
   effective: number;
-  /** 是否触发本项封顶/扣满 */
   capped: boolean;
+  /** 星级模式下该维度是否点亮星标 */
+  starLit: boolean;
+  starThreshold: number;
 }
 
 export interface MemberYearPointSummary {
   member: Sct.Member;
   year: number;
-  baseBuckets: BucketScoreDetail[];
-  dutyBuckets: BucketScoreDetail[];
-  /** 基础分（未一票否决时的子项合计，一票否决后为 0） */
+  scheme: Sct.PointScheme;
+  dimensions: DimensionScoreDetail[];
+  /** 基础分合计（一票否决时清零） */
   baseScore: number;
-  /** 基础分原始总扣分（正数） */
-  baseDeducted: number;
-  /** 履职分三大类封顶得分 */
-  dutyStudyScore: number;
-  dutyPracticeScore: number;
-  dutyVolunteerScore: number;
-  /** 履职总分（≤40） */
+  /** 履职/加分维度合计 */
   dutyScore: number;
-  /** 附加分合计 */
+  /** 不封顶附加分合计 */
   bonusScore: number;
-  /** 减扣分合计（正数，如 10 表示扣 10 分） */
+  /** 直接减扣分合计（正数） */
   penaltyDeduction: number;
-  /** 年度总积分 = baseScore + dutyScore + bonusScore - penaltyDeduction */
+  /** 年度总分 */
   totalScore: number;
-  /** 一票否决状态 */
+  /** 星级模式点亮星数（0..dimensions.length） */
+  starsEarned: number;
+  /** 星级模式满星数 */
+  starsTotal: number;
   vetoActive: boolean;
   vetoReason: string;
-  /** 是否触发 <60 分或一票否决预警 */
   isWarning: boolean;
-  /** 有效/待核实/未通过条目数 */
   approvedCount: number;
   pendingCount: number;
   rejectedCount: number;
   totalRecordCount: number;
-  /** 扣分与加分摘要文案（供导出支部记录表） */
   deductionSummary: string;
   additionSummary: string;
+  /** 兼容旧版字段（供旧组件/打印快速访问） */
+  baseBuckets: DimensionScoreDetail[];
+  dutyBuckets: DimensionScoreDetail[];
+}
+
+export interface SyncPointDraftSuggestion {
+  sourceRef: string;
+  sourceKind: 'attendance' | 'fee' | 'volunteer';
+  sourceBadge: string;
+  memberId: string;
+  memberName: string;
+  date: string;
+  category: Sct.PointCategory;
+  subCategory: string;
+  ruleLabel: string;
+  content: string;
+  score: number;
+  calcMeta?: Sct.PointRecord['calc_meta'];
+  alreadyImported: boolean;
 }
 
 export function roundScore(value: number): number {
@@ -68,13 +86,12 @@ export function roundScore(value: number): number {
 
 export function formatScore(value: number, signed = false): string {
   const n = roundScore(value);
-  const absText = Number.isInteger(n) ? String(Math.abs(n)) : String(Math.abs(n));
+  const absText = String(Math.abs(n));
   if (n < 0) return `-${absText}`;
   if (signed && n > 0) return `+${absText}`;
   return absText;
 }
 
-/** 按细则计算建议分值（用户仍可在表单中手动微调） */
 export function computeRuleSuggestedScore(
   rule: Sct.PointRuleItem,
   meta: { count?: number; role?: 'core' | 'member'; hours?: number }
@@ -98,114 +115,174 @@ export function computeRuleSuggestedScore(
   }
 }
 
-/** 计算单名党员在指定年度的完整积分构成 */
+/** 计算单名党员在指定年度、指定方案下的完整积分/星级构成 */
 export function computeMemberYearPoints(
   member: Sct.Member,
   year: number,
   allRecords: readonly Sct.PointRecord[],
-  veto?: Sct.PointVeto
+  veto?: Sct.PointVeto,
+  schemeInput?: Sct.PointScheme
 ): MemberYearPointSummary {
+  const scheme = schemeInput ?? getBuiltinPointScheme('scheme-uni-60-40');
   const records = allRecords.filter(r => r.member_id === member.id && r.year === year);
   const approved = records.filter(r => r.status === '已认定');
   const pendingCount = records.filter(r => r.status === '待核实').length;
   const rejectedCount = records.filter(r => r.status === '未通过').length;
 
-  // 1. 基础分（5 子项各自封顶扣至 0）
-  const baseBuckets: BucketScoreDetail[] = BASE_BUCKETS.map(bucket => {
-    const cap = bucket.cap ?? 0;
-    const rawDeduct = roundScore(
-      approved
-        .filter(r => r.category === 'base' && r.sub_category === bucket.key)
-        .reduce((acc, r) => acc + Math.abs(Number(r.score) || 0), 0)
-    );
-    const effective = roundScore(Math.max(0, cap - rawDeduct));
-    return {
-      key: bucket.key,
-      label: bucket.label,
-      shortLabel: bucket.shortLabel,
-      cap,
-      raw: rawDeduct,
-      effective,
-      capped: rawDeduct >= cap && cap > 0
-    };
-  });
-
-  const vetoActive = Boolean(veto?.active);
+  const vetoActive = scheme.enable_veto && Boolean(veto?.active);
   const vetoReason = veto?.reason?.trim() || '';
-  const baseDeducted = roundScore(baseBuckets.reduce((acc, b) => acc + b.raw, 0));
-  const baseScore = vetoActive ? 0 : roundScore(baseBuckets.reduce((acc, b) => acc + b.effective, 0));
 
-  // 2. 履职分（3 大类 15/10/15 各自封顶，合计 ≤ 40）
-  const dutyBuckets: BucketScoreDetail[] = DUTY_BUCKETS.map(bucket => {
-    const cap = bucket.cap ?? 0;
-    const rawGain = roundScore(
-      approved
-        .filter(r => r.category === 'duty' && r.sub_category === bucket.key)
-        .reduce((acc, r) => acc + Math.max(0, Number(r.score) || 0), 0)
-    );
-    const effective = roundScore(Math.min(cap, rawGain));
+  // 按方案维度聚合（若某记录的 sub_category 不在当前方案中，则按 category 回退匹配首个同类别维度，保证换方案不丢分）
+  const dimIdSet = new Set(scheme.dimensions.map(d => d.id));
+  const fallbackByCategory = new Map<Sct.PointCategory, string>();
+  for (const d of scheme.dimensions) {
+    if (!fallbackByCategory.has(d.category)) {
+      fallbackByCategory.set(d.category, d.id);
+    }
+  }
+
+  const bucketedApproved = new Map<string, Sct.PointRecord[]>();
+  for (const r of approved) {
+    const targetDimId = dimIdSet.has(r.sub_category)
+      ? r.sub_category
+      : (fallbackByCategory.get(r.category) ?? scheme.dimensions[0]?.id ?? '');
+    if (!targetDimId) continue;
+    const arr = bucketedApproved.get(targetDimId) ?? [];
+    arr.push(r);
+    bucketedApproved.set(targetDimId, arr);
+  }
+
+  const dimensions: DimensionScoreDetail[] = scheme.dimensions.map(dim => {
+    const dimRecords = bucketedApproved.get(dim.id) ?? [];
+    const starThreshold = dim.star_threshold ?? 10;
+
+    if (dim.mode === 'deduct_from_base') {
+      const cap = dim.cap ?? dim.initial_score;
+      const rawDeduct = roundScore(dimRecords.reduce((acc, r) => acc + Math.abs(Number(r.score) || 0), 0));
+      const effective = vetoActive ? 0 : roundScore(Math.max(0, dim.initial_score - rawDeduct));
+      return {
+        id: dim.id,
+        label: dim.label,
+        shortLabel: dim.shortLabel,
+        category: dim.category,
+        mode: dim.mode,
+        initialScore: dim.initial_score,
+        cap,
+        color: dim.color,
+        raw: rawDeduct,
+        effective,
+        capped: rawDeduct >= dim.initial_score && dim.initial_score > 0,
+        starLit: !vetoActive && effective >= starThreshold,
+        starThreshold
+      };
+    }
+
+    if (dim.mode === 'deduct_direct') {
+      const rawDeduct = roundScore(dimRecords.reduce((acc, r) => acc + Math.abs(Number(r.score) || 0), 0));
+      return {
+        id: dim.id,
+        label: dim.label,
+        shortLabel: dim.shortLabel,
+        category: dim.category,
+        mode: dim.mode,
+        initialScore: 0,
+        cap: null,
+        color: dim.color,
+        raw: rawDeduct,
+        effective: rawDeduct,
+        capped: false,
+        starLit: false,
+        starThreshold
+      };
+    }
+
+    // add_capped / add_uncapped
+    const rawGain = roundScore(dimRecords.reduce((acc, r) => acc + Math.max(0, Number(r.score) || 0), 0));
+    const hasCap = dim.mode === 'add_capped' && typeof dim.cap === 'number' && dim.cap > 0;
+    const effective = hasCap ? roundScore(Math.min(dim.cap as number, rawGain)) : rawGain;
     return {
-      key: bucket.key,
-      label: bucket.label,
-      shortLabel: bucket.shortLabel,
-      cap,
+      id: dim.id,
+      label: dim.label,
+      shortLabel: dim.shortLabel,
+      category: dim.category,
+      mode: dim.mode,
+      initialScore: 0,
+      cap: hasCap ? (dim.cap as number) : null,
+      color: dim.color,
       raw: rawGain,
       effective,
-      capped: rawGain > cap
+      capped: hasCap && rawGain > (dim.cap as number),
+      starLit: !vetoActive && effective >= starThreshold,
+      starThreshold
     };
   });
 
-  const dutyStudyScore = dutyBuckets.find(b => b.key === 'duty_study')?.effective ?? 0;
-  const dutyPracticeScore = dutyBuckets.find(b => b.key === 'duty_practice')?.effective ?? 0;
-  const dutyVolunteerScore = dutyBuckets.find(b => b.key === 'duty_volunteer')?.effective ?? 0;
-  const dutyScore = roundScore(
-    Math.min(
-      POINT_DUTY_MAX,
-      dutyBuckets.reduce((acc, b) => acc + b.effective, 0)
-    )
+  const baseBuckets = dimensions.filter(d => d.mode === 'deduct_from_base');
+  const dutyBuckets = dimensions.filter(
+    d => d.mode === 'add_capped' || (d.mode === 'add_uncapped' && d.category === 'duty')
   );
+  const bonusBuckets = dimensions.filter(d => d.mode === 'add_uncapped' && d.category === 'bonus');
+  const penaltyBuckets = dimensions.filter(d => d.mode === 'deduct_direct');
 
-  // 3. 附加分（不封顶）
-  const bonusScore = roundScore(
-    approved.filter(r => r.category === 'bonus').reduce((acc, r) => acc + Math.max(0, Number(r.score) || 0), 0)
-  );
+  const baseScore = vetoActive ? 0 : roundScore(baseBuckets.reduce((acc, d) => acc + d.effective, 0));
 
-  // 4. 减扣分（正数表示扣除额）
-  const penaltyDeduction = roundScore(
-    approved.filter(r => r.category === 'penalty').reduce((acc, r) => acc + Math.abs(Number(r.score) || 0), 0)
-  );
+  // 支持按 group_caps 汇总封顶（如高校 60+40 方案中 duty 三项合计 ≤ 40）
+  let dutyScoreRaw = 0;
+  const groupedSums = new Map<string, number>();
+  for (const dim of scheme.dimensions) {
+    const detail = dimensions.find(d => d.id === dim.id);
+    if (!detail) continue;
+    if (dim.mode === 'add_capped' || (dim.mode === 'add_uncapped' && dim.category === 'duty')) {
+      if (dim.group_cap_key && scheme.group_caps?.[dim.group_cap_key] !== undefined) {
+        groupedSums.set(dim.group_cap_key, (groupedSums.get(dim.group_cap_key) ?? 0) + detail.effective);
+      } else {
+        dutyScoreRaw += detail.effective;
+      }
+    }
+  }
+  for (const [gKey, sumVal] of groupedSums.entries()) {
+    const gCap = scheme.group_caps?.[gKey] ?? sumVal;
+    dutyScoreRaw += Math.min(gCap, sumVal);
+  }
+  const dutyScore = roundScore(dutyScoreRaw);
+  const bonusScore = roundScore(bonusBuckets.reduce((acc, d) => acc + d.effective, 0));
+  const penaltyDeduction = roundScore(penaltyBuckets.reduce((acc, d) => acc + d.effective, 0));
 
   const totalScore = roundScore(baseScore + dutyScore + bonusScore - penaltyDeduction);
-  const isWarning = vetoActive || totalScore < POINT_PASS_LINE;
+  const starDimensions = dimensions.filter(d => d.mode !== 'deduct_direct');
+  const starsTotal = scheme.scheme_mode === 'star' ? starDimensions.length : 0;
+  const starsEarned =
+    scheme.scheme_mode === 'star' ? (vetoActive ? 0 : starDimensions.filter(d => d.starLit).length) : 0;
 
-  // 摘要文本（用于导出支部记录表）
+  const isWarning =
+    vetoActive ||
+    (scheme.scheme_mode === 'star' ? starsEarned < (scheme.pass_stars ?? 3) : totalScore < scheme.pass_line);
+
   const deductLines = approved
-    .filter(r => r.category === 'base' || r.category === 'penalty')
+    .filter(r => r.score < 0 || r.category === 'base' || r.category === 'penalty')
     .sort((a, b) => a.date.localeCompare(b.date))
     .map(r => `${r.date.slice(5)} ${r.content || r.rule_label}(-${formatScore(Math.abs(r.score))})`);
   if (vetoActive) {
-    deductLines.unshift(`【一票否决】${vetoReason || '基础分清零'}`);
+    deductLines.unshift(`【一票否决】${vetoReason || '评定清零'}`);
   }
 
   const addLines = approved
-    .filter(r => r.category === 'duty' || r.category === 'bonus')
+    .filter(r => r.score > 0 && r.category !== 'base' && r.category !== 'penalty')
     .sort((a, b) => a.date.localeCompare(b.date))
     .map(r => `${r.date.slice(5)} ${r.content || r.rule_label}(+${formatScore(Math.abs(r.score))})`);
 
   return {
     member,
     year,
-    baseBuckets,
-    dutyBuckets,
+    scheme,
+    dimensions,
     baseScore,
-    baseDeducted,
-    dutyStudyScore,
-    dutyPracticeScore,
-    dutyVolunteerScore,
     dutyScore,
     bonusScore,
     penaltyDeduction,
     totalScore,
+    starsEarned,
+    starsTotal,
     vetoActive,
     vetoReason,
     isWarning,
@@ -214,38 +291,197 @@ export function computeMemberYearPoints(
     rejectedCount,
     totalRecordCount: records.length,
     deductionSummary: deductLines.join('；'),
-    additionSummary: addLines.join('；')
+    additionSummary: addLines.join('；'),
+    baseBuckets,
+    dutyBuckets
   };
 }
 
-/** 导出双 Sheet Excel（Sheet 1《支部积分汇总表》+ Sheet 2《全员积分明细流水》） */
+/** 扫描本年度考勤缺席、党费欠缴、志愿时长，生成「待核实积分草稿建议」供支书勾选导入 */
+export function buildPointDraftSuggestions(opts: {
+  year: number;
+  scheme: Sct.PointScheme;
+  members: readonly Sct.Member[];
+  calEvents: readonly Sct.CalEvent[];
+  attendance: readonly Sct.Attendance[];
+  feeRecords: readonly Sct.FeeRecord[];
+  volunteerActivities: readonly Sct.VolunteerActivity[];
+  existingRecords: readonly Sct.PointRecord[];
+}): SyncPointDraftSuggestion[] {
+  const { year, scheme, members, calEvents, attendance, feeRecords, volunteerActivities, existingRecords } = opts;
+  const yearPrefix = `${year}-`;
+  const memberMap = new Map(members.map(m => [m.id, m]));
+  const eventMap = new Map(calEvents.map(e => [e.id, e]));
+  const importedRefs = new Set(existingRecords.map(r => r.source_ref).filter((v): v is string => Boolean(v)));
+
+  const suggestions: SyncPointDraftSuggestion[] = [];
+
+  // 定位当前方案中对应的维度
+  const meetingDim =
+    scheme.dimensions.find(d => d.id.includes('meeting') || d.label.includes('组织生活')) ??
+    scheme.dimensions.find(d => d.mode === 'deduct_from_base');
+  const feeDim =
+    scheme.dimensions.find(d => d.id.includes('fee') || d.label.includes('党费')) ??
+    scheme.dimensions.find(d => d.mode === 'deduct_from_base');
+  const volunteerDim =
+    scheme.dimensions.find(d => d.id.includes('volunteer') || d.label.includes('志愿')) ??
+    scheme.dimensions.find(d => d.mode === 'add_capped' || d.mode === 'add_uncapped');
+
+  // 1. 考勤未到会（按人聚合本年度未到会场次）
+  if (meetingDim) {
+    const absentByMember = new Map<string, string[]>();
+    for (const att of attendance) {
+      if (att.status !== '未到会') continue;
+      const ev = eventMap.get(att.event_id);
+      if (!ev || !ev.date.startsWith(yearPrefix)) continue;
+      if (!memberMap.has(att.member_id)) continue;
+      const arr = absentByMember.get(att.member_id) ?? [];
+      arr.push(`${ev.date.slice(5)} ${ev.title}`);
+      absentByMember.set(att.member_id, arr);
+    }
+    for (const [memberId, list] of absentByMember.entries()) {
+      const m = memberMap.get(memberId);
+      if (!m) continue;
+      const ref = `sync:att:${year}:${memberId}:${list.length}`;
+      suggestions.push({
+        sourceRef: ref,
+        sourceKind: 'attendance',
+        sourceBadge: '三会一课考勤',
+        memberId,
+        memberName: m.name,
+        date: dayjs().format('YYYY-MM-DD'),
+        category: meetingDim.category,
+        subCategory: meetingDim.id,
+        ruleLabel: `缺席组织生活（本年 ${list.length} 次）`,
+        content: `考勤同步：本年未到会 ${list.length} 次（${list.slice(0, 3).join('、')}${list.length > 3 ? '…' : ''}）`,
+        score: -list.length,
+        calcMeta: { count: list.length, base_score: -1 },
+        alreadyImported: importedRefs.has(ref)
+      });
+    }
+  }
+
+  // 2. 党费欠缴（按人聚合本年度欠缴月份）
+  if (feeDim) {
+    const owedByMember = new Map<string, string[]>();
+    for (const fee of feeRecords) {
+      if (fee.status !== '欠缴' || !fee.year_month.startsWith(yearPrefix)) continue;
+      if (!memberMap.has(fee.member_id)) continue;
+      const arr = owedByMember.get(fee.member_id) ?? [];
+      arr.push(fee.year_month);
+      owedByMember.set(fee.member_id, arr);
+    }
+    for (const [memberId, months] of owedByMember.entries()) {
+      const m = memberMap.get(memberId);
+      if (!m) continue;
+      const sorted = months.slice().sort();
+      const ref = `sync:fee:${year}:${memberId}:${sorted.length}`;
+      suggestions.push({
+        sourceRef: ref,
+        sourceKind: 'fee',
+        sourceBadge: '党费收缴台账',
+        memberId,
+        memberName: m.name,
+        date: dayjs().format('YYYY-MM-DD'),
+        category: feeDim.category,
+        subCategory: feeDim.id,
+        ruleLabel: `本年党费欠缴（${sorted.length} 个月）`,
+        content: `党费同步：欠缴月份 ${sorted.join('、')}`,
+        score: -roundScore(sorted.length * 3),
+        calcMeta: { count: sorted.length, base_score: -3 },
+        alreadyImported: importedRefs.has(ref)
+      });
+    }
+  }
+
+  // 3. 志愿时长台账（仅统计本年「已认定」活动总时长，按每 20 小时换算）
+  if (volunteerDim) {
+    const volRule = scheme.rules.find(r => r.calc_mode === 'hours_20' && r.enabled !== false);
+    const unitPer20h = Math.abs(volRule?.default_score ?? 1);
+    const hoursByMember = new Map<string, { hours: number; count: number }>();
+    for (const act of volunteerActivities) {
+      if (act.status !== '已认定' || !act.date.startsWith(yearPrefix)) continue;
+      for (const p of act.participants) {
+        if (!memberMap.has(p.member_id)) continue;
+        const cur = hoursByMember.get(p.member_id) ?? { hours: 0, count: 0 };
+        cur.hours = roundScore(cur.hours + (Number(p.hours) || 0));
+        cur.count += 1;
+        hoursByMember.set(p.member_id, cur);
+      }
+    }
+    for (const [memberId, stat] of hoursByMember.entries()) {
+      const m = memberMap.get(memberId);
+      if (!m || stat.hours <= 0) continue;
+      const score = roundScore((stat.hours / 20) * unitPer20h);
+      if (score <= 0) continue;
+      const ref = `sync:vol:${year}:${memberId}:${stat.hours}`;
+      suggestions.push({
+        sourceRef: ref,
+        sourceKind: 'volunteer',
+        sourceBadge: '志愿时长台账',
+        memberId,
+        memberName: m.name,
+        date: dayjs().format('YYYY-MM-DD'),
+        category: volunteerDim.category,
+        subCategory: volunteerDim.id,
+        ruleLabel: volRule?.label ?? `志愿服务时长换算（每 20h = ${unitPer20h} 分）`,
+        content: `志愿台账同步：${year} 年度已认定 ${stat.count} 场活动，累计 ${stat.hours} 小时`,
+        score,
+        calcMeta: { hours: stat.hours, base_score: unitPer20h },
+        alreadyImported: importedRefs.has(ref)
+      });
+    }
+  }
+
+  return suggestions;
+}
+
+/** 导出双 Sheet Excel（支持动态方案维度 + 脱敏公示/全量报送双模式） */
 export async function exportBranchPointsExcel(opts: {
   branchName: string;
   year: number;
+  scheme: Sct.PointScheme;
   summaries: readonly MemberYearPointSummary[];
   records: readonly Sct.PointRecord[];
   memberMap: ReadonlyMap<string, Sct.Member>;
+  privacyMode?: Sct.ExportPrivacyMode;
 }): Promise<'saved' | 'cancelled'> {
   const XLSX = await import('xlsx');
+  const privacyMode = opts.privacyMode ?? 'masked';
+  const dimMap = new Map(opts.scheme.dimensions.map(d => [d.id, d]));
 
-  const summaryRows = opts.summaries.map((s, idx) => ({
-    序号: idx + 1,
-    姓名: s.member.name,
-    学号: s.member.student_id || '',
-    党员身份: s.member.type,
-    '基础分(满分60)': s.baseScore,
-    '专业学习(限15)': s.dutyStudyScore,
-    '实践活动(限10)': s.dutyPracticeScore,
-    '志愿服务(限15)': s.dutyVolunteerScore,
-    '履职分合计(限40)': s.dutyScore,
-    附加分: s.bonusScore,
-    减扣分: s.penaltyDeduction > 0 ? -s.penaltyDeduction : 0,
-    年度总积分: s.totalScore,
-    评定状态: s.vetoActive ? '一票否决（基础分清零）' : s.totalScore < POINT_PASS_LINE ? '低于60分预警' : '合格',
-    基础扣分与减扣明细: s.deductionSummary || '无',
-    履职与附加加分明细: s.additionSummary || '无',
-    待核实条数: s.pendingCount
-  }));
+  const summaryRows = opts.summaries.map((s, idx) => {
+    const baseRow: Record<string, unknown> = {
+      序号: idx + 1,
+      姓名: s.member.name,
+      统一编号: s.member.code || '',
+      '学号/工号': s.member.student_id || '',
+      党员身份: s.member.type,
+      成员状态: s.member.lifecycle_status ?? '在册正常'
+    };
+    if (privacyMode === 'full') {
+      baseRow.身份证号 = formatIdCardForExport(s.member.id_card, privacyMode);
+    }
+    for (const d of s.dimensions) {
+      const colName = d.cap ? `${d.shortLabel}(限${d.cap})` : d.shortLabel;
+      baseRow[colName] = d.mode === 'deduct_direct' && d.effective > 0 ? -d.effective : d.effective;
+    }
+    if (opts.scheme.scheme_mode === 'star') {
+      baseRow.获得星级 = `${'★'.repeat(s.starsEarned)}${'☆'.repeat(Math.max(0, s.starsTotal - s.starsEarned))} (${s.starsEarned}/${s.starsTotal})`;
+    }
+    baseRow.年度总积分 = s.totalScore;
+    baseRow.评定状态 = s.vetoActive
+      ? '一票否决'
+      : s.isWarning
+        ? opts.scheme.scheme_mode === 'star'
+          ? `未达${opts.scheme.pass_stars ?? 3}星预警`
+          : `低于${opts.scheme.pass_line}分预警`
+        : '合格';
+    baseRow.扣分明细 = s.deductionSummary || '无';
+    baseRow.加分明细 = s.additionSummary || '无';
+    baseRow.待核实条数 = s.pendingCount;
+    return baseRow;
+  });
 
   const yearRecords = opts.records
     .filter(r => r.year === opts.year)
@@ -254,16 +490,14 @@ export async function exportBranchPointsExcel(opts: {
 
   const detailRows = yearRecords.map((r, idx) => {
     const m = opts.memberMap.get(r.member_id);
-    const catMeta = POINT_CATEGORY_META[r.category];
-    const bucketMeta = POINT_BUCKET_MAP[r.sub_category];
+    const dim = dimMap.get(r.sub_category);
     return {
       序号: idx + 1,
       年度: r.year,
       活动时间: r.date,
       党员姓名: m?.name ?? r.member_id,
-      学号: m?.student_id ?? '',
-      积分大类: catMeta?.shortLabel ?? r.category,
-      所属子项: bucketMeta?.shortLabel ?? r.sub_category,
+      '学号/工号': m?.student_id ?? '',
+      所属维度: dim?.shortLabel ?? r.sub_category,
       计分细则: r.rule_label,
       活动内容与说明: r.content,
       分值: r.score,
@@ -274,55 +508,13 @@ export async function exportBranchPointsExcel(opts: {
 
   const wb = XLSX.utils.book_new();
   const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-  wsSummary['!cols'] = [
-    { wch: 6 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 15 },
-    { wch: 9 },
-    { wch: 9 },
-    { wch: 12 },
-    { wch: 18 },
-    { wch: 36 },
-    { wch: 36 },
-    { wch: 10 }
-  ];
   XLSX.utils.book_append_sheet(wb, wsSummary, '支部积分汇总表');
 
   const wsDetail = XLSX.utils.json_to_sheet(
     detailRows.length
       ? detailRows
-      : [
-          {
-            序号: '',
-            年度: opts.year,
-            活动时间: '',
-            党员姓名: '暂无明细记录',
-            积分大类: '',
-            活动内容与说明: '',
-            分值: ''
-          }
-        ]
+      : [{ 序号: '', 年度: opts.year, 活动时间: '', 党员姓名: '暂无明细记录', 所属维度: '', 分值: '' }]
   );
-  wsDetail['!cols'] = [
-    { wch: 6 },
-    { wch: 8 },
-    { wch: 12 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 28 },
-    { wch: 32 },
-    { wch: 8 },
-    { wch: 12 },
-    { wch: 20 }
-  ];
   XLSX.utils.book_append_sheet(wb, wsDetail, '全员积分明细流水');
 
   const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
@@ -332,7 +524,7 @@ export async function exportBranchPointsExcel(opts: {
 
   const { saveFileWithPicker } = await import('@/utils/save-file');
   const res = await saveFileWithPicker(blob, {
-    suggestedName: `${opts.branchName}_${opts.year}年度党员积分支部记录表_${dayjs().format('YYYYMMDD')}.xlsx`,
+    suggestedName: `${opts.branchName}_${opts.year}年度党员积分记录表${privacyModeFileSuffix(privacyMode)}_${dayjs().format('YYYYMMDD')}.xlsx`,
     types: [
       {
         description: 'Excel 工作簿',
@@ -344,10 +536,11 @@ export async function exportBranchPointsExcel(opts: {
   return res.status === 'saved' ? 'saved' : 'cancelled';
 }
 
-/** 生成可打印公示版 HTML（带《计算机学院学生党员积分管理支部记录表》抬头与签字栏，对应附件 3） */
+/** 生成动态方案可打印公示版 HTML */
 export function buildBranchPointsPrintHtml(opts: {
   branchName: string;
   year: number;
+  scheme: Sct.PointScheme;
   summaries: readonly MemberYearPointSummary[];
 }): string {
   const avg =
@@ -355,26 +548,44 @@ export function buildBranchPointsPrintHtml(opts: {
       ? roundScore(opts.summaries.reduce((acc, s) => acc + s.totalScore, 0) / opts.summaries.length)
       : 0;
   const warnCount = opts.summaries.filter(s => s.isWarning).length;
+  const isStar = opts.scheme.scheme_mode === 'star';
+
+  const dimHeaders = opts.scheme.dimensions
+    .map(
+      d =>
+        `<th class="c">${esc(d.shortLabel)}${d.cap ? `<br><span style="font-weight:400;font-size:10px">(${d.cap})</span>` : ''}</th>`
+    )
+    .join('');
 
   const rowsHtml = opts.summaries
     .map((s, idx) => {
       const statusText = s.vetoActive
         ? '<span style="color:#c0392b;font-weight:700">一票否决</span>'
-        : s.totalScore < POINT_PASS_LINE
-          ? '<span style="color:#c0392b;font-weight:700">&lt;60分预警</span>'
+        : s.isWarning
+          ? `<span style="color:#c0392b;font-weight:700">${isStar ? '星级不足' : `<${opts.scheme.pass_line}分预警`}</span>`
           : '合格';
+
+      const dimCells = s.dimensions
+        .map(d => {
+          const val =
+            d.mode === 'deduct_direct' && d.effective > 0 ? `-${formatScore(d.effective)}` : formatScore(d.effective);
+          const starMark = isStar && d.starLit ? ' ★' : '';
+          return `<td class="c">${val}${starMark}</td>`;
+        })
+        .join('');
+
+      const resultCell = isStar
+        ? `<td class="c" style="font-weight:700;color:#b45309">${'★'.repeat(s.starsEarned)}${'☆'.repeat(Math.max(0, s.starsTotal - s.starsEarned))}<br><span style="font-size:11px;color:#333">${formatScore(s.totalScore)}分</span></td>`
+        : `<td class="c" style="font-weight:700;font-size:14px;${s.isWarning ? 'color:#c0392b;' : ''}">${formatScore(s.totalScore)}</td>`;
+
       return `
         <tr>
           <td class="c">${idx + 1}</td>
           <td class="c"><b>${esc(s.member.name)}</b></td>
           <td class="c">${esc(s.member.type)}</td>
-          <td class="c">${formatScore(s.baseScore)}</td>
-          <td class="c">${formatScore(s.dutyScore)}<br><span style="font-size:10px;color:#666">学${formatScore(s.dutyStudyScore)}/践${formatScore(s.dutyPracticeScore)}/志${formatScore(s.dutyVolunteerScore)}</span></td>
-          <td class="c">${s.bonusScore ? `+${formatScore(s.bonusScore)}` : '0'}</td>
-          <td class="c">${s.penaltyDeduction ? `-${formatScore(s.penaltyDeduction)}` : '0'}</td>
-          <td style="font-size:11px;line-height:1.45">${esc(s.deductionSummary || '无')}</td>
-          <td style="font-size:11px;line-height:1.45">${esc(s.additionSummary || '无')}</td>
-          <td class="c" style="font-weight:700;font-size:14px;${s.isWarning ? 'color:#c0392b;' : ''}">${formatScore(s.totalScore)}</td>
+          ${dimCells}
+          <td style="font-size:11px;line-height:1.45">${esc(s.additionSummary || s.deductionSummary || '无')}</td>
+          ${resultCell}
           <td class="c">${statusText}</td>
         </tr>
       `;
@@ -382,12 +593,13 @@ export function buildBranchPointsPrintHtml(opts: {
     .join('');
 
   return `
-    <h1>学生党员积分管理支部记录表（${opts.year} 年度）</h1>
+    <h1>党员积分评定支部记录表（${opts.year} 年度）</h1>
     <div class="meta">
       党支部：<b>${esc(opts.branchName)}</b> &nbsp;|&nbsp;
-      参与考核党员：${opts.summaries.length} 人 &nbsp;|&nbsp;
-      支部平均分：${formatScore(avg)} 分 &nbsp;|&nbsp;
-      低于60分/否决预警：${warnCount} 人 &nbsp;|&nbsp;
+      考核方案：<b>${esc(opts.scheme.name)}</b> &nbsp;|&nbsp;
+      考核人数：${opts.summaries.length} 人 &nbsp;|&nbsp;
+      平均分：${formatScore(avg)} 分 &nbsp;|&nbsp;
+      预警人数：${warnCount} 人 &nbsp;|&nbsp;
       制表日期：${dayjs().format('YYYY-MM-DD')}
     </div>
     <table>
@@ -395,42 +607,30 @@ export function buildBranchPointsPrintHtml(opts: {
         <tr>
           <th class="c" style="width:36px">序号</th>
           <th class="c" style="width:68px">党员姓名</th>
-          <th class="c" style="width:64px">身份</th>
-          <th class="c" style="width:52px">基础分<br><span style="font-weight:400;font-size:10px">(60)</span></th>
-          <th class="c" style="width:78px">履职分<br><span style="font-weight:400;font-size:10px">(≤40)</span></th>
-          <th class="c" style="width:48px">附加分</th>
-          <th class="c" style="width:48px">减扣分</th>
-          <th>活动内容及扣分情况</th>
-          <th>履职与附加加分情况</th>
-          <th class="c" style="width:54px">总分</th>
-          <th class="c" style="width:66px">评定提示</th>
+          <th class="c" style="width:62px">身份</th>
+          ${dimHeaders}
+          <th>主要积分事项摘要</th>
+          <th class="c" style="width:64px">${isStar ? '星级/总分' : '年度总分'}</th>
+          <th class="c" style="width:68px">评定提示</th>
         </tr>
       </thead>
       <tbody>
-        ${rowsHtml || '<tr><td colspan="11" class="c">暂无正式/预备党员记录</td></tr>'}
+        ${rowsHtml || `<tr><td colspan="${opts.scheme.dimensions.length + 6}" class="c">暂无党员记录</td></tr>`}
       </tbody>
     </table>
     <table style="margin-top:12px">
       <tr>
-        <td class="c" style="width:100px;font-weight:700;background:#f5f2ee">党员承诺</td>
+        <td class="c" style="width:100px;font-weight:700;background:#f5f2ee">支部核实意见</td>
         <td style="padding:12px 14px">
-          以上公示与记录内容属实。&nbsp;&nbsp;&nbsp;&nbsp;
-          党员代表/本人签名：＿＿＿＿＿＿＿＿ &nbsp;&nbsp;&nbsp;&nbsp;
-          日期：＿＿＿＿ 年 ＿＿ 月 ＿＿ 日
-        </td>
-      </tr>
-      <tr>
-        <td class="c" style="width:100px;font-weight:700;background:#f5f2ee">支部意见</td>
-        <td style="padding:12px 14px">
-          经党支部核实认定，同意上报学院党委备案。&nbsp;&nbsp;&nbsp;&nbsp;
-          支部书记/支委签名：＿＿＿＿＿＿＿＿ &nbsp;&nbsp;&nbsp;&nbsp;
+          以上公示与考核记录经支部核实无误。&nbsp;&nbsp;&nbsp;&nbsp;
+          党支部书记签名：＿＿＿＿＿＿＿＿ &nbsp;&nbsp;&nbsp;&nbsp;
           日期：＿＿＿＿ 年 ＿＿ 月 ＿＿ 日
         </td>
       </tr>
     </table>
     <div class="foot">
-      <span>计分公式：年度总积分 = 基础分(60) + 履职分(专业15+实践10+志愿15≤40) + 附加分 - 减扣分（一票否决基础分归零）</span>
-      <span>三尺台 · 党员积分台账</span>
+      <span>考核说明：${esc(opts.scheme.description)}</span>
+      <span>三尺台 · 党员积分与评定</span>
     </div>
   `;
 }

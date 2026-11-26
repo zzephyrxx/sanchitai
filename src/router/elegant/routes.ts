@@ -150,6 +150,17 @@ export const generatedRoutes: GeneratedRoute[] = [
           icon: 'lucide:messages-square',
           order: 5
         }
+      },
+      {
+        name: 'ledger_volunteer',
+        path: '/ledger/volunteer',
+        component: 'view.ledger_volunteer',
+        meta: {
+          title: 'ledger_volunteer',
+          i18nKey: 'route.ledger_volunteer',
+          icon: 'lucide:heart-handshake',
+          order: 7
+        }
       }
     ]
   },

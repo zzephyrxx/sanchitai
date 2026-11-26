@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { SimpleScrollbar } from '@sa/materials';
 import { GLOBAL_SIDER_MENU_ID } from '@/constants/app';
+import { tourForcedExpandedKeys } from '@/utils/onboarding-bus';
 import { useAppStore } from '@/store/modules/app';
 import { useRouteStore } from '@/store/modules/route';
 import { useThemeStore } from '@/store/modules/theme';
@@ -25,15 +26,20 @@ const inverted = computed(() => !themeStore.darkMode && themeStore.sider.inverte
 const expandedKeys = ref<string[]>([]);
 
 function updateExpandedKeys() {
-  if (appStore.siderCollapse || !selectedKey.value) {
+  if (appStore.siderCollapse) {
     expandedKeys.value = [];
     return;
   }
-  expandedKeys.value = routeStore.getSelectedMenuKeyPath(selectedKey.value);
+  const base = selectedKey.value ? routeStore.getSelectedMenuKeyPath(selectedKey.value) : [];
+  if (tourForcedExpandedKeys.value?.length) {
+    expandedKeys.value = Array.from(new Set([...base, ...tourForcedExpandedKeys.value]));
+    return;
+  }
+  expandedKeys.value = base;
 }
 
 watch(
-  () => route.name,
+  [() => route.name, () => appStore.siderCollapse, () => tourForcedExpandedKeys.value],
   () => {
     updateExpandedKeys();
   },

@@ -7,6 +7,7 @@ import { useThemeStore } from '@/store/modules/theme';
 import { provideMixMenuContext } from '../modules/global-menu/context';
 import GlobalContent from '../modules/global-content/index.vue';
 import GlobalFooter from '../modules/global-footer/index.vue';
+import GuideButton from '../modules/global-header/components/guide-button.vue';
 import GlobalHeader from '../modules/global-header/index.vue';
 import GlobalSider from '../modules/global-sider/index.vue';
 import GlobalTab from '../modules/global-tab/index.vue';
@@ -148,6 +149,7 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     </template>
     <GlobalMenu />
     <GlobalContent />
+    <GuideButton v-if="!siderVisible" floating />
     <ThemeDrawer />
     <template #footer>
       <GlobalFooter />

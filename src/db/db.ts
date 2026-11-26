@@ -9,12 +9,13 @@ import { Dexie } from 'dexie';
 import type { Table } from 'dexie';
 import { APP_VERSION } from '@/constants/changelog';
 import { computeNextDevNode, isStageFullyArchived } from '@/constants/dev-nodes';
+import { DEFAULT_BRANCH_NAME } from '@/constants/workspace-presets';
 import { formatMemberCode, getBranchAbbreviation } from '@/utils/member-code';
 import { normalizeMemberRecord } from '@/utils/member-status';
 import seedJson from './seed/seed-data.json';
 
 export const DB_NAME = 'sanchitai-db';
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 8;
 export const BACKUP_RING_SIZE = 10;
 
 const BUILTIN_DOC_TEMPLATES: Sct.DocTemplate[] = (
@@ -44,6 +45,8 @@ class SanchitaiDB extends Dexie {
   declare attendance: Table<Sct.Attendance, string>;
   declare pointRecords: Table<Sct.PointRecord, string>;
   declare pointVetoes: Table<Sct.PointVeto, string>;
+  declare transferRecords: Table<Sct.TransferRecord, string>;
+  declare volunteerActivities: Table<Sct.VolunteerActivity, string>;
   declare meta: Table<MetaRow, string>;
 
   constructor() {
@@ -111,7 +114,7 @@ class SanchitaiDB extends Dexie {
       .upgrade(async tx => {
         const metaRow = (await tx.table('meta').get('branch-name')) as MetaRow | undefined;
         const defaultBranch =
-          typeof metaRow?.value === 'string' && metaRow.value.trim() ? metaRow.value.trim() : '智感硕博党支部';
+          typeof metaRow?.value === 'string' && metaRow.value.trim() ? metaRow.value.trim() : DEFAULT_BRANCH_NAME;
         const prefix = getBranchAbbreviation(defaultBranch);
         const rows = (await tx.table('members').toArray()) as Sct.Member[];
         const legacyRe = /^(DY|FZ|JJ|SQ)\d+$/i;
@@ -171,6 +174,24 @@ class SanchitaiDB extends Dexie {
             }
           });
       });
+
+    // v8：成员全生命周期状态索引 + 组织关系转接表 + 志愿时长活动表
+    this.version(8)
+      .stores({
+        members: 'id, identity, code, student_id, type, lifecycle_status, group, name, join_date, full_date',
+        transferRecords: 'id, member_id, direction, status, initiated_date, identity',
+        volunteerActivities: 'id, date, source, status, event_id, identity'
+      })
+      .upgrade(async tx => {
+        await tx
+          .table('members')
+          .toCollection()
+          .modify((m: Sct.Member) => {
+            if (!m.lifecycle_status) {
+              m.lifecycle_status = '在册正常';
+            }
+          });
+      });
   }
 }
 
@@ -206,6 +227,12 @@ export interface BackupShape {
   point_records?: Sct.PointRecord[];
   point_vetoes?: Sct.PointVeto[];
   point_rules?: Sct.PointRuleItem[];
+  point_schemes?: Sct.PointScheme[];
+  point_year_scheme?: Record<string, string>;
+  point_year_snapshots?: Record<string, Sct.PointScheme>;
+  transfer_records?: Sct.TransferRecord[];
+  volunteer_activities?: Sct.VolunteerActivity[];
+  workspace_config?: Sct.WorkspaceConfig;
   party_groups?: string[];
   youth_committee_slots?: Sct.YouthCommitteeSlot[];
   academy_flow?: unknown;
@@ -246,7 +273,10 @@ export function migrateBackupShape(raw: unknown): BackupShape {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const today = dayjs().format('YYYY-MM-DD');
   const rawMembers = Array.isArray(src.members) ? (src.members as Sct.Member[]) : [];
-  const normalizedMembers = rawMembers.map(m => normalizeMemberRecord(m, today));
+  const normalizedMembers = rawMembers.map(m => ({
+    ...normalizeMemberRecord(m, today),
+    lifecycle_status: m.lifecycle_status ?? '在册正常'
+  }));
 
   const rawStages = Array.isArray(src.dev_stages) ? (src.dev_stages as Sct.DevStage[]) : [];
   const normalizedStages = rawStages.map(stage => {
@@ -275,7 +305,7 @@ export function migrateBackupShape(raw: unknown): BackupShape {
     app_version: typeof src.app_version === 'string' ? src.app_version : APP_VERSION,
     exported_at: typeof src.exported_at === 'string' ? src.exported_at : new Date().toISOString(),
     branch_name:
-      typeof src.branch_name === 'string' && src.branch_name.trim() ? src.branch_name.trim() : '智感硕博党支部',
+      typeof src.branch_name === 'string' && src.branch_name.trim() ? src.branch_name.trim() : DEFAULT_BRANCH_NAME,
     members: normalizedMembers,
     seat_maps: Array.isArray(src.seat_maps) ? (src.seat_maps as Sct.SeatMap[]) : [],
     cal_events: Array.isArray(src.cal_events) ? (src.cal_events as Sct.CalEvent[]) : [],
@@ -288,6 +318,23 @@ export function migrateBackupShape(raw: unknown): BackupShape {
     point_records: Array.isArray(src.point_records) ? (src.point_records as Sct.PointRecord[]) : [],
     point_vetoes: Array.isArray(src.point_vetoes) ? (src.point_vetoes as Sct.PointVeto[]) : [],
     point_rules: Array.isArray(src.point_rules) ? (src.point_rules as Sct.PointRuleItem[]) : undefined,
+    point_schemes: Array.isArray(src.point_schemes) ? (src.point_schemes as Sct.PointScheme[]) : undefined,
+    point_year_scheme:
+      src.point_year_scheme && typeof src.point_year_scheme === 'object'
+        ? (src.point_year_scheme as Record<string, string>)
+        : undefined,
+    point_year_snapshots:
+      src.point_year_snapshots && typeof src.point_year_snapshots === 'object'
+        ? (src.point_year_snapshots as Record<string, Sct.PointScheme>)
+        : undefined,
+    transfer_records: Array.isArray(src.transfer_records) ? (src.transfer_records as Sct.TransferRecord[]) : [],
+    volunteer_activities: Array.isArray(src.volunteer_activities)
+      ? (src.volunteer_activities as Sct.VolunteerActivity[])
+      : [],
+    workspace_config:
+      src.workspace_config && typeof src.workspace_config === 'object'
+        ? (src.workspace_config as Sct.WorkspaceConfig)
+        : undefined,
     party_groups: Array.isArray(src.party_groups) ? (src.party_groups as string[]) : undefined,
     youth_committee_slots: Array.isArray(src.youth_committee_slots)
       ? (src.youth_committee_slots as Sct.YouthCommitteeSlot[])
@@ -313,7 +360,7 @@ export async function ensureDefaultDocTemplates(): Promise<number> {
   return builtins.length;
 }
 
-/** 全库导出为统一备份格式（schemaVersion = 5） */
+/** 全库导出为统一备份格式（schemaVersion = 8） */
 export async function exportBackup(): Promise<BackupShape> {
   const [
     members,
@@ -327,6 +374,8 @@ export async function exportBackup(): Promise<BackupShape> {
     attendance,
     point_records,
     point_vetoes,
+    transfer_records,
+    volunteer_activities,
     allMetaRows
   ] = await Promise.all([
     db.members.toArray(),
@@ -340,6 +389,8 @@ export async function exportBackup(): Promise<BackupShape> {
     db.attendance.toArray(),
     db.pointRecords.toArray(),
     db.pointVetoes.toArray(),
+    db.transferRecords.toArray(),
+    db.volunteerActivities.toArray(),
     db.meta.toArray()
   ]);
 
@@ -357,7 +408,7 @@ export async function exportBackup(): Promise<BackupShape> {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     app_version: APP_VERSION,
     exported_at: new Date().toISOString(),
-    branch_name: (metaMap.get('branch-name') as string | undefined) || '智感硕博党支部',
+    branch_name: (metaMap.get('branch-name') as string | undefined) || DEFAULT_BRANCH_NAME,
     members,
     seat_maps,
     cal_events,
@@ -370,6 +421,12 @@ export async function exportBackup(): Promise<BackupShape> {
     point_records,
     point_vetoes,
     point_rules: metaMap.get('point-rules') as Sct.PointRuleItem[] | undefined,
+    point_schemes: metaMap.get('point-schemes') as Sct.PointScheme[] | undefined,
+    point_year_scheme: metaMap.get('point-year-scheme') as Record<string, string> | undefined,
+    point_year_snapshots: metaMap.get('point-year-snapshots') as Record<string, Sct.PointScheme> | undefined,
+    transfer_records,
+    volunteer_activities,
+    workspace_config: metaMap.get('workspace-config') as Sct.WorkspaceConfig | undefined,
     party_groups: metaMap.get('party-groups') as string[] | undefined,
     youth_committee_slots: metaMap.get('youth-committee-slots') as Sct.YouthCommitteeSlot[] | undefined,
     academy_flow: metaMap.get('academy-flow'),
@@ -503,7 +560,9 @@ async function replaceCoreTables(shape: BackupShape): Promise<void> {
       db.talks,
       db.attendance,
       db.pointRecords,
-      db.pointVetoes
+      db.pointVetoes,
+      db.transferRecords,
+      db.volunteerActivities
     ],
     async () => {
       await Promise.all([
@@ -515,7 +574,9 @@ async function replaceCoreTables(shape: BackupShape): Promise<void> {
         db.talks.clear(),
         db.attendance.clear(),
         db.pointRecords.clear(),
-        db.pointVetoes.clear()
+        db.pointVetoes.clear(),
+        db.transferRecords.clear(),
+        db.volunteerActivities.clear()
       ]);
       await Promise.all([
         db.members.bulkPut(shape.members ?? []),
@@ -526,7 +587,9 @@ async function replaceCoreTables(shape: BackupShape): Promise<void> {
         db.talks.bulkPut(shape.talks ?? []),
         db.attendance.bulkPut(shape.attendance ?? []),
         db.pointRecords.bulkPut(shape.point_records ?? []),
-        db.pointVetoes.bulkPut(shape.point_vetoes ?? [])
+        db.pointVetoes.bulkPut(shape.point_vetoes ?? []),
+        db.transferRecords.bulkPut(shape.transfer_records ?? []),
+        db.volunteerActivities.bulkPut(shape.volunteer_activities ?? [])
       ]);
     }
   );
@@ -535,6 +598,18 @@ async function replaceCoreTables(shape: BackupShape): Promise<void> {
   }
   if (Array.isArray(shape.point_rules)) {
     await setMeta('point-rules', shape.point_rules);
+  }
+  if (Array.isArray(shape.point_schemes)) {
+    await setMeta('point-schemes', shape.point_schemes);
+  }
+  if (shape.point_year_scheme && typeof shape.point_year_scheme === 'object') {
+    await setMeta('point-year-scheme', shape.point_year_scheme);
+  }
+  if (shape.point_year_snapshots && typeof shape.point_year_snapshots === 'object') {
+    await setMeta('point-year-snapshots', shape.point_year_snapshots);
+  }
+  if (shape.workspace_config && typeof shape.workspace_config === 'object') {
+    await setMeta('workspace-config', shape.workspace_config);
   }
   if (Array.isArray(shape.party_groups)) {
     await setMeta('party-groups', shape.party_groups);
@@ -619,7 +694,9 @@ export async function clearAllData(): Promise<void> {
       db.docs,
       db.attendance,
       db.pointRecords,
-      db.pointVetoes
+      db.pointVetoes,
+      db.transferRecords,
+      db.volunteerActivities
     ],
     async () => {
       await Promise.all([
@@ -633,7 +710,9 @@ export async function clearAllData(): Promise<void> {
         db.docs.clear(),
         db.attendance.clear(),
         db.pointRecords.clear(),
-        db.pointVetoes.clear()
+        db.pointVetoes.clear(),
+        db.transferRecords.clear(),
+        db.volunteerActivities.clear()
       ]);
       if (builtins.length) {
         await db.docTemplates.bulkPut(builtins);

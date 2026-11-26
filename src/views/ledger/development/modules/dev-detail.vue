@@ -226,7 +226,7 @@ function statusStyle(status: string) {
   <NDrawer v-model:show="show" :width="600">
     <NDrawerContent v-if="member && stage" :title="`${member.name} · 发展详情与材料清单`" closable>
       <template #header>
-        <div class="flex w-full items-center justify-between gap-10px pr-8px">
+        <div data-tour="dev-detail-header" class="flex w-full items-center justify-between gap-10px pr-8px">
           <span class="truncate font-bold">{{ member.name }} · 发展详情与材料清单</span>
           <NButton size="tiny" type="primary" secondary @click="emit('open-timeline', member.id)">
             <template #icon><SvgIcon icon="lucide:git-branch" /></template>
@@ -294,7 +294,7 @@ function statusStyle(status: string) {
         </div>
 
         <!-- 跨阶段独立步进轨道（1~5 编号圆点 + 阶段名 + 左右翻页，与下方材料卡片彻底区分） -->
-        <div class="dev-stepper">
+        <div data-tour="dev-detail-stepper" class="dev-stepper">
           <div class="dev-stepper__top">
             <div class="flex items-center gap-6px">
               <SvgIcon icon="lucide:footprints" class="text-14px text-[#A81C24]" />
