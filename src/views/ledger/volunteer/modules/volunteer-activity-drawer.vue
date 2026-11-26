@@ -306,28 +306,36 @@ async function handleSave() {
             </NButton>
           </div>
 
-          <!-- 微信接龙粘贴解析区 -->
+          <!-- 微信接龙粘贴解析区（对齐台历日程详情悬浮卡：内缩圆头竖向胶囊色带 + 轻阴影浮卡） -->
           <div v-if="wechatOpen" data-tour="volunteer-wechat-box" class="vol-wechat-box mt-10px">
-            <div class="flex items-center gap-6px text-12px font-semibold text-[var(--sct-ink)]">
-              <SvgIcon icon="lucide:sparkles" class="text-14px text-[#16a34a]" />
-              <span>粘贴群接龙或顿号/换行名单（自动识别单人时长如「2h」「1.5小时」与括号岗位）</span>
-            </div>
-            <NInput
-              v-model:value="wechatText"
-              type="textarea"
-              :rows="3"
-              placeholder="示例：&#10;1. 张明远 2h（现场引导）&#10;2. 李思涵 1.5小时&#10;3. 王子轩"
-            />
-            <div class="flex flex-wrap items-center justify-between gap-8px">
-              <div v-if="unmatchedNames.length" class="flex flex-wrap items-center gap-4px text-11.5px text-[#d97706]">
-                <SvgIcon icon="lucide:alert-triangle" class="text-12px" />
-                <span>未匹配到：{{ unmatchedNames.join('、') }}</span>
+            <div class="flex items-stretch gap-10px">
+              <span class="w-4px flex-shrink-0 rounded-full bg-[#16a34a]" />
+              <div class="min-w-0 flex flex-1 flex-col gap-8px">
+                <div class="flex items-center gap-6px text-12px font-semibold text-[var(--sct-ink)]">
+                  <SvgIcon icon="lucide:sparkles" class="text-14px text-[#16a34a]" />
+                  <span>粘贴群接龙或顿号/换行名单（自动识别单人时长如「2h」「1.5小时」与括号岗位）</span>
+                </div>
+                <NInput
+                  v-model:value="wechatText"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="示例：&#10;1. 张明远 2h（现场引导）&#10;2. 李思涵 1.5小时&#10;3. 王子轩"
+                />
+                <div class="flex flex-wrap items-center justify-between gap-8px">
+                  <div
+                    v-if="unmatchedNames.length"
+                    class="flex flex-wrap items-center gap-4px text-11.5px text-[#d97706]"
+                  >
+                    <SvgIcon icon="lucide:alert-triangle" class="text-12px" />
+                    <span>未匹配到：{{ unmatchedNames.join('、') }}</span>
+                  </div>
+                  <span v-else class="text-11.5px text-[var(--sct-muted)]">优先匹配在册花名册并自动去重</span>
+                  <NButton size="tiny" type="primary" @click="handleParseWechatList">
+                    <template #icon><SvgIcon icon="lucide:wand-2" /></template>
+                    智能识别并加入
+                  </NButton>
+                </div>
               </div>
-              <span v-else class="text-11.5px text-[var(--sct-muted)]">优先匹配在册花名册并自动去重</span>
-              <NButton size="tiny" type="primary" @click="handleParseWechatList">
-                <template #icon><SvgIcon icon="lucide:wand-2" /></template>
-                智能识别并加入
-              </NButton>
             </div>
           </div>
         </div>
@@ -577,14 +585,13 @@ async function handleSave() {
 }
 
 .vol-wechat-box {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--sct-radius, 6px);
+  padding: 12px 14px;
+  border-radius: var(--sct-radius, 12px);
   border: 1px solid var(--sct-border);
-  border-left: 3px solid #16a34a;
   background: var(--sct-container);
+  box-shadow:
+    0 8px 24px -6px rgba(15, 23, 42, 0.1),
+    0 2px 6px -2px rgba(15, 23, 42, 0.05);
 }
 
 .vol-chip {
