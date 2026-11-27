@@ -214,6 +214,7 @@ export interface BackupShape {
   schemaVersion: number;
   app_version?: string;
   exported_at: string;
+  snapshot_label?: string;
   branch_name?: string;
   members: Sct.Member[];
   seat_maps: Sct.SeatMap[];
@@ -468,12 +469,15 @@ export async function exportBackup(): Promise<BackupShape> {
 }
 
 /** 写入环形快照（自动与手动各独立保留最近 10 份，并同步落盘到桌面端数据目录） */
-export async function pushBackupRing(kind: SnapshotKind = 'auto'): Promise<BackupSnapshotEntry> {
+export async function pushBackupRing(kind: SnapshotKind = 'auto', label?: string): Promise<BackupSnapshotEntry> {
   const cursorKey = kind === 'manual' ? 'backup_ring_cursor_manual' : 'backup_ring_cursor_auto';
   const ring = (await getMeta<number>(cursorKey)) ?? 0;
   const slot = ring % BACKUP_RING_SIZE;
   const key = `backup-${kind}-${slot}`;
   const snapshot = await exportBackup();
+  if (label?.trim()) {
+    snapshot.snapshot_label = label.trim();
+  }
   await setMeta(key, snapshot);
   await setMeta(cursorKey, (slot + 1) % BACKUP_RING_SIZE);
   try {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import dayjs from 'dayjs';
 import { APP_VERSION } from '@/constants/changelog';
 import { isMacPlatform, useDesktopBridge } from '@/utils/desktop-bridge';
@@ -444,6 +444,7 @@ interface SnapItem {
   key: string;
   kind: 'auto' | 'manual';
   ts: string;
+  label?: string;
   counts: string;
 }
 const autoSnapshots = ref<SnapItem[]>([]);
@@ -455,6 +456,10 @@ function toSnapItem(r: Awaited<ReturnType<typeof listBackupRing>>[number]): Snap
     key: r.key,
     kind: r.kind,
     ts: r.ts,
+    label:
+      typeof r.shape.snapshot_label === 'string' && r.shape.snapshot_label.trim()
+        ? r.shape.snapshot_label.trim()
+        : undefined,
     counts: `人员 ${r.shape.members?.length ?? 0} · 事项 ${r.shape.cal_events?.length ?? 0} · 党费 ${r.shape.fee_records?.length ?? 0}${ptsCount ? ` · 积分 ${ptsCount}` : ''}`
   };
 }
@@ -543,7 +548,18 @@ async function confirmDangerAction() {
   }
 }
 
-onMounted(listSnapshots);
+function handleSnapshotsUpdated() {
+  void listSnapshots();
+}
+
+onMounted(() => {
+  void listSnapshots();
+  window.addEventListener('sct-snapshots-updated', handleSnapshotsUpdated);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('sct-snapshots-updated', handleSnapshotsUpdated);
+});
 </script>
 
 <template>
@@ -605,7 +621,7 @@ onMounted(listSnapshots);
                 <NTag size="tiny" :bordered="false" round>{{ autoSnapshots.length }} / {{ BACKUP_RING_SIZE }}</NTag>
               </div>
               <div v-if="!autoSnapshots.length" class="py-12px text-center text-12px text-gray-400">
-                {{ bi('暂无自动快照（导入/恢复前自动生成）', 'No auto snapshots yet') }}
+                {{ bi('暂无自动快照（导入/恢复/升级前自动生成）', 'No auto snapshots yet') }}
               </div>
               <div v-else class="max-h-290px flex flex-col gap-6px overflow-y-auto pr-2px">
                 <div
@@ -614,7 +630,12 @@ onMounted(listSnapshots);
                   class="flex items-center justify-between gap-6px rounded-8px bg-[var(--sct-soft)] px-9px py-7px"
                 >
                   <div class="min-w-0">
-                    <div class="text-12px font-bold font-mono">{{ s.ts.replace('T', ' ').slice(0, 19) }}</div>
+                    <div class="flex flex-wrap items-center gap-5px">
+                      <span class="text-12px font-bold font-mono">{{ s.ts.replace('T', ' ').slice(0, 19) }}</span>
+                      <NTag v-if="s.label" size="tiny" type="success" :bordered="false" round class="text-10px">
+                        {{ s.label }}
+                      </NTag>
+                    </div>
                     <div class="truncate text-11px text-gray-500">{{ s.counts }}</div>
                   </div>
                   <div class="flex shrink-0 items-center gap-4px">

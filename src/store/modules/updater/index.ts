@@ -16,6 +16,7 @@ import {
   saveProtectedPreUpdateSnapshot,
   useDesktopBridge
 } from '@/utils/desktop-bridge';
+import { pushBackupRing } from '@/db/db';
 
 const AUTO_CHECK_KEY = 'sct:updater:auto-check';
 const USE_MIRROR_KEY = 'sct:updater:use-mirror';
@@ -81,6 +82,47 @@ function compareSemver(a: string, b: string): number {
     if (diff !== 0) return diff;
   }
   return 0;
+}
+
+interface GithubAssetItem {
+  name: string;
+  browser_download_url: string;
+  size?: number;
+}
+
+/** 浏览器端按当前操作系统匹配安装包资产（严禁误选源码 .zip 包） */
+function pickBrowserPlatformAsset(assets: GithubAssetItem[] = []): GithubAssetItem | null {
+  const installers = assets.filter(a => {
+    const n = a.name.toLowerCase();
+    return !n.endsWith('.zip') && !n.endsWith('.tar.gz') && !n.endsWith('.sha256') && !n.endsWith('.sig');
+  });
+  if (!installers.length) return null;
+
+  const ua = typeof navigator !== 'undefined' ? `${navigator.userAgent} ${navigator.platform}`.toLowerCase() : '';
+  const isMac = /mac|darwin/.test(ua);
+  const isWin = /win/.test(ua);
+
+  if (isMac) {
+    const dmgs = installers.filter(a => a.name.toLowerCase().endsWith('.dmg'));
+    if (!dmgs.length) return null;
+    const preferred = dmgs.find(a => /aarch64|arm64|apple/i.test(a.name));
+    return preferred ?? dmgs[0];
+  }
+
+  if (isWin) {
+    return (
+      installers.find(a => /[-_]setup\.exe$/i.test(a.name)) ??
+      installers.find(a => a.name.toLowerCase().endsWith('.exe')) ??
+      installers.find(a => a.name.toLowerCase().endsWith('.msi')) ??
+      null
+    );
+  }
+
+  return (
+    installers.find(a => a.name.toLowerCase().endsWith('.appimage')) ??
+    installers.find(a => a.name.toLowerCase().endsWith('.deb')) ??
+    null
+  );
 }
 
 export const useUpdaterStore = defineStore('sct-updater', () => {
@@ -173,7 +215,7 @@ export const useUpdaterStore = defineStore('sct-updater', () => {
           };
           const latest = (data.tag_name ?? '').trim();
           const hasUpdate = Boolean(latest) && compareSemver(latest, APP_VERSION) > 0;
-          const firstAsset = data.assets?.[0];
+          const matchedAsset = pickBrowserPlatformAsset(data.assets);
           result = {
             hasUpdate,
             currentVersion: APP_VERSION,
@@ -182,9 +224,9 @@ export const useUpdaterStore = defineStore('sct-updater', () => {
             releaseNotes: data.body || '',
             publishedAt: data.published_at || '',
             htmlUrl: data.html_url || 'https://github.com/zzephyrxx/sanchitai/releases/latest',
-            assetName: firstAsset?.name ?? null,
-            assetSize: firstAsset?.size ?? 0,
-            downloadUrl: firstAsset?.browser_download_url ?? null
+            assetName: matchedAsset?.name ?? null,
+            assetSize: matchedAsset?.size ?? 0,
+            downloadUrl: matchedAsset?.browser_download_url ?? null
           };
         } finally {
           clearTimeout(timer);
@@ -232,12 +274,19 @@ export const useUpdaterStore = defineStore('sct-updater', () => {
     if (!release.value?.hasUpdate || downloading.value) return;
     const rel = release.value;
 
-    // 步骤 1：先创建一份不可被环形槽位淘汰的升级前 .sctpack 保护快照
+    // 步骤 1：先写入「设置 → 自动快照」列表（立即可见可恢复），桌面端同时在 snapshots/protected/ 落盘一份不可淘汰的 .sctpack
     backingUpBeforeUpdate.value = true;
     try {
-      const savedSnap = await saveProtectedPreUpdateSnapshot(rel.latestVersion);
-      if (savedSnap) {
-        protectedSnapshotPath.value = savedSnap;
+      const snapLabel = `升级前保护快照 (${APP_VERSION} → ${rel.latestVersion})`;
+      const [ringSnap, diskSnap] = await Promise.all([
+        pushBackupRing('auto', snapLabel).catch(() => null),
+        saveProtectedPreUpdateSnapshot(rel.latestVersion).catch(() => null)
+      ]);
+      if (diskSnap || ringSnap) {
+        protectedSnapshotPath.value = diskSnap || `auto-ring:${ringSnap?.key ?? ''}`;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('sct-snapshots-updated'));
+        }
       }
     } finally {
       backingUpBeforeUpdate.value = false;
