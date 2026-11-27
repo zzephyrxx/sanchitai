@@ -41,3 +41,7 @@ _refs/
 # tauri
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# internal docs (keep only docs/WINDOWS_BUILD.md public)
+docs/*
+!docs/WINDOWS_BUILD.md
